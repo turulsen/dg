@@ -423,7 +423,7 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 exports.dailyBackup = onSchedule({ schedule: 'every day 04:00', timeZone: 'Europe/Copenhagen' }, async () => {
   const db = getFirestore();
   const out = { taken_at: new Date().toISOString() };
-  for (const coll of ['characters', 'briefs', 'cells', 'evidence', 'operations']) {
+  for (const coll of ['characters', 'briefs', 'cells', 'evidence', 'operations', 'vault', 'sessions']) {
     const snap = await db.collection(coll).get();
     out[coll] = {};
     snap.forEach((d) => { out[coll][d.id] = d.data(); });
@@ -437,5 +437,158 @@ exports.dailyBackup = onSchedule({ schedule: 'every day 04:00', timeZone: 'Europ
   for (const f of files) {
     const m = /backups\/(\d{4}-\d{2}-\d{2})\.json$/.exec(f.name);
     if (m && new Date(m[1]).getTime() < cutoff) await f.delete().catch(() => {});
+  }
+});
+
+// ════════════════════════════════════════════════════════════════
+// vaultSync -- the Handler's Obsidian vault (an iCloud folder) and
+// A-Cell's private copy (vault/, Handler-only) kept in step by an Apple
+// Shortcut on the Handler's phone: it posts every .md file in the folder
+// and saves back what this returns. The rules of who wins live in
+// vault-sync.js. No Firebase sign-in on a Shortcut: it carries a sync key
+// the Handler makes in A-Cell (vault_meta/config.key, Handler-only).
+// ════════════════════════════════════════════════════════════════
+const { onRequest } = require('firebase-functions/v2/https');
+const vaultSync_ = require('./vault-sync');
+const crypto = require('crypto');
+
+exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: '512MiB' }, async (req, res) => {
+  // Any failure answers with its reason (the Shortcut shows it), not a bare 500.
+  try {
+    if (req.method !== 'POST') { res.status(405).json({ status: 'ERROR', message: 'POST only' }); return; }
+    // Shortcuts may label the JSON as a file (octet-stream) or text: take it either way.
+    let body = req.body;
+    if ((!body || typeof body !== 'object' || Buffer.isBuffer(body) || body.key == null) && req.rawBody && req.rawBody.length) body = req.rawBody;
+    if (Buffer.isBuffer(body)) body = body.toString('utf8');
+    if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = null; } }
+    if (!body || typeof body !== 'object') { res.status(400).json({ status: 'ERROR', message: 'Send JSON: { key, files: [{ path, text }] }' }); return; }
+    const db = getFirestore();
+    const cfgRef = db.collection('vault_meta').doc('config');
+    const cfg = (await cfgRef.get()).data() || {};
+    // The key in the body, or (a Shortcut sending the list itself) a header or ?key=.
+    const want = String(cfg.key || ''), got = String((!Array.isArray(body) && body.key) || req.get('x-sync-key') || (req.query && req.query.key) || '');
+    const ok = want.length >= 16 && got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+    if (!ok) { res.status(403).json({ status: 'ERROR', message: 'Wrong sync key. Copy it again from A-Cell → Notes vault.' }); return; }
+    // The list as Shortcuts sends it: an array; the array as JSON text; a
+    // dictionary of items; or the whole body as the list.
+    let files = Array.isArray(body) ? body : body.files;
+    // Not under "files" exactly: a near-miss name ("Files", "files "), or
+    // whichever other field holds the list (or the notes themselves).
+    if (files === undefined && !Array.isArray(body)) {
+      const others = Object.keys(body).filter((k) => k.trim().toLowerCase() !== 'key');
+      const named = others.find((k) => k.trim().toLowerCase() === 'files');
+      if (named !== undefined) files = body[named];
+      else {
+        const list = others.map((k) => body[k]).find((v) => Array.isArray(v) || (typeof v === 'string' && v.trim().charAt(0) === '['));
+        if (list !== undefined) files = list;
+        else { const notes = others.map((k) => body[k]).filter((v) => v && typeof v === 'object' && (v.path || v.text)); if (notes.length) files = notes; }
+      }
+    }
+    if (typeof files === 'string') { try { files = JSON.parse(files); } catch (e) { files = []; } }
+    if (files && !Array.isArray(files) && typeof files === 'object') files = (files.path || files.text) ? [files] : Object.values(files);
+    if (!Array.isArray(files)) files = [];
+    const received = { body: Array.isArray(body) ? 'list' : typeof body, keys: Array.isArray(body) ? [] : Object.keys(body).slice(0, 8).map((k) => JSON.stringify(k) + ': ' + (Array.isArray(body[k]) ? 'list of ' + body[k].length : typeof body[k])), files: Array.isArray(body) ? 'list' : (Array.isArray(body.files) ? 'list of ' + body.files.length : typeof body.files), content_type: req.get('content-type') || '' };
+    if (files.length > 3000) { res.status(413).json({ status: 'ERROR', message: 'Too many files (over 3000).' }); return; }
+    const clean = [];
+    for (let f of files) {
+      if (typeof f === 'string') { try { f = JSON.parse(f); } catch (e) { continue; } }
+      if (!f || typeof f !== 'object') continue;
+      const text = String(f.text == null ? '' : f.text);
+      if (text.length > 900000) continue;
+      // iOS can cut a file's name short in File Path ("The Hotel.md" ->
+      // "The"): the name sent on its own ("name", from Get Details > Name)
+      // wins for the last part of the path.
+      let fp = String(f.path || '');
+      const nm = String(f.name == null ? '' : f.name).trim().replace(/[\/:]/g, ' ');
+      if (nm) {
+        const full = /\.md$/i.test(nm) ? nm : nm + '.md';
+        const cut = fp.indexOf('/') < 0 && fp.indexOf(':') >= 0 ? ':' : '/';
+        fp = fp ? fp.split(cut).slice(0, -1).concat([full]).join(cut) : full;
+      }
+      clean.push({ path: fp, text, raw: { path: f.path, name: f.name } });
+    }
+    const snap = await db.collection('vault').get();
+    const notes = [];
+    snap.forEach((d) => { const x = d.data(); notes.push({ path: x.path, content: x.content, synced: x.synced === undefined ? null : x.synced, pending: x.pending === undefined ? null : x.pending }); });
+    // Notes stored under a path from before the iOS path fix (or any path
+    // that cleans differently now) move to the clean one, all they hold kept.
+    const moved = [];
+    const at = {};
+    notes.forEach((x) => { at[x.path] = x; });
+    notes.forEach((x) => {
+      const np = vaultSync_.cleanPath(x.path);
+      if (!np || np === x.path) return;
+      if (at[np] && at[np] !== x) return; // the clean one exists already: leave this be
+      moved.push({ from: x.path, to: np, note: x });
+      delete at[x.path]; at[np] = x; x.path = np;
+    });
+    const out = vaultSync_.reconcile(notes, clean);
+    // Nothing (or far too little) arrived from a vault A-Cell already has:
+    // more likely the Shortcut couldn't read the folder than a mass delete.
+    const syncedCount = notes.filter((n) => n.synced != null).length;
+    let held = 0;
+    if (out.removes.length && (clean.length === 0 || (out.removes.length > 10 && out.removes.length > syncedCount / 2))) {
+      held = out.removes.length; out.removes = []; out.stats.removed = 0;
+    }
+    const now = Date.now();
+    // A commit is capped at 10 MiB and a document at 1 MiB: a first sync of
+    // a big vault (each note stored with its synced copy) passed the first
+    // in one batch of 400 -- batches now close by size too, and a note too
+    // big for one document is left out (counted in stats.too_big).
+    let batch = db.batch(), n = 0, bytes = 0, tooBig = 0;
+    const flush = async () => { if (n) { await batch.commit(); batch = db.batch(); n = 0; bytes = 0; } };
+    const size = (v) => (v == null ? 0 : Buffer.byteLength(String(v), 'utf8'));
+    for (const m of moved) {
+      const x = m.note;
+      batch.set(db.collection('vault').doc(vaultSync_.docId(m.to)), { path: m.to, content: x.content == null ? '' : x.content, synced: x.synced, pending: x.pending, updated_at: now, updated_by: 'sync' }, { merge: true });
+      batch.delete(db.collection('vault').doc(vaultSync_.docId(m.from)));
+      n += 2; bytes += size(x.content) + size(x.synced) + size(x.pending) + 400;
+      if (n >= 400 || bytes > 8000000) await flush();
+    }
+    const before = {};
+    notes.forEach((x) => { before[x.path] = x; });
+    for (const u of out.upserts) {
+      // Content only when the sync changes it: an edit made in A-Cell while
+      // this ran isn't overwritten with the copy read above.
+      const doc = { path: u.path, synced: u.synced, pending: u.pending, synced_at: now };
+      if (!before[u.path] || before[u.path].content !== u.content) Object.assign(doc, { content: u.content, updated_at: now, updated_by: 'sync' });
+      const docBytes = size(u.path) + size(doc.content != null ? doc.content : (before[u.path] || {}).content) + size(u.synced) + size(u.pending) + 200;
+      if (docBytes > 1000000) { tooBig += 1; continue; }
+      if (bytes + docBytes > 8000000) await flush();
+      batch.set(db.collection('vault').doc(vaultSync_.docId(u.path)), doc, { merge: true });
+      bytes += docBytes;
+      if (++n >= 400) await flush();
+    }
+    for (const p of out.removes) {
+      batch.delete(db.collection('vault').doc(vaultSync_.docId(p)));
+      if (++n >= 400) await flush();
+    }
+    await flush();
+    const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, moved: moved.length, at: now });
+    // How many came with their own name, and (for a collision) what the Shortcut sent.
+    summary.with_name = clean.filter((c) => String(c.raw.name == null ? '' : c.raw.name).trim()).length;
+    if (out.stats.duplicates && out.stats.duplicate_example) {
+      const dup = out.stats.duplicate_example;
+      summary.dup_sample = clean.filter((c) => vaultSync_.cleanPath(c.path) === dup).slice(0, 2).map((c) => c.raw)
+        .map((f) => ({ path: String(f.path == null ? '(none)' : f.path).slice(-120), name: String(f.name == null ? '(none)' : f.name).slice(0, 80) }));
+    }
+    if (!clean.length) summary.received = received;
+    // Notes that came without a usable path are skipped: say how many, and show one.
+    const noPath = clean.filter((f) => !vaultSync_.cleanPath(f.path));
+    if (noPath.length) {
+      summary.no_path = noPath.length;
+      const raw = files.find((f) => f && typeof f === 'object' && !vaultSync_.cleanPath(String(f.path || f.name || '')));
+      summary.sample = raw ? { keys: Object.keys(raw).slice(0, 6), path: String(raw.path == null ? '(none)' : raw.path).slice(0, 160) } : null;
+    }
+    // Stored flat: what arrived goes in as text (a field name from the
+    // Shortcut's dictionary can be one Firestore won't take as a key).
+    const stored = Object.assign({}, summary);
+    if (stored.received) stored.received = JSON.stringify(stored.received).slice(0, 2000);
+    await cfgRef.set({ last_sync: stored }, { merge: true });
+    logger.info('vaultSync', summary);
+    res.json({ status: 'OK', write: out.write, stats: summary });
+  } catch (err) {
+    logger.error('vaultSync failed', err);
+    res.status(500).json({ status: 'ERROR', message: 'vaultSync failed: ' + ((err && err.message) || String(err)) });
   }
 });

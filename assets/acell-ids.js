@@ -136,7 +136,7 @@
         ' <label class="paper-btn idc-up">⇪ Upload stock<input type="file" multiple accept="image/png,image/jpeg" data-a="upload" hidden></label>' +
         '<span class="idc-note">Private: only signed-in players and you can open these. Name files as in the pack (sheriff.jpg, badge-oregon.png, face-01.jpg…).</span></div>' +
       '<div class="idc-grid"><div class="idc-form">' +
-        '<div class="idc-kinds">' + [['office', 'Office (evidence packs)'], ['mirror', 'Agency ID'], ['entity', 'Invented company']].map(function (k) { return '<button type="button" class="paper-btn' + (S.kind === k[0] ? ' primary' : '') + '" data-a="kind" data-v="' + k[0] + '">' + k[1] + '</button>'; }).join('') + '</div>' +
+        '<div class="idc-kinds">' + [['mirror', 'Agency'], ['office', 'Local office'], ['entity', 'Company']].map(function (k) { return '<button type="button" class="paper-btn' + (S.kind === k[0] ? ' primary' : '') + '" data-a="kind" data-v="' + k[0] + '">' + k[1] + '</button>'; }).join('') + '</div>' +
         form +
         '<div class="idc-l">Photo<span class="idc-faces">' + faces().map(function (k) { return '<button type="button" class="idc-face' + (S.photo === S.stock[k] ? ' on' : '') + '" data-a="face" data-v="' + esc(k) + '" style="background-image:url(&quot;' + esc(S.stock[k]) + '&quot;)" aria-label="' + esc(k) + '"></button>'; }).join('') +
           '<label class="paper-btn">⇪ Upload<input type="file" accept="image/*" data-a="photo" hidden></label></span></div>' +
@@ -156,7 +156,7 @@
     st.id = 'idc-css';
     st.textContent = '#idc-root{padding:4px 2px}.idc-stock{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:10px 12px;border:1px dashed var(--rule,#b9a77a);margin-bottom:14px;font-size:13px}' +
       '.idc-note{font-size:11.5px;color:#6a5a3a;flex-basis:100%}.idc-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:22px;align-items:start}' +
-      '@media(max-width:760px){.idc-grid{grid-template-columns:1fr}.idc-prev{order:-1}}' +
+      '@media(max-width:760px){.idc-grid{grid-template-columns:minmax(0,1fr)}.idc-prev{order:-1}}' +
       '#idc-root{color:#2a2112}#idc-root b{color:#1c1608}.idc-kinds{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}.idc-l{display:flex;flex-direction:column;gap:3px;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;margin:0 0 8px;color:#5a4a2c}' +
       '.idc-l input,.idc-l select{font:14px inherit;padding:6px 8px;border:1px solid var(--rule,#b9a77a);background:#fffdf6;text-transform:none;letter-spacing:0}' +
       '.idc-row{display:flex;gap:6px}.idc-row input{flex:1;min-width:0}.idc-faces,.idc-logos{display:flex;flex-wrap:wrap;gap:6px;align-items:center;text-transform:none}' +

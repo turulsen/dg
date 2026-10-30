@@ -36,7 +36,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Source+Sans+3:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="assets/theme-folder.css">
-<link rel="stylesheet" href="assets/acell-desk.css">
+<link rel="stylesheet" href="assets/acell-vault.css">
+<link rel="stylesheet" href="assets/acell-shell.css">
+<link rel="stylesheet" href="assets/acell-play.css">
+<link rel="stylesheet" href="assets/acell-mobile.css">
 <style>
   :root{ --term-green:#3ef07a; --term-green-dim:#1e7a42; }
   *{box-sizing:border-box;}
@@ -499,6 +502,12 @@
   .evidence-create-error{ color:var(--red); font-size:11px; min-height:1.3em; }
   /* v3.6.0: languages, formatting toolbar, growing body, Share-with rows */
   .evidence-view-switch{ margin-left:auto; }
+  .evidence-restrict-dd{ border:1px solid #cbbd94; background:#fffdf4; }
+  .evidence-restrict-dd summary{ cursor:pointer; padding:8px 10px; font-size:13px; list-style:none; }
+  .evidence-restrict-dd summary::-webkit-details-marker{ display:none; }
+  .evidence-restrict-dd summary::after{ content:' \25BE'; }
+  .evidence-restrict-dd[open] summary{ border-bottom:1px dashed #cbbd94; }
+  .evidence-restrict-dd .evidence-restrict-list, .evidence-restrict-dd .evidence-restrict-note{ padding:4px 10px; }
   .evidence-label-tag{ font-family:'Special Elite',monospace; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--red);
     border:1.5px solid var(--red); padding:2px 7px; transform:rotate(-1.5deg); display:inline-block; }
   .evidence-card.flash{ outline:2px solid rgba(139,42,31,.6); outline-offset:3px; transition:outline-color 1.2s; }
@@ -974,6 +983,47 @@
   .sheet-table tr:nth-child(even) td{ background:rgba(28,22,8,.035); }
   .sheet-table td.sheet-empty-cell{ color:var(--ink-3); font-style:italic; }
   .sheet-table td.sheet-code{ font-family:'Special Elite',monospace; letter-spacing:.06em; }
+  .cmr-ph{ display:inline-grid; place-items:center; width:30px; height:38px; margin-right:10px; flex:none; border:1px solid #a8925a; background:linear-gradient(160deg,#d9caa0,#b9a274); font:700 10.5px 'Courier Prime',monospace; color:var(--ink-2); vertical-align:middle; }
+  .cell-chs{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:8px 0; font-size:12px; }
+  .cell-chs > span{ letter-spacing:.14em; text-transform:uppercase; font-size:10.5px; color:var(--ink-2); margin-right:4px; }
+  .cell-chs small{ flex-basis:100%; color:var(--ink-3); font-size:11px; }
+  .cell-ch{ width:34px; height:30px; border:1px solid var(--ink-2); background:transparent; font:13px 'Courier Prime',monospace; cursor:pointer; }
+  .cell-ch.on{ background:var(--ink); color:#f4eed8; }
+  /* The Agent File's ink and paper for the Sheet and Cells panels too:
+     outside .af-root these were never defined, so text meant to be ink
+     took the folder's light colour instead (2026-10-30). */
+  #panel-sheet, #panel-cells{ --ink:#1c1608; --ink-2:#4a3f28; --ink-3:#8a7a5a; --paper:#f4eed8; --paper-line:rgba(180,148,72,.45); }
+  /* The Sheet's view bar (v3.13.0): Table or Cards, Filter, Columns, Select */
+  .sheet-viewbar{ display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+  .sv-row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .sv-seg{ display:inline-flex; border:1px solid var(--ink-2); }
+  .sv-seg button{ border:0; background:transparent; padding:7px 12px; font:11px 'Special Elite',monospace; letter-spacing:.1em; text-transform:uppercase; color:var(--ink); cursor:pointer; }
+  .sv-seg button.on{ background:var(--ink); color:#f4eed8; }
+  .sv-panel{ display:flex; flex-wrap:wrap; gap:8px; padding:10px; background:var(--paper); border:1px solid var(--paper-line); }
+  .sv-panel input, .sv-panel select{ min-height:36px; font:13px 'Courier Prime',monospace; padding:4px 8px; border:1px solid var(--paper-line); background:#fff; }
+  .sv-cols{ flex-direction:column; flex-wrap:nowrap; }
+  /* Ink on the paper: the folder's own text is light (reported 2026-10-30,
+     the Columns list read pale on a phone), and a tick box isn't an input
+     box -- no min-height, the label beside it, not under it. */
+  .sv-panel{ color:var(--ink); font-family:'Courier Prime',monospace; }
+  .sv-hint{ margin:0; font-size:11.5px; color:var(--ink-3); }
+  .sv-col{ display:flex; align-items:center; gap:10px; padding:4px 6px; border:1px dashed var(--paper-line); background:#fffdf4; touch-action:none; color:var(--ink); }
+  .sv-col label{ display:flex; align-items:center; gap:10px; flex:1; min-height:38px; font:13px 'Courier Prime',monospace; color:var(--ink); cursor:pointer; }
+  .sv-panel input[type="checkbox"]{ min-height:0; width:20px; height:20px; margin:0; padding:0; flex:none; accent-color:var(--ink); }
+  .sv-handle{ color:var(--ink-3); }
+  .sv-col.lift{ box-shadow:0 6px 14px rgba(0,0,0,.25); }
+  .sv-handle{ cursor:grab; padding:2px 8px; font-size:16px; touch-action:none; }
+  .sv-batch{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px; background:#1c1608; color:#f4eed8; }
+  .sv-batch select{ min-height:34px; font:13px 'Courier Prime',monospace; }
+  .sheet-table tr.sel td{ background:#fff4c2 !important; }
+  .sheet-cards{ display:flex; flex-direction:column; gap:8px; padding:8px; }
+  .sheet-card{ display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; padding:10px 12px; background:#fffdf4; border:1px solid var(--paper-line); }
+  .sheet-card.sel{ background:#fff4c2; }
+  .sheet-card-b{ flex:1; min-width:0; font-family:'Courier Prime',monospace; font-size:12.5px; }
+  .sheet-card-n{ font-size:14.5px; font-weight:700; color:var(--ink); }
+  .sheet-card-m{ color:var(--ink-2); margin-top:2px; }
+  .sheet-card .admin-confirm-slot{ flex-basis:100%; }
+  .sheet-wrap.sheet-cards-on{ overflow-x:visible; }
   .sheet-pn-display{ cursor:pointer; border-bottom:1px dashed var(--rule); }
   .sheet-pn-display:hover{ border-bottom-color:var(--ink-2); }
   .sheet-pn-input{
@@ -1047,35 +1097,51 @@
   </div>
 </div>
 
-<div class="hub-header">
+<!-- v3.12.0: A-Cell's top bar -- PREP (the folder, its index tabs on the
+     left), PLAY (the desk) and DEBRIEF. assets/acell-shell.js. -->
+<div class="ac-top" id="ac-top">
   <!-- Hidden inside the app shell (hub.html) -- redundant there, since
        the shell's own persistent nav (assets/shell-nav.js) already
        covers switching to Agent Hub directly, without ever routing
        through index.html at all. Still needed for a standalone visit. -->
   <a class="back-link" id="acell-header-back-link" href="index.html">&lt;- Clearance</a>
   <script>if (window.frameElement && window.frameElement.id === 'dg-shell-content') document.getElementById('acell-header-back-link').style.display = 'none';</script>
-  <div class="stamp">Clearance: A-Cell</div>
-  <h1>A-Cell</h1>
+  <span class="ac-seal" aria-hidden="true">A</span>
+  <h1 class="ac-brand">A-Cell</h1>
+  <button type="button" class="ac-pill" id="ac-session-pill" hidden></button>
+  <span class="ac-sp"></span>
+  <span class="ac-tools" id="ac-tools"></span>
+  <nav class="ac-modes" id="ac-modes" aria-label="Mode">
+    <button type="button" data-mode="prep" class="on">Prep</button>
+    <button type="button" data-mode="play">Play</button>
+    <button type="button" data-mode="debrief">Debrief</button>
+  </nav>
 </div>
 
 <div class="folder-wrap">
   <div class="folder">
     <div class="tab-strip" id="acell-tab-strip">
-      <div class="tw inactive" data-tab="desk"><span>&#9638; Desk</span></div>
-      <div class="tw active" data-tab="play"><span>Play</span></div>
-      <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
+      <div class="tw active" data-tab="session"><span>Session prep</span></div>
+      <div class="tw inactive" data-tab="play"><span>Players</span></div>
       <div class="tw inactive" data-tab="evidence"><span>Evidence</span></div>
-      <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
       <div class="tw inactive" data-tab="music"><span>Music</span></div>
-      <div class="tw inactive" data-tab="notes"><span><span class="tw-long">Session </span>Notes</span></div>
+      <div class="tw inactive" data-tab="notes"><span>Notes</span></div>
+      <div class="tw inactive" data-tab="sheet"><span>Sheet</span></div>
+      <div class="tw inactive" data-tab="cells"><span>Cells</span></div>
       <div class="tw inactive" data-tab="ids"><span>ID<span class="tw-long"> Creator</span></span></div>
     </div>
     <div class="folder-body">
 
-      <!-- The Desk (assets/acell-desk.js): the tabs below as panels side by side. -->
-      <div class="tab-panel" id="panel-desk"></div>
+      <!-- Session prep (assets/acell-shell.js): the session's Cell, notes,
+           evidence and music, in panels the Handler can rearrange. -->
+      <div class="tab-panel active" id="panel-session"></div>
 
-      <div class="tab-panel active" id="panel-play">
+      <!-- PLAY: the desk (assets/acell-play.js). DEBRIEF: assets/acell-debrief.js.
+           Neither has a tab; the top bar's modes open them. -->
+      <div class="tab-panel" id="panel-desk"></div>
+      <div class="tab-panel" id="panel-debrief"></div>
+
+      <div class="tab-panel" id="panel-play">
         <div class="play-toolbar">
           <button type="button" class="paper-btn" id="play-refresh-btn">Refresh</button>
           <select id="play-cell-filter" class="play-cell-filter"><option value="">All Agents</option></select>
@@ -1174,6 +1240,12 @@
       <div class="tab-panel" id="panel-ids"><div id="idc-root"><div class="play-loading">Open this tab to load the ID Creator.</div></div></div>
 
       <div class="tab-panel" id="panel-music">
+        <!-- v3.12.0: the tape shelf and the control center (assets/acell-library.js,
+             acell-console.js) run the broadcast; the classic desk stays folded
+             below with every control it always had. -->
+        <div id="ac-console"></div>
+        <details class="ac-classic" id="ac-classic">
+        <summary>Classic broadcast desk</summary>
         <div class="acell-radio-shell-outer">
           <div class="acell-radio-shell">
             <div class="acell-radio-header">
@@ -1307,6 +1379,7 @@
             </div>
           </div>
         </div>
+        </details>
       </div>
 
     </div>
@@ -1640,7 +1713,7 @@
     list_cells: function () {
       return fsReady_().then(function (db) { return db.collection('cells').get(); }).then(function (snap) {
         return { status: 'OK', cells: docsOf_(snap).map(function (d) {
-          return { cell_id: d.id, name: d.data.name || '', handler: d.data.handler || '', member_codes: d.data.member_codes || [], channel: d.data.channel || '' };
+          return { cell_id: d.id, name: d.data.name || '', handler: d.data.handler || '', member_codes: d.data.member_codes || [], channel: d.data.channel || '', channels: window.dgCellChannels(d.data) };
         }) };
       });
     },
@@ -1898,6 +1971,15 @@
     }
   };
 
+  // A Cell's channels (v3.13.0): up to three at a time, so its players can
+  // hear different tapes on different channels. cells/{id}.channels, with
+  // .channel kept as the first one for everything that reads only that.
+  window.dgCellChannels = function (c) {
+    c = c || {};
+    var list = Array.isArray(c.channels) ? c.channels.map(String).filter(Boolean) : [];
+    if (!list.length && c.channel) list = [String(c.channel)];
+    return list.slice(0, 3);
+  };
   window.dgAcellApi = {
     // Resolves with the old JSONP reply (or null on failure, like a timeout).
     get: function (action, params) {
@@ -2062,26 +2144,32 @@
 </script>
 
 <script>
-/* A-Cell's own folder tab strip (Play / Cells / Music) -- a fixed
-   3-tab strip, unlike agent-hub.html's dynamically-built per-agent
-   tabs. Mirrors dg-agent-portal.html's switchTab(): a full class
-   replace per tab, not classList.toggle, so 'tw active' and
-   'tw inactive' stay mutually exclusive. */
+/* A-Cell's folder tabs (the index down the left in Prep) and the two
+   tab-less panels the top bar's modes open (desk: Play, debrief).
+   A full class replace per tab, not classList.toggle, so 'tw active' and
+   'tw inactive' stay mutually exclusive. A tab's content loads the first
+   time it's shown: everything listens for 'dg-acell-tab'.
+   window.dgAcellTab(id) shows one; window.dgAcellTab() says which. */
 (function () {
   var strip = document.getElementById('acell-tab-strip');
-  strip.addEventListener('click', function (e) {
-    var tab = e.target.closest('.tw');
-    if (!tab) return;
-    var id = tab.dataset.tab;
+  var shown = 'session';
+  function show(id) {
+    if (!id) return shown;
+    if (!document.getElementById('panel-' + id)) return shown;
+    shown = id;
     strip.querySelectorAll('.tw').forEach(function (t) {
       t.className = 'tw ' + (t.dataset.tab === id ? 'active' : 'inactive');
     });
     document.querySelectorAll('.folder-body > .tab-panel').forEach(function (p) {
       p.classList.toggle('active', p.id === 'panel-' + id);
     });
-    // A tab's content loads the first time it's shown: on its tab, or on
-    // the Desk (assets/acell-desk.js fires the same event).
     document.dispatchEvent(new CustomEvent('dg-acell-tab', { detail: { tab: id } }));
+    return id;
+  }
+  window.dgAcellTab = show;
+  strip.addEventListener('click', function (e) {
+    var tab = e.target.closest('.tw');
+    if (tab) show(tab.dataset.tab);
   });
 })();
 </script>
@@ -2141,7 +2229,7 @@
     listEl.innerHTML = notes.map(function (n) {
       var links = LANGS.map(function (l) {
         if (n['file_' + l[0]]) return '<button type="button" class="paper-btn primary" data-sn="view" data-lang="' + l[0] + '">' + l[1] + '</button>' +
-          '<button type="button" class="paper-btn" data-sn="desk" data-lang="' + l[0] + '" title="Open it on the Desk, beside the Agents">&#9638; Desk</button>';
+          '<button type="button" class="paper-btn" data-sn="session" data-lang="' + l[0] + '" title="Use it as the notes of the session in the top bar">+ Session</button>';
         if (n['url_' + l[0]]) return '<a class="paper-btn primary" href="' + esc(n['url_' + l[0]]) + '" target="_blank" rel="noopener noreferrer">' + l[1] + ' &#8599;</a>';
         return '';
       }).join('');
@@ -2361,14 +2449,14 @@
       root.querySelector('[data-sn="close"]').addEventListener('click', closeViewer);
       var lb = root.querySelector('[data-sn="lang"]');
       if (lb) lb.addEventListener('click', function () {
-        if (host && window.dgDesk) window.dgDesk.openNote(n.id, lb.dataset.lang); else openViewer(n, lb.dataset.lang, host);
+        openViewer(n, lb.dataset.lang, host);
       });
       var fb = root.querySelector('[data-sn="full"]');
       if (fb) fb.addEventListener('click', function () { openViewer(n, lang); });
     }).catch(function (err) { setStatus('Could not open it: ' + errText(err)); });
   }
   window.addEventListener('pagehide', flushState);
-  // For the Desk (assets/acell-desk.js).
+  // For Session prep and the Play desk (assets/acell-shell.js, acell-play.js).
   window.dgSessionNotes = {
     load: function () { return loaded ? Promise.resolve(notes) : (load() || Promise.resolve(notes)); },
     notes: function () { return notes; },
@@ -2392,13 +2480,15 @@
     var card = btn.closest('.sn-card');
     var n = notes.filter(function (x) { return card && x.id === card.dataset.id; })[0];
     if (!n) return;
-    // On the Desk, the list's own buttons open the page docked there.
-    if (btn.dataset.sn === 'view') {
-      if (window.dgDesk && listEl.closest('.dk-hosted')) window.dgDesk.openNote(n.id, btn.dataset.lang);
-      else openViewer(n, btn.dataset.lang);
+    if (btn.dataset.sn === 'view') { openViewer(n, btn.dataset.lang); return; }
+    // The session in the top bar plays from this page (the Play desk opens it).
+    if (btn.dataset.sn === 'session') {
+      var cur = window.dgSessions && window.dgSessions.current();
+      if (!cur) { setStatus('Choose or make a session first (Session prep).'); return; }
+      window.dgSessions.update(cur.id, { html_note: { id: n.id, lang: btn.dataset.lang }, note_path: '' });
+      setStatus('“' + (n.title || 'This page') + '” is now the notes for ' + cur.name + '.');
       return;
     }
-    if (btn.dataset.sn === 'desk' && window.dgDesk) { window.dgDesk.openNote(n.id, btn.dataset.lang); return; }
     if (btn.dataset.sn === 'edit') { openForm(n); return; }
     if (btn.dataset.sn === 'delete') {
       // Two taps, no dialog: window.confirm is dead in an iOS home-screen app.
@@ -2582,7 +2672,7 @@
         snap.forEach(function (doc) { cellsById[doc.id] = doc.data(); });
         cells = Object.keys(cellsById).map(function (id) {
           var c = cellsById[id];
-          return { cell_id: id, name: c.name || '', handler: c.handler || '', member_codes: c.member_codes || [], channel: c.channel || '' };
+          return { cell_id: id, name: c.name || '', handler: c.handler || '', member_codes: c.member_codes || [], channel: c.channel || '', channels: window.dgCellChannels(c) };
         });
         renderCellFilterOptions();
         // A Cell dashboard currently on screen needs its roster
@@ -3007,6 +3097,8 @@
       '</details>';
 
     loadPlayPhoto(code, photoId);
+    // The Players tab's Handler file and Edit sheet (assets/acell-players.js).
+    document.dispatchEvent(new CustomEvent('dg-acell-agent', { detail: { code: code } }));
   }
 
   // Refresh is no longer a real re-fetch -- onSnapshot already keeps
@@ -3018,6 +3110,34 @@
   listEl.innerHTML = '<div class="play-error">Loading…</div>';
   startCharacterListeners();
   startCellsListener();
+  // For the Prep/Play/Debrief views (assets/acell-shell.js and friends):
+  // the same live characters, briefs and Cells this tab already holds.
+  window.dgAcellRoster = {
+    chars: function () { return charsByCode; },
+    briefs: function () { return briefsByCode; },
+    cells: function () { return cells; },
+    state: function (code) { try { return JSON.parse((charsByCode[code] || {}).character_json || 'null'); } catch (e) { return null; } },
+    doc: function (code) { return charsByCode[code] || null; },
+    photoInto: resolveFacePlateInto,
+    selected: function () { return selectedCode; },
+    // Opens an Agent in the Players list (showing everyone if the Cell
+    // filter hides them); fresh: re-read their sheet, not the cached one.
+    open: function (code, fresh) {
+      if (fresh) delete fullStateCache[code];
+      if (!characters.some(function (c) { return c.code === code; })) { cellFilterEl.value = ''; applyFilter(); }
+      var i = -1;
+      characters.forEach(function (c, k) { if (c.code === code) i = k; });
+      var btn = i >= 0 ? listEl.querySelector('.play-agent-btn[data-i="' + i + '"]') : null;
+      if (btn) btn.click();
+      return !!btn;
+    }
+  };
+  var rosterTimer = null;
+  function rosterChanged() { clearTimeout(rosterTimer); rosterTimer = setTimeout(function () { document.dispatchEvent(new CustomEvent('dg-acell-roster')); }, 30); }
+  var _rebuild = rebuildAllCharacters;
+  rebuildAllCharacters = function () { _rebuild(); rosterChanged(); };
+  var _cellOpts = renderCellFilterOptions;
+  renderCellFilterOptions = function () { _cellOpts(); rosterChanged(); };
 })();
 </script>
 
@@ -3109,6 +3229,7 @@
   // ever fires on something actually permanent (e.g. a rules problem),
   // not a slow signal.
   var charsUnsub = null, cellsUnsub = null;
+  function channelsOf_(d) { return window.dgCellChannels(d); }
   function waitForFirebaseApi_(cb, onerror) {
     if (window.__dgEnsureFirebaseApi) { window.__dgEnsureFirebaseApi(cb, onerror); return; }
     setTimeout(function () { waitForFirebaseApi_(cb, onerror); }, 50);
@@ -3139,7 +3260,7 @@
         cells = [];
         snap.forEach(function (doc) {
           var d = doc.data();
-          cells.push({ cell_id: doc.id, name: d.name || '', handler: d.handler || '', member_codes: d.member_codes || [], channel: d.channel || '' });
+          cells.push({ cell_id: doc.id, name: d.name || '', handler: d.handler || '', member_codes: d.member_codes || [], channel: d.channel || '', channels: channelsOf_(d) });
         });
         renderAll();
       }, function (err) {
@@ -3178,7 +3299,8 @@
     }
     groupsEl.innerHTML = cells.map(function (c, i) {
       var members = c.member_codes.map(function (code, mi) {
-        return '<div class="cell-member-row"><span class="cmr-name">' + escapeHtml(agentName(code)) + '</span>' +
+        var nm = agentName(code);
+        return '<div class="cell-member-row"><span class="cmr-ph" aria-hidden="true">' + escapeHtml(String(nm).split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase()) + '</span><span class="cmr-name">' + escapeHtml(nm) + '</span>' +
           '<button type="button" class="paper-btn" data-remove-cell="' + i + '" data-remove-agent="' + escapeHtml(code) + '">Remove</button></div>';
       }).join('') || '<div class="cells-empty-note">No members yet.</div>';
       var available = agents.filter(function (a) { return c.member_codes.indexOf(a.code) === -1; });
@@ -3203,6 +3325,10 @@
         '<div class="cell-card-handler">Handler: ' + (c.handler ? '<b>' + escapeHtml(c.handler) + '</b>' : '<span class="cells-empty-note">not set</span>') + '</div></div>' +
         '<button type="button" class="paper-btn cell-delete-btn" data-delete-cell="' + i + '">Delete Cell</button>' +
         '</div>' +
+        '<div class="cell-chs"><span>Channels</span>' + ['1', '2', '3', '4', '5'].map(function (ch) {
+          var on = (c.channels || []).indexOf(ch) !== -1;
+          return '<button type="button" class="cell-ch' + (on ? ' on' : '') + '" data-cell-ch="' + i + '" data-ch="' + ch + '" aria-pressed="' + on + '">' + ch + '</button>';
+        }).join('') + '<small>up to three: its players can hear different tapes on each</small></div>' +
         '<div class="cell-members">' + members + '</div>' +
         (friendlyLink
           ? '<p class="cell-add-note">Friendly table link (players pick from this Cell\'s Friendlies, rolls land in its feed): ' +
@@ -3216,6 +3342,17 @@
         '</div>';
     }).join('');
 
+    Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-cell-ch]'), function (btn) {
+      btn.addEventListener('click', function () {
+        var c = cells[parseInt(btn.dataset.cellCh, 10)], ch = btn.dataset.ch, list = (c.channels || []).slice(), at = list.indexOf(ch);
+        if (at !== -1) list.splice(at, 1);
+        else { if (list.length >= 3) { statusEl.textContent = 'A Cell has three channels at most: take one off first.'; return; } list.push(ch); }
+        statusEl.textContent = 'Saving…';
+        ensureHandlerSignedIn().then(function () {
+          return window.firebase.firestore().collection('cells').doc(c.cell_id).set({ channels: list, channel: list[0] || '' }, { merge: true });
+        }).then(function () { statusEl.textContent = ''; }, function (err) { statusEl.textContent = 'Could not save the channels: ' + ((err && err.message) || err); });
+      });
+    });
     Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-add-btn]'), function (btn) {
       btn.addEventListener('click', function () {
         var i = parseInt(btn.dataset.addBtn, 10);
@@ -3686,6 +3823,7 @@
           evidenceLoadError = null;
           setFsStatus('Firestore: snapshot received, ' + evidenceItems.length + ' doc(s) @ ' + new Date().toLocaleTimeString(), 'ok');
           if (baseDataReady) { renderFolders(); renderList(); }
+          document.dispatchEvent(new CustomEvent('dg-acell-evidence'));
         }, function (err) {
           console.error('a-cell: evidence listener error', err);
           evidenceLoadError = 'Could not load Evidence (Firestore): ' + (err && err.message || String(err));
@@ -3874,6 +4012,8 @@
 
   function visibleEvidence() {
     return evidenceItems.filter(function (h) {
+      // Prep's filter chips (assets/acell-shell.js): Not released / Not seen yet / Released.
+      if (window.dgEvidenceFilter && !window.dgEvidenceFilter(h)) return false;
       if (!filterCellId) return true;
       if (h.cell_id !== filterCellId) return false;
       if (filterOpId === 'UNFILED') return !h.operation_id;
@@ -3953,6 +4093,7 @@
         '<button type="button" class="paper-btn" data-dup-evidence="' + i + '">Duplicate</button>' +
         '<button type="button" class="paper-btn" data-share-evidence="' + i + '">Share…</button>' +
         '<button type="button" class="paper-btn cell-delete-btn" data-delete-evidence="' + i + '">Delete</button>' +
+        (window.dgEvidenceRowExtra ? window.dgEvidenceRowExtra(h) : '') +
         '</div>' +
         '</div>';
     }).join('');
@@ -4261,11 +4402,21 @@
     if (!cellId || !codes.length) {
       return '<p class="evidence-restrict-note">' + (cellId ? 'This Cell has no members yet.' : 'Pick a Cell to restrict to specific Agents.') + '</p>';
     }
-    return '<div class="evidence-restrict-list">' + codes.map(function (code) {
+    // A drop-down of the Cell's members by name; its summary says who (v3.13.0).
+    var picked = codes.filter(function (c) { return checkedCodes.indexOf(c) !== -1; });
+    return '<details class="evidence-restrict-dd"><summary>Only for: <b>' + escapeHtml(picked.length ? picked.map(agentLabel_).join(', ') : 'everyone in the Cell') + '</b></summary>' +
+      '<div class="evidence-restrict-list">' + codes.map(function (code) {
       return '<label class="evidence-restrict-item" title="' + escapeHtml(code) + '"><input type="checkbox" value="' + escapeHtml(code) + '"' +
         (checkedCodes.indexOf(code) !== -1 ? ' checked' : '') + '> ' + escapeHtml(agentLabel_(code)) + '</label>';
-    }).join('') + '</div><p class="evidence-restrict-note">Leave all unchecked to share with the whole Cell once released.</p>';
+    }).join('') + '</div><p class="evidence-restrict-note">Leave all unchecked to share with the whole Cell once released.</p></details>';
   }
+
+  document.addEventListener('change', function (e) {
+    var dd = e.target.closest && e.target.closest('.evidence-restrict-dd');
+    if (!dd) return;
+    var names = Array.prototype.map.call(dd.querySelectorAll('.evidence-restrict-list input:checked'), function (cb) { return agentLabel_(cb.value); });
+    dd.querySelector('summary b').textContent = names.length ? names.join(', ') : 'everyone in the Cell';
+  });
 
   // Toolbar: wraps the selection, or marks the selected lines.
   function mdApply_(ta, kind) {
@@ -4323,7 +4474,7 @@
     var rows = source ? group.map(function (h) {
       return { id: isEdit ? h.evidence_id : null, cell_id: h.cell_id || '', operation_id: h.operation_id || '',
                restricted_to: (h.restricted_to || []).slice(), lang: langOf_(h) };
-    }) : [{ id: null, cell_id: filterCellId, operation_id: filterOpId === 'UNFILED' ? '' : filterOpId, restricted_to: [], lang: defaultLang_(filterCellId) }];
+    }) : [{ id: null, cell_id: opts.cell_id || filterCellId, operation_id: opts.cell_id ? (opts.operation_id || '') : (filterOpId === 'UNFILED' ? '' : filterOpId), restricted_to: [], lang: defaultLang_(opts.cell_id || filterCellId) }];
     if (opts.share) rows.push({ id: null, cell_id: '', operation_id: '', restricted_to: [], lang: 'en' });
     var curLang = rows[0].lang;
     var released = isEdit ? group.every(function (h) { return h.released; }) : !!(source && source.released);
@@ -4659,6 +4810,29 @@
     if (!foldersOk) fetchAll(true);
     startEvidenceListener();
   });
+  // For Prep and the Play desk (assets/acell-shell.js, acell-play.js).
+  window.dgAcellEvidence = {
+    items: function () { return evidenceItems; },
+    find: function (id) { return evidenceItems.filter(function (h) { return h.evidence_id === id; })[0] || null; },
+    cellName: cellName, opName: opName,
+    operations: function () { return operations; },
+    start: startEvidenceListener,
+    rerender: function () { if (baseDataReady) renderList(); },
+    // opts: { cell_id, operation_id } -- where the new item goes (the phone's
+    // quick Add evidence: the session's Cell and operation).
+    newItem: function (opts) { showForm(null, opts); },
+    release: function (id, on) {
+      var h = evidenceItems.filter(function (x) { return x.evidence_id === id; })[0];
+      if (!h) return Promise.reject(new Error('That evidence is gone.'));
+      return window.__dgGetHandlerIdToken().then(function (idToken) {
+        return window.dgAcellApi.post({
+          action: 'update_evidence', evidence_id: h.evidence_id, title: h.title, body: h.body,
+          photo: h.photo || '', cell_id: h.cell_id || '', operation_id: h.operation_id || '',
+          released: !!on, restricted_to: JSON.stringify(h.restricted_to || []), id_token: idToken
+        });
+      }).then(function () { h.released = !!on; renderList(); document.dispatchEvent(new CustomEvent('dg-acell-evidence')); });
+    }
+  };
 })();
 </script>
 
@@ -4703,6 +4877,7 @@
   var deletedListEl = document.getElementById('admin-deleted-list');
 
   var rows = []; // live rows: Characters-backed + Agent-File-only, merged
+  var sheetCells = []; // the Cells, for Move to Cell
   var deletedAgents = [];
   // Bulk delete selection -- code -> true. A plain object, not a Set:
   // it's only ever read/written by code (no reactive framework here),
@@ -4792,6 +4967,7 @@
         wrap.innerHTML = '<div class="sheet-error">Could not load the roster. (The A-Cell backend addition may not be deployed yet.)</div>';
         return;
       }
+      sheetCells = cellGroups;
       // Cell/Handler columns degrade gracefully (show a dash) if the
       // Cells addition specifically isn't deployed yet -- the rest of
       // the sheet is still useful without it.
@@ -4917,31 +5093,162 @@
     }).catch(function () { /* dates stay '—' */ }).then(function () { createdLoading = false; });
   }
 
-  function renderSheet() {
+  /* The Sheet's view (v3.13.0): Table or Cards, which columns show and in
+     what order, and filters (name, Handler, Cell, online) -- kept on this
+     device. Select picks Agents for Move to Cell or Delete (the bulk
+     delete below: password, then Recently Deleted for 24 hours). */
+  var SHEET_PREF = 'dg_acell_sheet_view';
+  var COLS = {
+    cell: ['Cell', function (r) { return cell(r.cellNames); }],
+    handler: ['Handler', function (r) { return cell(r.handlers); }],
+    name: ['Agent Name', function (r) {
+      var kia = typeof r.hp === 'number' && r.hp <= 0, insane = typeof r.san === 'number' && r.san <= 0;
+      return (kia || insane ? '<span class="kia-name">' + cell(r.name) + '</span>' : cell(r.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + (insane ? ' <span class="sheet-kia-badge">INSANE</span>' : '');
+    }],
+    code: ['Agent Code', function (r) { return '<span class="sheet-code">' + escapeHtml(r.code) + '</span>'; }],
+    player: ['Player Name', function (r) { return playerNameCell(r.playerName, r.code); }],
+    created: ['Created', function (r) { return createdCell(r.code); }],
+    updated: ['Last Updated', function (r) { return updatedCell(r); }],
+    online: ['Online', function (r) { return r.isBriefsOnly ? '<span class="sheet-empty-cell" title="No character sheet yet">&mdash;</span>' : onlineCell(r.updatedAt); }]
+  };
+  var COL_ORDER = ['cell', 'handler', 'name', 'code', 'player', 'created', 'updated', 'online'];
+  function sheetPrefs() {
+    var p = {};
+    try { p = JSON.parse(localStorage.getItem(SHEET_PREF) || '{}') || {}; } catch (e) { p = {}; }
+    var order = (p.order || []).filter(function (k) { return COLS[k]; });
+    COL_ORDER.forEach(function (k) { if (order.indexOf(k) < 0) order.push(k); });
+    return { view: p.view || (window.matchMedia('(max-width: 760px)').matches ? 'cards' : 'table'), order: order, hide: p.hide || {}, f: p.f || { q: '', handler: '', cell: '', online: '' }, select: !!p.select };
+  }
+  function saveSheetPrefs(p) { try { localStorage.setItem(SHEET_PREF, JSON.stringify(p)); } catch (e) { /* private mode */ } }
+  function shownRows(p) {
+    var q = (p.f.q || '').toLowerCase();
+    return rows.filter(function (r) {
+      if (q && ((r.name || '') + ' ' + r.code + ' ' + (r.playerName || '')).toLowerCase().indexOf(q) === -1) return false;
+      if (p.f.handler && (r.handlers || '').split(', ').indexOf(p.f.handler) === -1) return false;
+      if (p.f.cell === '-') { if (r.cellNames) return false; } else if (p.f.cell && (r.cellNames || '').split(', ').indexOf(p.f.cell) === -1) return false;
+      if (p.f.online === 'online' && !(Date.now() - Date.parse(r.updatedAt || '') < ONLINE_MS)) return false;
+      if (p.f.online === 'sheet' && r.isBriefsOnly) return false;
+      return true;
+    });
+  }
+  function filterCount(p) { return ['q', 'handler', 'cell', 'online'].filter(function (k) { return p.f[k]; }).length; }
+  var sheetBar = null;
+  function drawSheetBar(p) {
+    if (!sheetBar) {
+      sheetBar = document.createElement('div');
+      sheetBar.className = 'sheet-viewbar';
+      wrap.parentNode.insertBefore(sheetBar, wrap);
+      sheetBar.addEventListener('click', onSheetBar);
+      sheetBar.addEventListener('input', function (e) { if (e.target.hasAttribute('data-sq')) { var p2 = sheetPrefs(); p2.f.q = e.target.value; saveSheetPrefs(p2); renderSheet(true); } });
+      sheetBar.addEventListener('change', onSheetBarChange);
+    }
+    var n = Object.keys(selectedCodes).length, handlers = {}, cellsN = {};
+    rows.forEach(function (r) { (r.handlers || '').split(', ').filter(Boolean).forEach(function (h) { handlers[h] = 1; }); (r.cellNames || '').split(', ').filter(Boolean).forEach(function (c) { cellsN[c] = 1; }); });
+    function opt(v, label, cur) { return '<option value="' + escapeHtml(v) + '"' + (v === cur ? ' selected' : '') + '>' + escapeHtml(label) + '</option>'; }
+    var q = sheetBar.querySelector('[data-sq]'), keepQ = q && document.activeElement === q;
+    sheetBar.innerHTML = '<div class="sv-row"><span class="sv-seg">' + ['table', 'cards'].map(function (v) { return '<button type="button" data-sv="' + v + '" class="' + (p.view === v ? 'on' : '') + '">' + (v === 'table' ? 'Table' : 'Cards') + '</button>'; }).join('') + '</span>' +
+      '<button type="button" class="paper-btn" data-sa="filter">Filter' + (filterCount(p) ? ' · ' + filterCount(p) : '') + '</button>' +
+      (p.view === 'table' ? '<button type="button" class="paper-btn" data-sa="cols">Columns · ' + p.order.filter(function (k) { return !p.hide[k]; }).length + '</button>' : '') +
+      '<button type="button" class="paper-btn' + (p.select ? ' primary' : '') + '" data-sa="select">' + (p.select ? 'Done selecting' : 'Select') + '</button></div>' +
+      (p.panel === 'filter' || sheetBar._open === 'filter' ? '<div class="sv-panel"><input type="search" data-sq placeholder="Name, code or player" value="' + escapeHtml(p.f.q || '') + '">' +
+        '<select data-sf="handler">' + opt('', 'Handler: any', p.f.handler) + Object.keys(handlers).sort().map(function (h) { return opt(h, 'Handler: ' + h, p.f.handler); }).join('') + '</select>' +
+        '<select data-sf="cell">' + opt('', 'Cell: any', p.f.cell) + opt('-', 'No Cell', p.f.cell) + Object.keys(cellsN).sort().map(function (c) { return opt(c, 'Cell: ' + c, p.f.cell); }).join('') + '</select>' +
+        '<select data-sf="online">' + opt('', 'Online or not', p.f.online) + opt('online', 'Online now', p.f.online) + opt('sheet', 'Has a sheet', p.f.online) + '</select>' +
+        '<button type="button" class="paper-btn" data-sa="clear">Clear</button></div>' : '') +
+      (sheetBar._open === 'cols' ? '<div class="sv-panel sv-cols"><p class="sv-hint">Tick the columns to show; drag a row by its handle to move the column.</p>' + p.order.map(function (k) {
+        return '<div class="sv-col" data-col="' + k + '"><span class="sv-handle" aria-label="Drag">≡</span><label><input type="checkbox" data-sc="' + k + '"' + (p.hide[k] ? '' : ' checked') + '> ' + escapeHtml(COLS[k][0]) + '</label></div>';
+      }).join('') + '</div>' : '') +
+      (n ? '<div class="sv-batch"><b>' + n + ' selected</b><select data-move><option value="">Move to Cell…</option>' + (sheetCells || []).map(function (c) { return '<option value="' + escapeHtml(c.cell_id) + '">' + escapeHtml(c.name || c.cell_id) + '</option>'; }).join('') + '<option value="-">Out of every Cell</option></select>' +
+        '<button type="button" class="paper-btn admin-delete-btn" data-sa="delete">Delete ' + n + '</button><button type="button" class="paper-btn" data-sa="none">Clear</button></div>' : '');
+    if (keepQ) { var q2 = sheetBar.querySelector('[data-sq]'); if (q2) { q2.focus(); q2.setSelectionRange(q2.value.length, q2.value.length); } }
+    wireColDrag();
+  }
+  function wireColDrag() {
+    var box = sheetBar.querySelector('.sv-cols');
+    if (!box) return;
+    var drag = null;
+    box.addEventListener('pointerdown', function (e) {
+      var h = e.target.closest('.sv-handle');
+      if (!h) return;
+      e.preventDefault(); drag = h.closest('.sv-col'); drag.classList.add('lift');
+      try { h.setPointerCapture(e.pointerId); } catch (x) { /* old Safari */ }
+    });
+    box.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      Array.prototype.forEach.call(box.querySelectorAll('.sv-col'), function (r) {
+        if (r === drag) return;
+        var b = r.getBoundingClientRect();
+        if (e.clientY > b.top && e.clientY < b.bottom) box.insertBefore(drag, e.clientY < b.top + b.height / 2 ? r : r.nextSibling);
+      });
+    });
+    function end() {
+      if (!drag) return;
+      drag.classList.remove('lift'); drag = null;
+      var p = sheetPrefs();
+      p.order = Array.prototype.map.call(box.querySelectorAll('.sv-col'), function (r) { return r.getAttribute('data-col'); });
+      saveSheetPrefs(p); renderSheet(true);
+    }
+    box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+  }
+  function onSheetBar(e) {
+    var p = sheetPrefs(), v = e.target.closest('[data-sv]'), a = e.target.closest('[data-sa]');
+    if (v) { p.view = v.getAttribute('data-sv'); saveSheetPrefs(p); renderSheet(); return; }
+    if (!a) return;
+    var k = a.getAttribute('data-sa');
+    if (k === 'filter' || k === 'cols') { sheetBar._open = sheetBar._open === k ? '' : k; drawSheetBar(p); return; }
+    if (k === 'select') { p.select = !p.select; if (!p.select) selectedCodes = {}; saveSheetPrefs(p); renderSheet(); return; }
+    if (k === 'clear') { p.f = { q: '', handler: '', cell: '', online: '' }; saveSheetPrefs(p); renderSheet(); return; }
+    if (k === 'none') { selectedCodes = {}; renderSheet(); return; }
+    if (k === 'delete') { if (!bulkConfirmSlot.childNodes.length) renderBulkConfirm(); bulkConfirmSlot.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  }
+  function onSheetBarChange(e) {
+    var p = sheetPrefs(), t = e.target;
+    if (t.hasAttribute('data-sf')) { p.f[t.getAttribute('data-sf')] = t.value; saveSheetPrefs(p); renderSheet(); return; }
+    if (t.hasAttribute('data-sc')) { if (t.checked) delete p.hide[t.getAttribute('data-sc')]; else p.hide[t.getAttribute('data-sc')] = true; saveSheetPrefs(p); renderSheet(true); return; }
+    if (t.hasAttribute('data-move') && t.value) moveToCell(Object.keys(selectedCodes), t.value === '-' ? '' : t.value);
+  }
+  // Out of every Cell they're in, into this one ('' = none).
+  function moveToCell(codes, cellId) {
+    if (!codes.length) return;
+    statusEl.textContent = 'Moving ' + codes.length + ' Agent' + (codes.length === 1 ? '' : 's') + '…';
+    ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore(), batch = db.batch();
+      (sheetCells || []).forEach(function (c) {
+        var had = c.member_codes || [], keep = had.filter(function (x) { return codes.indexOf(x) === -1; });
+        if (c.cell_id === cellId) keep = keep.concat(codes);
+        if (keep.length !== had.length || c.cell_id === cellId) batch.set(db.collection('cells').doc(c.cell_id), { member_codes: keep }, { merge: true });
+      });
+      return batch.commit();
+    }).then(function () { statusEl.textContent = 'Moved.'; selectedCodes = {}; loadSheet(true); }, function (err) { statusEl.textContent = 'Could not move them: ' + ((err && err.message) || err); });
+  }
+  function renderSheet(keepBar) {
+    var p = sheetPrefs();
+    wrap.classList.toggle('sheet-cards-on', p.view === 'cards');
     if (!rows.length) {
       wrap.innerHTML = '<div class="sheet-error">No Agents on file yet.</div>';
+      drawSheetBar(p);
       return;
     }
-    var body = rows.map(function (r, i) {
-      var kia = typeof r.hp === 'number' && r.hp <= 0, insane = typeof r.san === 'number' && r.san <= 0;
-      return '<tr>' +
-        '<td><input type="checkbox" class="sheet-select-cb" data-code="' + escapeHtml(r.code) + '"' + (selectedCodes[r.code] ? ' checked' : '') + '></td>' +
-        '<td>' + cell(r.cellNames) + '</td>' +
-        '<td>' + cell(r.handlers) + '</td>' +
-        '<td>' + (kia || insane ? '<span class="kia-name">' + cell(r.name) + '</span>' : cell(r.name)) + (kia ? ' <span class="sheet-kia-badge">KIA</span>' : '') + (insane ? ' <span class="sheet-kia-badge">INSANE</span>' : '') + '</td>' +
-        '<td class="sheet-code">' + escapeHtml(r.code) + '</td>' +
-        '<td>' + playerNameCell(r.playerName, r.code) + '</td>' +
-        '<td>' + createdCell(r.code) + '</td>' +
-        '<td>' + updatedCell(r) + '</td>' +
-        '<td>' + (r.isBriefsOnly ? '<span class="sheet-empty-cell" title="No character sheet yet">&mdash;</span>' : onlineCell(r.updatedAt)) + '</td>' +
-        '<td><button type="button" class="paper-btn sheet-delete-btn" data-i="' + i + '">Delete</button>' +
-        '<div class="admin-confirm-slot" id="sheet-confirm-slot-' + i + '"></div></td>' +
-        '</tr>';
-    }).join('');
-    wrap.innerHTML =
-      '<table class="sheet-table"><thead><tr>' +
-      '<th></th><th>Cell</th><th>Handler</th><th>Agent Name</th><th>Agent Code</th><th>Player Name</th><th>Created</th><th>Last Updated</th><th>Online</th><th></th>' +
-      '</tr></thead><tbody>' + body + '</tbody></table>';
+    var list = shownRows(p), cols = p.order.filter(function (k) { return !p.hide[k]; }), sel = p.select || p.view === 'table';
+    if (p.view === 'cards') {
+      wrap.innerHTML = list.length ? '<div class="sheet-cards">' + list.map(function (r) {
+        var i = rows.indexOf(r);
+        return '<div class="sheet-card' + (selectedCodes[r.code] ? ' sel' : '') + '">' + (p.select ? '<input type="checkbox" class="sheet-select-cb" data-code="' + escapeHtml(r.code) + '"' + (selectedCodes[r.code] ? ' checked' : '') + '>' : '') +
+          '<div class="sheet-card-b"><div class="sheet-card-n">' + COLS.name[1](r) + '</div><div class="sheet-card-m">' + escapeHtml(r.code) + ' · ' + playerNameCell(r.playerName, r.code) + '</div>' +
+          '<div class="sheet-card-m">' + (r.cellNames ? escapeHtml(r.cellNames) : '<span class="sheet-empty-cell">no Cell</span>') + (r.handlers ? ' · ' + escapeHtml(r.handlers) : '') + ' · ' + COLS.online[1](r) + '</div></div>' +
+          '<button type="button" class="paper-btn sheet-delete-btn" data-i="' + i + '">Delete</button><div class="admin-confirm-slot" id="sheet-confirm-slot-' + i + '"></div></div>';
+      }).join('') + '</div>' : '<div class="sheet-error">No Agents match the filter.</div>';
+    } else {
+      var body = list.map(function (r) {
+        var i = rows.indexOf(r);
+        return '<tr' + (selectedCodes[r.code] ? ' class="sel"' : '') + '>' + (sel ? '<td><input type="checkbox" class="sheet-select-cb" data-code="' + escapeHtml(r.code) + '"' + (selectedCodes[r.code] ? ' checked' : '') + '></td>' : '') +
+          cols.map(function (k) { return '<td' + (k === 'code' ? ' class="sheet-code"' : '') + '>' + COLS[k][1](r) + '</td>'; }).join('') +
+          '<td><button type="button" class="paper-btn sheet-delete-btn" data-i="' + i + '">Delete</button>' +
+          '<div class="admin-confirm-slot" id="sheet-confirm-slot-' + i + '"></div></td></tr>';
+      }).join('');
+      wrap.innerHTML = list.length ? '<table class="sheet-table"><thead><tr>' + (sel ? '<th></th>' : '') + cols.map(function (k) { return '<th>' + escapeHtml(COLS[k][0]) + '</th>'; }).join('') + '<th></th></tr></thead><tbody>' + body + '</tbody></table>'
+        : '<div class="sheet-error">No Agents match the filter.</div>';
+    }
     Array.prototype.forEach.call(wrap.querySelectorAll('.sheet-pn-display'), function (span) {
       span.addEventListener('click', function () { startEditPlayerName(span); });
     });
@@ -4953,9 +5260,13 @@
         if (cb.checked) selectedCodes[cb.dataset.code] = true;
         else delete selectedCodes[cb.dataset.code];
         updateBulkUI();
+        var row = cb.closest('tr, .sheet-card');
+        if (row) row.classList.toggle('sel', cb.checked);
+        drawSheetBar(sheetPrefs());
       });
     });
     updateBulkUI();
+    if (!keepBar || !sheetBar) drawSheetBar(p); else drawSheetBar(p);
   }
 
   // ── Bulk delete ──────────────────────────────────────────────────
@@ -5308,6 +5619,9 @@
   var mixTrackSlider = document.getElementById('music-mix-track');
   var mixTrackValueEl = document.getElementById('music-mix-track-value');
   var mixAmbientSlider = document.getElementById('music-mix-ambient');
+  // Effects (stingers) have their own level since 2026-10-30; a channel
+  // that never set one follows the loops' level, as effects always did.
+  var mixEffects = null;
   var mixAmbientValueEl = document.getElementById('music-mix-ambient-value');
   var addPlaylistBtn = document.getElementById('music-add-playlist-btn');
   var statusEl = document.getElementById('music-status');
@@ -5432,6 +5746,7 @@
   // redraw (e.g. after a channel switch) without needing a fresh
   // round-trip just to know which buttons should already show "active".
   var activeAmbientLayers = [];
+  var deckTape_ = null; // radio/{ch}.tape: the tape in this channel's deck (assets/acell-tapes.js)
   var activeStingers = [];
   // rowKey ('ambient:<id>' or 'stinger:<fired_at>') -> row bookkeeping
   // object built by buildActiveSoundRow_() -- see renderActiveSounds_().
@@ -5786,6 +6101,9 @@
   // for real playback progress and fight it with the Handler's own
   // slider drag.
   var suppressPreviewEvents = false;
+  // A broadcast that ran past the track is parked at its end, not played:
+  // the 'ended' that seek can fire is not the track finishing.
+  var previewParkedAtEnd = false;
   // True only while the Handler's thumb is on the preview scrubber --
   // 'timeupdate' must not overwrite the slider's value out from under
   // an active drag, same reasoning as isSeekDragging for the fallback
@@ -5845,7 +6163,7 @@
           // very end -- so .play() below immediately hit 'ended' and
           // visibly "did nothing" on Pause/Resume.
           var elapsed = liveElapsedSeconds_();
-          var duration = previewAudio.duration;
+          var duration = previewAudio.duration, parkAtEnd = false;
           var overran = isFinite(duration) && duration > 0 && elapsed >= duration;
           var playThisTime = !current.paused;
           if (overran) {
@@ -5869,8 +6187,10 @@
               // correctly, just never (re-)plays from there.
               elapsed = duration;
               playThisTime = false;
+              parkAtEnd = true;
             }
           }
+          previewParkedAtEnd = parkAtEnd;
           try { previewAudio.currentTime = elapsed; } catch (e) { /* not seekable yet */ }
           previewSlider.value = elapsed;
           previewElapsedEl.textContent = formatSeekTime_(elapsed);
@@ -6319,38 +6639,43 @@
     }).join('');
     Array.prototype.forEach.call(stingerGroupsEl.querySelectorAll('[data-stinger]'), function (btn) {
       btn.addEventListener('click', function () {
-        var stingerId = btn.dataset.stinger;
-        var label = btn.textContent;
-        var ch = currentChannel;
         btn.classList.add('firing');
         setTimeout(function () { btn.classList.remove('firing'); }, 200);
-        soundboardStatusEl.textContent = 'Firing ' + label + ' on CH ' + ch + '…';
-        ensureHandlerSignedIn().then(function () {
-          var db = window.firebase.firestore();
-          var docRef = radioDocRef_(ch);
-          var now = Date.now();
-          return db.runTransaction(function (tx) {
-            return tx.get(docRef).then(function (snap) {
-              var data = snap.exists ? snap.data() : {};
-              var stingers = Array.isArray(data.stingers) ? data.stingers : [];
-              stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
-              var looping = stingers.filter(function (s) { return s.loop; });
-              var oneShot = stingers.filter(function (s) { return !s.loop; });
-              if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
-              stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
-              tx.set(docRef, { stingers: stingers, updated_at: now }, { merge: true });
-              return stingers;
-            });
-          });
-        }).then(function (stingers) {
-          activeStingers = stingers;
-          renderActiveSounds_();
-          soundboardStatusEl.textContent = label + ' fired on CH ' + ch + '.';
-        }).catch(function (err) {
-          console.error('trigger_stinger (direct Firestore) failed', err);
-          soundboardStatusEl.textContent = 'Could not fire ' + label + ' — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
+        fireStinger_(btn.dataset.stinger, btn.textContent);
+      });
+    });
+  }
+  // Shared by the soundboard's buttons and the Play desk's pads (dgAcellMusic).
+  // at: when it was fired (the tap), so a device playing it at once and
+  // the broadcast agree on which fire this is (2026-10-30).
+  function fireStinger_(stingerId, label, at) {
+    var ch = currentChannel;
+    var now = at || Date.now();
+    label = label || stingerLabel_(stingerId);
+    soundboardStatusEl.textContent = 'Firing ' + label + ' on CH ' + ch + '…';
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore();
+      var docRef = radioDocRef_(ch);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var stingers = Array.isArray(data.stingers) ? data.stingers : [];
+          stingers.push({ id: stingerId, fired_at: now, started_at: now, paused: false, paused_at: 0, loop: false, stopped: false });
+          var looping = stingers.filter(function (s) { return s.loop; });
+          var oneShot = stingers.filter(function (s) { return !s.loop; });
+          if (oneShot.length > STINGER_HISTORY_LENGTH) oneShot = oneShot.slice(-STINGER_HISTORY_LENGTH);
+          stingers = looping.concat(oneShot).sort(function (a, b) { return a.fired_at - b.fired_at; });
+          tx.set(docRef, { stingers: stingers, updated_at: now }, { merge: true });
+          return stingers;
         });
       });
+    }).then(function (stingers) {
+      activeStingers = stingers;
+      renderActiveSounds_();
+      soundboardStatusEl.textContent = label + ' fired on CH ' + ch + '.';
+    }).catch(function (err) {
+      console.error('trigger_stinger (direct Firestore) failed', err);
+      soundboardStatusEl.textContent = 'Could not fire ' + label + ' — ' + (err && err.message ? err.message : 'not signed in as Handler') + '.';
     });
   }
 
@@ -6402,6 +6727,7 @@
         // doc, not whichever channel was last dialed.
         activeAmbientLayers = (Array.isArray(data.ambient_layers) ? data.ambient_layers : []).map(normalizeAmbientLayer_);
         activeStingers = Array.isArray(data.stingers) ? data.stingers : [];
+        deckTape_ = data.tape && data.tape.id ? data.tape : null;
         // Broadcast-wide mix levels are per-channel state too, same as
         // ambient_layers/stingers above.
         var trackVol = (data.track_volume != null) ? data.track_volume : 100;
@@ -6410,9 +6736,11 @@
         mixTrackValueEl.textContent = trackVol;
         mixAmbientSlider.value = ambientVol;
         mixAmbientValueEl.textContent = ambientVol;
+        mixEffects = data.effects_volume != null ? data.effects_volume : null;
         renderAmbientGrid();
         renderActiveSounds_();
         syncTransportUI_();
+        musicChanged_();
       }, function (err) {
         statusEl.textContent = 'Could not reach Firestore — ' + (err && err.message ? err.message : 'listener error') + '.';
       });
@@ -6563,20 +6891,49 @@
   var AUTO_ADVANCE_KEY = 'dg_acell_autoadvance';
   var autoAdvanceInput = document.getElementById('music-autoadvance-input');
   var autoAdvanceEnabled = false;
-  try { autoAdvanceEnabled = localStorage.getItem(AUTO_ADVANCE_KEY) === '1'; } catch (e) { /* best effort */ }
+  // On unless the Handler switched it off on this device (v3.12.0).
+  try { autoAdvanceEnabled = localStorage.getItem(AUTO_ADVANCE_KEY) !== '0'; } catch (e) { autoAdvanceEnabled = true; }
   autoAdvanceInput.checked = autoAdvanceEnabled;
 
-  function maybeAutoAdvance_() {
-    if (!autoAdvanceEnabled || !current.track_url || current.loop) return;
+  // Reported 2026-10-30: a tape of two tracks flipped between them. An
+  // 'ended' is now only believed when it is the live track that ended,
+  // after it really ran (not a seek parked at the end, not seconds after
+  // it started), and the step itself is a transaction from that exact
+  // broadcast (track and start): a second device, or a stale event, that
+  // tries the same step after the first one finds the doc already moved
+  // on and does nothing, instead of stepping again (back to track 1).
+  function maybeAutoAdvance_(fromAudio) {
+    if (!autoAdvanceEnabled || !current.track_url || current.loop || current.paused) return;
+    if (fromAudio === true) {
+      if (suppressPreviewEvents || previewParkedAtEnd || previewLoadedUrl !== current.track_url) return;
+      var dur = previewAudio.duration, ran = liveElapsedSeconds_();
+      if (isFinite(dur) && dur > 0 && ran < Math.min(dur - 5, dur * 0.8)) return;
+    }
+    if (current.started_at && Date.now() - current.started_at < 2500) return;
     var idx = -1;
     for (var i = 0; i < playlist.length; i++) {
       if (playlist[i].url === current.track_url) { idx = i; break; }
     }
-    if (idx === -1 || playlist.length < 2) return;
+    // The last track goes round to the first (a one-track list replays it).
+    if (idx === -1) return;
     var next = playlist[(idx + 1) % playlist.length];
-    setNowPlaying(next.url, next.title || '', next.kind || '', false);
+    var ch = currentChannel, fromUrl = current.track_url, fromStart = current.started_at || 0;
+    ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore(), ref = radioDocRef_(ch);
+      return db.runTransaction(function (tx) {
+        return tx.get(ref).then(function (snap) {
+          var d = snap.exists ? snap.data() : {};
+          if (d.track_url !== fromUrl || (d.started_at || 0) !== fromStart || d.paused) return false;
+          var now = Date.now();
+          tx.set(ref, { channel: ch, track_url: next.url, track_title: next.title || '', track_kind: next.kind || '', started_at: now, updated_at: now, paused: false, paused_at: '', loop: false }, { merge: true });
+          return true;
+        });
+      });
+    }).then(function (moved) {
+      if (moved) statusEl.textContent = 'Broadcasting to CH ' + ch + ': ' + (next.title || next.url);
+    }).catch(function () { /* the next 'ended' (or the Handler) moves it on */ });
   }
-  previewAudio.addEventListener('ended', maybeAutoAdvance_);
+  previewAudio.addEventListener('ended', function () { maybeAutoAdvance_(true); });
 
   // Same on-demand-load, chain-safe idiom assets/table-radio.js's own
   // ensureYouTubeApi()/ensureSoundCloudApi() use -- wrapping (not
@@ -7097,12 +7454,14 @@
             track_id: doc.id,
             title: d.title || '',
             url: isStorageTrack ? canonicalTrackUrl_(doc.id) : (d.url || ''),
-            uploaded_at: d.uploaded_at || ''
+            uploaded_at: d.uploaded_at || '',
+            duration: d.duration || 0
           });
         });
         tracks.sort(function (a, b) { return (a.uploaded_at || 0) - (b.uploaded_at || 0); });
         renderTrackLibrary();
         syncOrphanedStorageTracks_(tracks.map(function (t) { return t.track_id; }));
+        musicChanged_();
       }, function (err) {
         trackLibListEl.innerHTML = '<div class="rdo-track-empty">Could not load the Track Library. (' + escapeHtml((err && err.message) || String(err)) + ')</div>';
       });
@@ -7112,7 +7471,8 @@
   }
 
   function deleteTrack(t) {
-    if (!confirm('Delete "' + t.title + '"? This cannot be undone.')) return;
+    // The tape shelf asks first itself (window.confirm is dead in an installed iOS app).
+    if (!window.__acNoConfirm && !confirm('Delete "' + t.title + '"? This cannot be undone.')) return;
     trackLibStatus.textContent = 'Deleting…';
     // A Storage-hosted track (Phase 4+ upload) needs its own object
     // deleted from Storage too -- Firebase Storage download URLs are
@@ -7206,6 +7566,130 @@
   fetchCells();
   trackLibListEl.innerHTML = '<div class="rdo-track-empty">Loading…</div>';
   startTracksListener();
+
+  // For the Play desk's tape deck and pads and the Music tab's shelf
+  // (assets/acell-play.js, acell-shell.js): the same broadcast engine.
+  function musicChanged_() { document.dispatchEvent(new CustomEvent('dg-acell-music')); }
+  var measuring_ = {};
+  function defaultLoop_(url) { return !(autoAdvanceEnabled && playlist.some(function (p) { return p.url === url; })); }
+  function stopAllSounds_() {
+    var ch = currentChannel;
+    return ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore(), docRef = radioDocRef_(ch);
+      return db.runTransaction(function (tx) {
+        return tx.get(docRef).then(function (snap) {
+          var data = snap.exists ? snap.data() : {};
+          var stops = (Array.isArray(data.stinger_stops) ? data.stinger_stops : [])
+            .concat((data.stingers || []).map(function (x) { return x.fired_at; })).slice(-10);
+          tx.set(docRef, { ambient_layers: [], stingers: [], stinger_stops: stops, updated_at: Date.now() }, { merge: true });
+        });
+      });
+    }).then(function () { activeAmbientLayers = []; activeStingers = []; renderAmbientGrid(); renderActiveSounds_(); musicChanged_(); });
+  }
+  window.dgAcellMusic = {
+    channel: function () { return currentChannel; },
+    setChannel: function (ch) { if (ch && ch !== currentChannel) { dialApi.set(ch); musicChanged_(); } },
+    state: function () { return { current: Object.assign({}, current), ambient: activeAmbientLayers.slice(), stingers: activeStingers.slice(), tape: deckTape_ }; },
+    // A tape into this channel's deck: it's named on radio/{ch}, and its
+    // tracks become the cue list. null takes it out (the cue list stays).
+    setTape: function (tape, cues) {
+      var ch = currentChannel;
+      deckTape_ = tape;
+      if (cues) { playlist = cues.slice(); renderPlaylist(); savePlaylist(); }
+      musicChanged_();
+      return ensureHandlerSignedIn().then(function () {
+        return radioDocRef_(ch).set({ tape: tape || null, updated_at: Date.now() }, { merge: true });
+      });
+    },
+    // A library track's length, measured once and kept on tracks/{id}.duration.
+    duration_of: function (t) { return t && t.duration ? t.duration : 0; },
+    measure: function (t) {
+      if (!t || t.duration || !t.url || measuring_[t.track_id]) return;
+      measuring_[t.track_id] = true;
+      var a = new Audio(); a.preload = 'metadata';
+      a.addEventListener('loadedmetadata', function () {
+        var d = Math.round(a.duration || 0);
+        a.src = '';
+        if (!d || !isFinite(d)) return;
+        t.duration = d; musicChanged_();
+        ensureHandlerSignedIn().then(function () { return window.firebase.firestore().collection('tracks').doc(t.track_id).update({ duration: d }); }).catch(function () {});
+      });
+      a.src = t.url;
+    },
+    tracks: function () { return tracks.slice(); },
+    ambientList: function () { return AMBIENT_LAYERS.slice(); },
+    stingerGroups: function () { return STINGER_GROUPS; },
+    label: function (kind, id) { return kind === 'ambient' ? ambientLabel_(id) : stingerLabel_(id); },
+    // A track loops unless it's on the cue list with auto-advance on (then
+    // the list carries on, round to the first) -- or the caller says.
+    play: function (t) { setNowPlaying(t.url, t.title || '', t.kind || '', t.loop === undefined ? defaultLoop_(t.url) : !!t.loop); },
+    togglePause: function () { if (current.track_url) sendTransportAction_(current.paused ? 'resume_now_playing' : 'pause_now_playing'); },
+    restart: function () { if (current.track_url) setNowPlaying(current.track_url, current.track_title, current.track_kind, current.loop); },
+    stop: function () { setNowPlaying('', ''); },
+    toggleLoop: function () { if (current.track_url) sendLoopToggle_(); },
+    fire: function (id, at) { return fireStinger_(id, null, at); },
+    setAmbient: function (id, on) {
+      return setAmbientLayerActive_(currentChannel, id, on).then(function (layers) { activeAmbientLayers = layers; renderAmbientGrid(); renderActiveSounds_(); musicChanged_(); });
+    },
+    stopAll: stopAllSounds_,
+    // The Music tab's control center (assets/acell-console.js) -- every
+    // control the broadcast desk below has, on the same engine.
+    channels: function () { return CHANNELS.slice(); },
+    status: function () { return statusEl.textContent; },
+    elapsed: function () { return current.track_url ? liveElapsedSeconds_() : 0; },
+    // This device's own preview, heard (2026-10-30, Hear it here without the
+    // Hub's radio): only the track, raised from a tap so iOS lets it play.
+    previewHear: function (on) {
+      volumeSlider.value = on ? 80 : 0;
+      volumeSlider.dispatchEvent(new Event('input'));
+      if (on && current.track_url && !current.paused) { var p = previewAudio.play(); if (p && p.catch) p.catch(function () { /* needs a tap */ }); }
+    },
+    duration: function () {
+      var a = document.getElementById('music-preview-audio');
+      var d = a && isFinite(a.duration) ? a.duration : 0;
+      return d || Number(seekSlider.max) || 0;
+    },
+    seek: function (sec) { sendSeek_(Math.max(0, Math.round(sec * 1000))); },
+    mix: function () { return { track: Number(mixTrackSlider.value), ambient: Number(mixAmbientSlider.value), effects: mixEffects != null ? Number(mixEffects) : Number(mixAmbientSlider.value) }; },
+    setMix: function (which, v) {
+      if (which === 'effects') { mixEffects = Math.max(0, Math.min(100, Math.round(Number(v)) || 0)); sendMixVolume_('effects_volume', mixEffects); return; }
+      var sl = which === 'ambient' ? mixAmbientSlider : mixTrackSlider;
+      sl.value = v; sl.dispatchEvent(new Event('input'));
+    },
+    playLink: function (url, title, loop) { if (url) setNowPlaying(url, title || '', '', loop === undefined ? defaultLoop_(url) : !!loop); },
+    cueList: function () { return playlist.slice(); },
+    cue: function (t) { playlist.push({ url: t.url, title: t.title || '', kind: t.kind || '' }); renderPlaylist(); savePlaylist(); musicChanged_(); },
+    uncue: function (i) { playlist.splice(i, 1); renderPlaylist(); savePlaylist(); musicChanged_(); },
+    playCue: function (i) { var t = playlist[i]; if (t) setNowPlaying(t.url, t.title || '', t.kind || '', !autoAdvanceEnabled); },
+    defaultLoop: function (url) { return defaultLoop_(url); },
+    autoAdvance: function (on) {
+      if (on === undefined) return autoAdvanceEnabled;
+      autoAdvanceInput.checked = !!on; autoAdvanceInput.dispatchEvent(new Event('change')); musicChanged_();
+      return autoAdvanceEnabled;
+    },
+    sound: function (kind, refId, action, extra) { sendActiveSoundAction_({ kind: kind, refId: refId }, action, extra || {}); },
+    elapsedOf: instanceElapsedSeconds_,
+    upload: function (file, title) {
+      var dt = new DataTransfer();
+      dt.items.add(file);
+      trackLibFileInput.files = dt.files;
+      trackLibTitleInput.value = title || '';
+      trackLibUploadBtn.click();
+    },
+    uploadStatus: function () { return trackLibStatus.textContent; },
+    rename: function (trackId, title) {
+      return ensureHandlerSignedIn().then(function () { return window.firebase.firestore().collection('tracks').doc(trackId).update({ title: title }); });
+    },
+    remove: function (trackId) { var t = tracks.filter(function (x) { return x.track_id === trackId; })[0]; if (t) deleteTrack(t); },
+    assignCell: function (cellId) {
+      var ch = currentChannel;
+      // One of the Cell's (up to three) channels; the oldest goes if it had three.
+      var cur = cells.filter(function (c) { return c.cell_id === cellId; })[0] || {};
+      var list = window.dgCellChannels(cur).filter(function (x) { return x !== ch; }).concat([ch]).slice(-3);
+      return ensureHandlerSignedIn().then(function () { return window.firebase.firestore().collection('cells').doc(cellId).set({ channels: list, channel: list[0] }, { merge: true }); })
+        .then(function () { cells.forEach(function (c) { if (c.cell_id === cellId) { c.channels = list; c.channel = list[0]; } }); musicChanged_(); return ch; });
+    }
+  };
 })();
 </script>
 
@@ -7213,9 +7697,22 @@
 <script src="assets/field-id-cards.js"></script>
 <script src="assets/forge-cards.js"></script>
 <script src="assets/acell-ids.js"></script>
-<script src="assets/acell-desk.js"></script>
 <script src="assets/table-radio.js"></script>
 <script src="assets/dice-roller.js?v=11"></script>
+<script src="assets/acell-icons.js"></script>
+<script src="assets/acell-vault.js"></script>
+<script src="assets/acell-sessions.js"></script>
+<script src="assets/acell-tapes.js"></script>
+<script src="assets/acell-shell.js"></script>
+<script src="assets/acell-library.js"></script>
+<script src="assets/acell-console.js"></script>
+<script src="assets/acell-players.js"></script>
+<script src="assets/acell-play.js"></script>
+<script src="assets/acell-debrief.js"></script>
+<script src="assets/acell-mobile.js"></script>
+<script src="assets/acell-mobile-play.js"></script>
+<script src="assets/acell-mobile-agents.js"></script>
+<script src="assets/acell-mobile-notes.js"></script>
 <script src="assets/sw-update.js" data-sw="sw.js"></script>
 
 </body>

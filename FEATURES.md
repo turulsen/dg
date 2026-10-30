@@ -878,8 +878,13 @@ beside it.
   current layout in `localStorage` `dg_desk_v1` (this device only).
 - The page widens to the window while the Desk is open. On a phone
   (≤ 720 px) the panes stack: the first on top, the rest under it behind
-  little tabs, with a divider between.
-- Test: `test_acell_desk`.
+  little tabs, with a divider between. Since v3.11.1 a pane moves by its
+  whole title bar (or, on a phone, its little tab); on a phone a drop
+  swaps the two panes, in the saved layout too. Drop targets are found
+  by their boxes, since the Radio pill and the Dice Roller float over the
+  Desk. The Session notes list's own language buttons open a page
+  docked.
+- Test: `test_acell_desk` (the phone part by real touch).
 
 **Auth:** the whole page is gated behind a shared Handler password
 (`HANDLER_PASSWORD`, an Apps Script Script Property) — see §9 for how
@@ -898,6 +903,59 @@ so release, tags, sharing and the Gallery work as for any Evidence. The
 same tab lists and uploads the stock (file names as in the pack:
 `sheriff.jpg`, `badge-oregon.png`, `face-01.jpg`…). Test:
 `test_acell_id_creator`.
+
+**A-Cell rebuilt around sessions (v3.12.0 work, released in v3.13.0,
+PR #94).** The tabs above still exist, but A-Cell now works in three
+modes: **Prep** (a folder with index tabs, *Session prep* first),
+**Play** (a desk you arrange on a 12-column grid) and **Debrief**.
+- **Sessions** (`assets/acell-sessions.js`, Firestore `sessions/{id}`,
+  Handler-only): Cell, operation, date, the evidence and NPCs for the
+  night, quick notes, the Agents' vitals when Play began, the debrief.
+  A session's **notes for Play** are a list (`notes: [{kind: 'vault',
+  path} | {kind: 'gdoc', url, title} | {kind: 'html', id, lang}]`),
+  in order; `note_path`/`html_note` mirror the first entry for older
+  readers. Play shows a tab per note: a vault note with its scene tabs,
+  an HTML page docked, a Google Doc embedded read-only (`/preview`)
+  with Open in Google Docs.
+- **Notes vault** (`assets/acell-vault.js`): Obsidian notes synced from
+  the phone by the `vaultSync` Cloud Function; `[[` suggests notes as
+  you type, Undo/Redo while editing (the editor's own history), Back /
+  Forward on the Notes tab, bold/italic/strike/highlight and a few plain
+  HTML tags.
+- **Tapes** (`assets/acell-tapes.js`, Firestore `tapes/{id}`): a
+  cassette per operation or Cell with its tracks (library tracks and
+  links), the loops under them and its effect pads. Putting one in a
+  channel's deck makes its tracks the cue list (auto-advance on, back
+  to track 1 after the last) and names it on `radio/{ch}.tape`. A
+  finished track steps the tape once, by transaction from that exact
+  broadcast.
+- **The console** (`assets/acell-console.js`): channels, on air, the
+  cue list on its green screen (tap a track to play it), seek and
+  transport, the mixer (Music, Loops, Effects: `track_volume`,
+  `ambient_volume`, the new `effects_volume`) and On air now. It is
+  *lent* (`dgAcConsole.attach/detach`) as one compact brown player to
+  the Play desk and the phone's Pads, under the session's tapes as
+  small cassettes. Its speaker button (**Play on this device**) tunes
+  the Hub's radio (`window.parent.dgRadio`) to its channel unmuted and
+  follows it; pads fired then start on that device inside the tap
+  (`dgRadio.playStinger`). Links are added on a tape, not in the player.
+- **Sheet**: Table or Cards, Filter (name, Handler, Cell, online),
+  Columns shown and ordered (kept on the device), Select → Move to Cell
+  / Delete. **Cells**: up to three channels each (`channels`).
+- **On a phone** (`assets/acell-mobile*.js`, `acell-mobile.css`, the
+  Field kit layout, under 760 px unless the device chose the computer
+  layout): top bar, tabs, the + button's post-its (Prep: Evidence,
+  Cell, Operation, Agent notes, Session notes, NPC, Tape, New session;
+  Play: Quick note, Add / Release evidence, NPC, Agent, Tape, End the
+  game), a dashboard of blocks you choose and order (including Tapes in
+  the decks, every channel's tape), the session desk (Notes, NPCs,
+  Evidence, Music), Agents by DEX, Pads, Initiative (the round and whose
+  turn it is, NPC vitals, hide, Upcoming), the notebook and the
+  computer's panels fitted to the phone.
+Tests: `test_acell_mobile_*`, `test_acell_tape_steps_once`,
+`test_acell_session_notes_desk`, `test_acell_desk_player`,
+`test_acell_link_suggest`, `test_acell_vault_format`,
+`test_acell_hear_here`.
 
 ## 7. Table Radio (shared music widget)
 
@@ -1358,6 +1416,18 @@ September addressing bugs the shell surfaced (Dice Roller state going
 stale, Split View, Notes block picker, back-navigation, duplicate
 widgets). Live and current — no longer just planned.
 
+**v3.13.0 (PR #94).** New Handler-only collections `sessions/`,
+`tapes/`, `vault/` and `vault_meta/` (deploy `firestore:rules`); `radio/{ch}` gains `tape` and
+`effects_volume`; the `vaultSync` Cloud Function changed (`firebase
+deploy --only functions`). Hosting: `firebase.json` sends `no-cache`
+for `assets/*.css` too (before, a browser could keep a stylesheet an
+hour and the service worker cached it; see `BUGFIXES.md`).
+`storage.cors.json` now lists the Firebase Hosting origins
+(`dg-app-b3447.web.app`, `.firebaseapp.com`) besides GitHub Pages; it
+is applied by hand (`gcloud storage buckets update
+gs://dg-app-b3447.firebasestorage.app --cors-file=storage.cors.json`),
+with a preview channel's origin added at that time.
+
 **Node.js 22 (v3.0.1).** `functions/package.json` asks for Node 22: Google
 retires Node 20 for Cloud Functions on 2026-10-30, and deploys of a Node
 20 codebase stop working then.
@@ -1383,7 +1453,7 @@ full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of 2026-10-13 (checked again for v3.2.0), four open tracked issues (#10 is closed; see
+As of 2026-10-30 (v3.13.0; not re-checked against GitHub since 2026-10-13), four open tracked issues (#10 is closed; see
 `BUGFIXES.md`'s "Issue #10's actual root cause"): #5 (Handler-facing access
 control — shared A-Cell password, dossiers reachable by Agent Code, no
 per-player identity), #8 (Agent Hub: long load screen then empty

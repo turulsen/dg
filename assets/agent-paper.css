@@ -186,3 +186,7 @@
 /* A Bond at 0: struck through in red (agent-paper.js bondsHtml). */
 .ap-bond.ap-bond-broken .ap-bn, .ap-bond.ap-bond-broken .ap-bscore{ color:var(--as-red, #8b1a1a); text-decoration:line-through; text-decoration-color:var(--as-red, #8b1a1a); text-decoration-thickness:1.5px; }
 .as-row.as-bond-broken > span{ color:var(--as-red, #8b1a1a); text-decoration:line-through; text-decoration-color:var(--as-red, #8b1a1a); }
+
+/* A note from the Handler (A-Cell's "Tell the player") */
+.ap-hnote{ margin:10px 0 2px; padding:10px 12px; background:#fff4c2; border:1px dashed #b8862a; max-width:440px; }
+.ap-hnote p{ margin:0 0 6px; color:var(--as-ink); }

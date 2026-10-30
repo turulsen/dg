@@ -388,7 +388,21 @@
             '<button type="button" class="ap-btn ap-ink" data-a="edit">✎ Edit</button>' + (ctx.actionsHtml || '') + '</div>') +
           (!edit && ui.pop === 'san' ? sanPopHtml() : '') +
           '<div class="ap-status" data-ap-status="' + esc(s.code) + '">' + esc(s.status || '') + '</div>' +
+          (edit ? '' : handlerNoteHtml()) +
         '</div></div>';
+    }
+    // A note from the Handler about a change they made to this sheet
+    // (A-Cell's Edit sheet, "Tell the player"): shown until it's read.
+    function handlerNoteHtml() {
+      var notes = ((s.char && s.char.handler_notes) || []).filter(function (n) { return n && n.text; });
+      if (!notes.length || ctx.handlerView) return '';
+      var seen = 0;
+      try { seen = +localStorage.getItem('dg_hn_seen_' + s.code) || 0; } catch (e) { /* private mode */ }
+      var fresh = notes.filter(function (n) { return (n.at || 0) > seen; });
+      if (!fresh.length) return '';
+      return '<div class="ap-hnote"><div class="ap-pop-h">From the Handler</div>' + fresh.slice(-3).map(function (n) {
+        return '<p>' + esc(n.text) + '<span class="ap-k"> · ' + esc(new Date(n.at).toISOString().slice(0, 10)) + '</span></p>';
+      }).join('') + '<button type="button" class="ap-btn ap-ghost" data-a="hn-ok" data-at="' + fresh[fresh.length - 1].at + '">Read</button></div>';
     }
     function sanPopHtml() {
       var amounts = ['1', '2', '3', '1d4', '1d6', '1d8', '1d10', '1d20', '1d100'];
@@ -816,6 +830,9 @@
           if (f && ui.pop) f.focus();
           return;
         case 'rollsan': rollPct(R().derived(s.state).san, 'SAN'); return;
+        case 'hn-ok':
+          try { localStorage.setItem('dg_hn_seen_' + s.code, b.getAttribute('data-at')); } catch (err) { /* private mode */ }
+          render(); return;
         case 'appear': ui.appear = el._apAppear = !ui.appear; render(); return;
         case 'cell': ui.cellOpen = el._apCell = !ui.cellOpen; render(); return;
         case 'era': ui.eraOpen = el._apEra = !ui.eraOpen; render(); return;
@@ -895,7 +912,11 @@
           ui.pop = ''; s.cancelEdit(); return;
         case 'save': {
           var changes = diff(s.state, s.edit);
-          var oath = window.dgFieldNotes && window.dgFieldNotes.oath ? window.dgFieldNotes.oath({ code: s.code, name: (s.edit.bio && s.edit.bio.name) || s.code, changes: changes })
+          // A-Cell (the Handler editing a player's sheet) asks for the
+          // reason instead of the Oath: ctx.confirmSave resolves true to save.
+          var who = { code: s.code, name: (s.edit.bio && s.edit.bio.name) || s.code, changes: changes };
+          var oath = ctx.confirmSave ? ctx.confirmSave(who)
+            : window.dgFieldNotes && window.dgFieldNotes.oath ? window.dgFieldNotes.oath(who)
             : Promise.resolve(window.confirm('Save these edits?'));
           oath.then(function (yes) { if (yes) { ui.pop = ''; s.commitEdit(); } });
           return;

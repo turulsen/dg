@@ -175,8 +175,11 @@
   // every Now Playing snapshot in handleNowPlaying().
   var mixTrackVolume = 100;
   var mixAmbientVolume = 100;
+  // Effects have their own level since 2026-10-30 (effects_volume); a
+  // channel without one follows the loops' level, as before.
+  var mixEffectsVolume = null;
   function mixedVolumePercent_(bucket) {
-    var mix = bucket === 'track' ? mixTrackVolume : mixAmbientVolume;
+    var mix = bucket === 'track' ? mixTrackVolume : bucket === 'effects' && mixEffectsVolume != null ? mixEffectsVolume : mixAmbientVolume;
     return Math.round(getVolume() * (mix / 100));
   }
 
@@ -824,7 +827,13 @@
       delete stingerAudioEls[firedAtKey];
     });
 
-    stingers.forEach(function (s) {
+    stingers.forEach(function (s) { startStinger_(s, isFirstSnapshot); });
+  }
+  // One stinger instance: start it, or bring it in line with its state.
+  // Also called straight from a Handler's tap in A-Cell (dgRadio.playStinger,
+  // 2026-10-30): inside the tap iOS lets it start, where waiting for the
+  // snapshot could find the tap no longer counted.
+  function startStinger_(s, isFirstSnapshot) {
       var alreadySeen = !!seenStingerFires[s.fired_at];
       seenStingerFires[s.fired_at] = true;
       // A fresh tune-in shouldn't replay the last few minutes' worth of
@@ -845,7 +854,7 @@
         el.style.display = 'none';
         document.body.appendChild(el);
         var stingerGain = attachGain_(el);
-        setAudioLevel_(el, stingerGain, mixedVolumePercent_('ambient'), isMuted());
+        setAudioLevel_(el, stingerGain, mixedVolumePercent_('effects'), isMuted());
         listen_(el, 'ended', function () {
           if (stingerAudioEls[s.fired_at] && stingerAudioEls[s.fired_at].el === el) delete stingerAudioEls[s.fired_at];
           releaseAudioEl_(el);
@@ -901,7 +910,6 @@
           if (stingerAudioEls[s.fired_at] === entry && entry.el.readyState < 1) applyState();
         });
       }
-    });
   }
 
   // Formats a seconds count as m:ss (no leading-zero hours -- nothing in
@@ -1360,7 +1368,7 @@
     if (!el) return;
     var audioEl = document.querySelector('#dg-radio-embed-wrap audio');
     var parts = [
-      'mix track=' + mixTrackVolume + ' ambient=' + mixAmbientVolume,
+      'mix track=' + mixTrackVolume + ' ambient=' + mixAmbientVolume + ' effects=' + (mixEffectsVolume == null ? 'ambient' : mixEffectsVolume),
       'my vol=' + getVolume() + (isMuted() ? ' (MUTED)' : '')
     ];
     // A `gain=` that reads exactly right while real device output stays
@@ -1431,8 +1439,9 @@
     Object.keys(ambientAudioEls).forEach(function (id) {
       setAudioLevel_(ambientAudioEls[id].el, ambientAudioEls[id].gain, ambientVol, muted);
     });
+    var effectsVol = mixedVolumePercent_('effects');
     Object.keys(stingerAudioEls).forEach(function (firedAt) {
-      setAudioLevel_(stingerAudioEls[firedAt].el, stingerAudioEls[firedAt].gain, ambientVol, muted);
+      setAudioLevel_(stingerAudioEls[firedAt].el, stingerAudioEls[firedAt].gain, effectsVol, muted);
     });
     if (currentEmbedKind === 'yt' && ytPlayer && ytPlayerReady) {
       try {
@@ -1803,9 +1812,11 @@
     // elements created just below already pick up the current mix.
     var newTrackVol = (np && np.track_volume != null) ? np.track_volume : 100;
     var newAmbientVol = (np && np.ambient_volume != null) ? np.ambient_volume : 100;
-    var mixChanged = newTrackVol !== mixTrackVolume || newAmbientVol !== mixAmbientVolume;
+    var newEffectsVol = (np && np.effects_volume != null) ? np.effects_volume : null;
+    var mixChanged = newTrackVol !== mixTrackVolume || newAmbientVol !== mixAmbientVolume || newEffectsVol !== mixEffectsVolume;
     mixTrackVolume = newTrackVol;
     mixAmbientVolume = newAmbientVol;
+    mixEffectsVolume = newEffectsVol;
     // Ambient loops/stingers are independent of the main track -- applied
     // unconditionally, before the no-track early return below, so a
     // Handler can layer ambience onto a silent channel.
@@ -1912,6 +1923,17 @@
     },
     leave: function () { if (getChannel()) leaveRadio(); },
     setMuted: function (m) { setMutedLive(!!m); },
+    // A stinger the Handler just fired on this device (A-Cell's pads, while
+    // it plays the channel here): start it now, inside the tap. The
+    // snapshot that brings the same fired_at finds it already playing.
+    playStinger: function (st) {
+      // Before the channel's first snapshot this device doesn't yet know
+      // which fires are backlog; the snapshot brings this one anyway.
+      if (!getChannel() || !st || !st.id || !st.fired_at || seenStingerFires === null) return;
+      ensureAudioCtx_();
+      topUpAudioPool_();
+      startStinger_({ id: st.id, fired_at: st.fired_at, started_at: st.fired_at, paused: false, paused_at: 0, loop: false, stopped: false }, false);
+    },
     setVolume: function (v) { v = Math.max(0, Math.min(100, parseInt(v, 10) || 0)); setVolumeLive(v); },
     resume: resumeAudio
   };

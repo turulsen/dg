@@ -121,6 +121,27 @@ service cloud.firestore {
       allow read, write: if isHandler();
     }
 
+    // vault/{id}, vault_meta/{doc} -- the Handler's notes (their Obsidian
+    // vault, kept in step with an iCloud folder by functions' vaultSync,
+    // which uses the Admin SDK) and the sync key. sessions/{id} -- A-Cell's
+    // session prep: Cell, notes, evidence, music, quick notes. Handler-only:
+    // scenario notes summarize paid books and must never reach players.
+    match /vault/{id} {
+      allow read, write: if isHandler();
+    }
+    match /vault_meta/{doc} {
+      allow read, write: if isHandler();
+    }
+    match /sessions/{id} {
+      allow read, write: if isHandler();
+    }
+
+    // tapes/{id} -- A-Cell's tapes (an operation's or a Cell's tracks,
+    // loops and pads, assets/acell-tapes.js). Handler-only, like sessions.
+    match /tapes/{id} {
+      allow read, write: if isHandler();
+    }
+
     // client_errors/{id} -- the on-page JS error banner's telemetry (was
     // the ClientErrors sheet). Anyone may add one small report; only the
     // Handler reads them; nobody edits or deletes from the client.
