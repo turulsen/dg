@@ -66,3 +66,13 @@ h1.vn-h{font-size:24px}h2.vn-h{font-size:20px}h3.vn-h{font-size:17px}h4.vn-h,h5.
   .vn-sheet{max-width:none;min-height:100%;border:0}
   .vn-body{font-size:14px}
 }
+
+/* [[ suggestions under the cursor (2026-10-30) */
+.vn-sug{ position:fixed; z-index:10050; max-height:300px; overflow-y:auto; background:#fbf8ec; border:1px solid #8a7a5a; box-shadow:0 8px 22px rgba(0,0,0,.35); font-family:'Courier Prime','Courier New',monospace; }
+.vn-sugi{ display:block; width:100%; text-align:left; background:none; border:0; border-bottom:1px dashed #e3d9bb; padding:8px 12px; font:inherit; color:#2a2418; cursor:pointer; }
+.vn-sugi:last-child{ border-bottom:0; }
+.vn-sugi b{ display:block; font-weight:400; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vn-sugi small{ display:block; font-size:11px; color:#8a7a5a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vn-sugi.on, .vn-sugi:hover{ background:#1c1608; color:#f4eed8; }
+.vn-sugi.on small, .vn-sugi:hover small{ color:#cbbd94; }
+@media (max-width:760px){ .vn-sugi{ padding:11px 12px; } }

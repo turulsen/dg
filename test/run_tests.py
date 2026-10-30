@@ -5021,6 +5021,49 @@ def test_acell_mobile_release(p):
     record("acell-mobile-play", "no JS errors (release)", not errs, str(errs))
     page.close()
 
+def test_acell_link_suggest(p):
+    """2026-10-30: [[ in any vault note lists the vault's notes under the
+    cursor, as in Obsidian; Enter or a tap writes the link and its ]]."""
+    SEED = "() => Promise.all([dgVault.save('Pale Lantern/NPCs/Ruth Ainsley.md', '# Ruth'), dgVault.save('Pale Lantern/Lore/Tide tables.md', 'x'), dgVault.save('Other/NPCs/Ruth Ainsley.md', 'y'), dgVault.save('Pale Lantern/Lighthouse.md', 'z')])"
+    page, errs = open_acell_shell(p)
+    wait_for_condition(lambda: page.locator("[data-pb=notes] .ac-note").count() == 1, timeout_ms=5000)
+    page.evaluate(SEED)
+    page.wait_for_timeout(300)
+    page.click("[data-pb=notes] [data-vmode=edit]")
+    page.click("[data-pb=notes] .vn-ta")
+    page.keyboard.press("Control+End")
+    page.keyboard.type("\nSee [[ruth")
+    wait_for_condition(lambda: page.locator(".vn-sug .vn-sugi").count() > 0, timeout_ms=3000)
+    items = page.eval_on_selector_all(".vn-sug .vn-sugi", "els => els.map(e => e.innerText.replace(/\\s+/g, ' '))")
+    record("acell-links", "[[ lists matching vault notes, the note's own folder first", len(items) == 2 and items[0].startswith("Ruth Ainsley") and "Pale Lantern" in items[0], str(items))
+    page.keyboard.press("Enter")
+    wait_for_condition(lambda: page.input_value("[data-pb=notes] .vn-ta").endswith("]]"), timeout_ms=3000)
+    v = page.input_value("[data-pb=notes] .vn-ta")
+    record("acell-links", "Enter writes the link and its ]] (a shared name gets its folder)", v.endswith("See [[Pale Lantern/NPCs/Ruth Ainsley]]") and page.locator(".vn-sug").count() == 0, repr(v[-50:]))
+    page.wait_for_timeout(900)
+    record("acell-links", "…and it saves", "[[Pale Lantern/NPCs/Ruth Ainsley]]" in (page.evaluate("() => (dgVault.get('Pale Lantern/Session 4.md') || {}).content") or ""), "")
+    page.keyboard.type(" and [[lig")
+    wait_for_condition(lambda: page.locator(".vn-sug .vn-sugi").count() > 0, timeout_ms=3000)
+    page.keyboard.press("Escape")
+    record("acell-links", "Esc closes the list", page.locator(".vn-sug").count() == 0, "")
+    record("acell-links", "no JS errors (links, computer)", not errs, str(errs))
+    page.close()
+    page, errs = open_phone(p, mode="play")
+    page.evaluate(SEED)
+    acm(page, "dgAcm.go('notebook')")
+    page.click("#acm-bar [data-acm=nb-edit]")
+    page.wait_for_selector(".acm-ed .vn-ta", timeout=4000)
+    page.click(".acm-ed .vn-ta")
+    page.keyboard.press("Control+End")
+    page.keyboard.type(" [[tide")
+    wait_for_condition(lambda: page.locator(".vn-sug .vn-sugi").count() == 1, timeout_ms=3000)
+    box = page.evaluate("() => { var r = document.querySelector('.vn-sug').getBoundingClientRect(); return [r.left, r.right, window.innerWidth]; }")
+    page.tap(".vn-sug .vn-sugi")
+    wait_for_condition(lambda: "[[Tide tables]]" in page.input_value(".acm-ed .vn-ta"), timeout_ms=3000)
+    record("acell-links", "on a phone: the list fits the screen, a tap writes the link", box[0] >= 0 and box[1] <= box[2] and "[[Tide tables]]" in page.input_value(".acm-ed .vn-ta"), str(box))
+    record("acell-links", "no JS errors (links, phone)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14182,6 +14225,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_link_suggest, browser, area="acell-links")
         safe(test_acell_mobile_release, browser, area="acell-mobile-play")
         safe(test_acell_mobile_decks, browser, area="acell-mobile")
         safe(test_acell_session_notes_desk, browser, area="acell-notes")

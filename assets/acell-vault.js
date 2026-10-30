@@ -306,6 +306,7 @@
         var grow = function () { if (opts.grow) { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 4) + 'px'; } };
         grow();
         ta.addEventListener('input', function () { grow(); commit(setShown(ta.value)); });
+        linkSuggest(ta, path);
       }
     }
     host.addEventListener('click', function (e) {
@@ -333,6 +334,80 @@
       destroy: function () { document.removeEventListener('dg-vault', onChange); clearTimeout(timer); }
     };
   }
+  /* [[ suggestions, as in Obsidian (2026-10-30): typing [[ in any note
+     lists the vault's notes under the cursor, narrowing as you type; a tap,
+     Enter or Tab writes the link and closes it with ]]. */
+  var sugEl = null;
+  function closeSuggest() { if (sugEl) { sugEl.remove(); sugEl = null; } }
+  function caretXY(ta, pos) {
+    var cs = getComputedStyle(ta), m = document.createElement('div');
+    ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingTop', 'paddingLeft', 'paddingRight', 'borderTopWidth', 'borderLeftWidth', 'boxSizing', 'whiteSpace', 'wordWrap', 'tabSize'].forEach(function (k) { m.style[k] = cs[k]; });
+    m.style.position = 'absolute'; m.style.visibility = 'hidden'; m.style.whiteSpace = 'pre-wrap'; m.style.wordWrap = 'break-word';
+    m.style.width = ta.clientWidth + 'px'; m.style.left = '-9999px'; m.style.top = '0';
+    m.textContent = ta.value.slice(0, pos);
+    var mk = document.createElement('span'); mk.textContent = '\u200b'; m.appendChild(mk);
+    document.body.appendChild(m);
+    var x = mk.offsetLeft, y = mk.offsetTop + mk.offsetHeight;
+    m.remove();
+    var r = ta.getBoundingClientRect();
+    return { x: r.left + x - ta.scrollLeft, y: r.top + y - ta.scrollTop };
+  }
+  function linkName(n, all) {
+    var t = title(n.path), same = all.filter(function (x) { return title(x.path).toLowerCase() === t.toLowerCase(); }).length;
+    return same > 1 ? n.path.replace(/\.md$/i, '') : t;
+  }
+  function linkSuggest(ta, from) {
+    var at = -1, q = '', hits = [], sel = 0;
+    function find() {
+      var pos = ta.selectionStart, before = ta.value.slice(0, pos), m = /\[\[([^\[\]\n|#]*)$/.exec(before);
+      if (!m || ta.selectionStart !== ta.selectionEnd) { at = -1; closeSuggest(); return; }
+      at = pos - m[1].length; q = m[1].toLowerCase().trim();
+      var all = notes(), top = String(from || '').split('/')[0];
+      hits = all.filter(function (n) { return n.path !== from && (!q || n.path.toLowerCase().indexOf(q) >= 0); }).map(function (n) {
+        var t = title(n.path).toLowerCase();
+        return { n: n, rank: !q ? 0 : t.indexOf(q) === 0 ? 0 : t.indexOf(q) >= 0 ? 1 : 2, near: n.path.split('/')[0] === top ? 0 : 1 };
+      }).sort(function (a, b) { return a.rank - b.rank || a.near - b.near || (b.n.updated_at || 0) - (a.n.updated_at || 0) || title(a.n.path).localeCompare(title(b.n.path)); }).slice(0, 8).map(function (h) { return h.n; });
+      sel = 0;
+      show(all);
+    }
+    function show(all) {
+      if (!hits.length) { closeSuggest(); return; }
+      if (!sugEl) { sugEl = document.createElement('div'); sugEl.className = 'vn-sug'; sugEl.setAttribute('role', 'listbox'); document.body.appendChild(sugEl); }
+      sugEl.innerHTML = hits.map(function (n, i) {
+        var d = folderLabel(dirOf(n.path));
+        return '<button type="button" class="vn-sugi' + (i === sel ? ' on' : '') + '" data-i="' + i + '" role="option"><b>' + esc(title(n.path)) + '</b>' + (d ? '<small>' + esc(d) + '</small>' : '') + '</button>';
+      }).join('');
+      sugEl._all = all;
+      var c = caretXY(ta, at), w = Math.min(320, window.innerWidth - 16);
+      sugEl.style.width = w + 'px';
+      sugEl.style.left = Math.max(8, Math.min(c.x, window.innerWidth - w - 8)) + 'px';
+      var below = c.y + 4, h = sugEl.offsetHeight, vv = window.visualViewport, bottom = vv ? vv.height + vv.offsetTop : window.innerHeight;
+      sugEl.style.top = (below + h > bottom - 8 ? Math.max(8, c.y - h - 26) : below) + 'px';
+      sugEl.onmousedown = function (e) { e.preventDefault(); };
+      sugEl.onclick = function (e) { var b = e.target.closest('[data-i]'); if (b) pick(+b.getAttribute('data-i')); };
+    }
+    function pick(i) {
+      var n = hits[i];
+      if (!n) return;
+      var name = linkName(n, notes()), pos = ta.selectionStart, rest = ta.value.slice(pos);
+      var close = /^[^\[\]\n]*\]\]/.exec(rest), tailCut = close ? close[0].length : 0;
+      ta.value = ta.value.slice(0, at) + name + ']]' + rest.slice(tailCut);
+      ta.selectionStart = ta.selectionEnd = at + name.length + 2;
+      closeSuggest(); at = -1;
+      ta.focus();
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    ta.addEventListener('input', find);
+    ta.addEventListener('click', find);
+    ta.addEventListener('keydown', function (e) {
+      if (!sugEl || at < 0) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel + (e.key === 'ArrowDown' ? 1 : hits.length - 1)) % hits.length; show(sugEl._all); }
+      else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(sel); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeSuggest(); at = -1; }
+    });
+    ta.addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== ta) closeSuggest(); }, 150); });
+  }
+
   // [[Name]] -> the note's path: same folder first, then anywhere by name.
   function resolveLink(target, from) {
     var name = String(target || '').split('#')[0].trim();
