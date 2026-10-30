@@ -319,7 +319,9 @@
   // tapes, a session kept its own tracks and pads.
   function deckTape() { var D = window.dgTapes, t = D && D.inDeck(); return t && t.tracks ? t : null; }
   function music(s) {
+    // The deck's tape only when it's one of this session's (2026-10-30).
     var t = deckTape();
+    if (t && !tapesFor(s).some(function (x) { return x.id === t.id; })) t = null;
     return t ? { tape: t, tracks: t.tracks, pads: t.pads } : { tape: null, tracks: s.tracks, pads: s.pads };
   }
   function tapesFor(s) { var D = window.dgTapes; return D ? D.forOperation(s.operation_id).concat(D.forCell(s.cell_id)) : []; }
@@ -335,6 +337,13 @@
   function drawDeck(s) {
     var el = ob('deck'), m = M(), P = window.dgAcConsole;
     if (!el) return;
+    // On a phone the Pads screen has the player; this desk sits hidden
+    // behind it and must not take it back (2026-10-30: the player vanished
+    // from Pads on every change to the broadcast).
+    if (document.body.classList.contains('acm')) {
+      if (P && P.detach && el.contains(document.getElementById('ac-console'))) P.detach();
+      return;
+    }
     if (!m || !P || !P.attach) { el.innerHTML = '<div class="pd-hint">The broadcast isn\'t available.</div>'; return; }
     if (!el.querySelector('.pd-cxhost')) { el.innerHTML = '<div class="pd-cxtapes"></div><div class="pd-cxhost"></div>'; }
     var host = el.querySelector('.pd-cxhost');

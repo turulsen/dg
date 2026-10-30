@@ -5184,6 +5184,21 @@ def test_acell_hear_here(p):
     fr.click(".acm-cxbox [data-cc=hear]")
     page.wait_for_timeout(300)
     record("acell-hear", "…and a second tap mutes it again", page.evaluate("() => window.dgRadio.state().muted") is True, "")
+    # 2026-10-30: the player vanished from Pads on every change to the
+    # broadcast (the hidden computer desk took it back on each update).
+    ch2 = fr.evaluate("() => dgAcellMusic.channel()")
+    push_firestore_doc_snapshot(fr, "radio/" + ch2, True, fs_doc(fr, "radio/" + ch2) or {"channel": ch2})
+    page.wait_for_timeout(700)
+    record("acell-hear", "the player stays on Pads after a change to the broadcast", fr.evaluate("() => !!document.querySelector('.acm-cxbox #ac-console')"), "")
+    record("acell-hear", "the rest of the library is folded under the tape's pads and loops", fr.locator(".acm-lib").count() == 1 and not fr.evaluate("() => document.querySelector('.acm-lib').open"), "")
+    # A tape from another Cell left in the channel's deck isn't this game's.
+    fr.evaluate("() => dgTapes.create({ name: 'Elsewhere', scope: 'cell', cell_id: 'cell_other', pads: ['manic-laugh-02', 'bells-distant', 'cat-whimper-01'], loops: [], tracks: [] }).then(function (t) { window.__other = t.id; })")
+    page.wait_for_timeout(300)
+    oid = fr.evaluate("() => window.__other")
+    push_firestore_doc_snapshot(fr, "radio/" + ch2, True, {"channel": ch2, "tape": {"id": oid, "name": "Elsewhere", "color": "#333"}})
+    page.wait_for_timeout(700)
+    labs = fr.inner_text("#acm-view")
+    record("acell-hear", "a tape from another Cell in the deck doesn't load its pads on Pads", "THIS SESSION" in labs.upper() and "THIS TAPE · 3" not in labs.upper(), labs[:300])
     record("acell-hear", "no JS errors (hear it here)", not errs, str(errs))
     ctx.close()
 

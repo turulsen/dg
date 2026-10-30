@@ -89,11 +89,13 @@
   }
 
   /* ── Pads ── */
+  var tuned = { sid: '' }, libOpen = false;
+  function sessionTape(s) { var t = deckTape(); return t && tapesFor(s).some(function (x) { return x.id === t.id; }) ? t : null; }
   C.screen('pads', {
     mode: 'play', tab: 'pads',
     // Redrawn only when what it shows changes; the player keeps itself live.
     sig: function () {
-      var s = A.session(), m = M(), t = deckTape();
+      var s = A.session(), m = M(), t = sessionTape(s);
       if (!m) return '';
       return (s ? s.id + s.pads.join() : '') + '|' + (t ? t.id + t.pads.join() + t.loops.join() : '') + '|' + tapesFor(s).map(function (x) { return x.id + x.name + x.color; }).join() + '|' + m.channel() + '|' +
         (m.state().ambient || []).map(function (x) { return x.id || x; }).join() + '|' + !!(m.state().current || {}).track_url + !!(m.state().current || {}).paused;
@@ -101,24 +103,34 @@
     render: function () {
       var s = A.session(), m = M();
       if (!m) return { bar: { title: 'Pads' }, html: '<p class="acm-none">The broadcast isn\'t available.</p>' };
-      var t = deckTape(), mine = t ? t.pads : (s ? s.pads : []), cur = m.state().current || {}, amb = (m.state().ambient || []).map(function (x) { return x.id || x; });
+      // The session's Cell's channel, the first time Pads opens for a session.
+      if (s && tuned.sid !== s.id) { tuned.sid = s.id; var tc = A.cell(s.cell_id), tch = tc && (window.dgCellChannels ? window.dgCellChannels(tc)[0] : tc.channel); if (tch && String(tch) !== m.channel()) { m.setChannel(String(tch)); } }
+      // The deck's tape only when it's one of this session's (a tape another
+      // Cell left on the channel isn't this game's, 2026-10-30).
+      var t = sessionTape(s), mine = t ? t.pads : (s ? s.pads : []), cur = m.state().current || {}, amb = (m.state().ambient || []).map(function (x) { return x.id || x; });
       var seen = {};
       mine.forEach(function (id) { seen[id] = true; });
       function pad(id, on) { return '<button type="button" class="acm-pad' + (on ? ' on' : '') + '" data-acm="fire" data-id="' + esc(id) + '">' + esc(m.label('stinger', id)) + '</button>'; }
-      var loops = (t ? t.loops : []).concat(m.ambientList().map(function (x) { return x.id; }).filter(function (id) { return !t || t.loops.indexOf(id) < 0; }));
+      function loop(id) { return '<button type="button" class="acm-chip loop' + (amb.indexOf(id) >= 0 ? ' on' : '') + '" data-acm="loop" data-id="' + esc(id) + '">' + esc(m.label('ambient', id)) + '</button>'; }
+      var tl = t ? t.loops : [], more = m.ambientList().map(function (x) { return x.id; }).filter(function (id) { return tl.indexOf(id) < 0; });
       return {
         bar: { title: 'Pads', sub: (t ? t.name + ' · ' : '') + 'CH ' + m.channel() + (cur.track_title ? ' · ' + cur.track_title : ''), back: false, right: [['back', 'to-prep', 'Back to Prep'], ['tape', 'deck', 'The tape deck']] },
         html: '<div class="acm-desk">' + consoleHtml(s, m) + (mine.length ? lab((t ? 'This tape' : 'This session') + ' · ' + mine.length + ' pad' + (mine.length === 1 ? '' : 's')) + '<div class="acm-pads">' + mine.map(function (id) { return pad(id); }).join('') + '</div>' : '<p class="acm-none light">No pads on the tape yet. Every effect is below.</p>') +
           '<div class="acm-stoprow">' + btn('Stop all sound', 'stopall', 'sr') + '</div>' +
-          lab('Loops') + '<div class="acm-chips">' + loops.map(function (id) { return '<button type="button" class="acm-chip loop' + (amb.indexOf(id) >= 0 ? ' on' : '') + '" data-acm="loop" data-id="' + esc(id) + '">' + esc(m.label('ambient', id)) + '</button>'; }).join('') + '</div>' +
+          (tl.length ? lab('Loops on this tape') + '<div class="acm-chips">' + tl.map(loop).join('') + '</div>' : '') +
+          // The rest of the library, folded: the tape is what this game uses.
+          '<details class="acm-lib"' + (libOpen ? ' open' : '') + '><summary>Every other loop and effect</summary>' +
+          lab('Loops') + '<div class="acm-chips">' + more.map(loop).join('') + '</div>' +
           m.stingerGroups().map(function (g) {
             var ids = (g.stingers || []).map(function (x) { return x.id; }).filter(function (id) { return !seen[id]; });
             return ids.length ? lab(g.label || g.name || 'Effects') + '<div class="acm-pads sm">' + ids.map(function (id) { return pad(id); }).join('') + '</div>' : '';
-          }).join('') + '</div>',
+          }).join('') + '</details></div>',
         after: function (el) {
           var P = window.dgAcConsole;
           if (!P || !P.attach) return null;
           P.attach(el.querySelector('.acm-cxhost'), 'desk');
+          var lib = el.querySelector('.acm-lib');
+          if (lib) lib.addEventListener('toggle', function () { libOpen = lib.open; });
           return function () { P.detach(); };
         }
       };

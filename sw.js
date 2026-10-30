@@ -32,7 +32,7 @@
    through this whole migration -- not random flakiness, one bad path
    silently breaking the update mechanism itself.
    ══════════════════════════════════════════════ */
-const CACHE_NAME = 'dg-hub-shell-v289';
+const CACHE_NAME = 'dg-hub-shell-v290';
 
 const SHELL_FILES = [
   './',
@@ -142,7 +142,11 @@ const SHELL_FILES = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL_FILES))
+      // cache: 'reload' skips the browser's own HTTP cache: Firebase served
+      // CSS with a default hour-long max-age, so a new install could store
+      // an hour-old stylesheet beside fresh JS (2026-10-30: new markup, old
+      // styles, on an iPhone and an iPad).
+      .then((cache) => cache.addAll(SHELL_FILES.map((u) => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -193,7 +197,8 @@ self.addEventListener('fetch', (event) => {
       // came from cache -- event.waitUntil keeps it alive past the point
       // respondWith resolves, since the fetch event's lifecycle would
       // otherwise let the browser kill an unawaited promise right after.
-      const network = fetch(req).then((res) => {
+      // Ask the server, not the browser's HTTP cache (pages already say no-cache).
+      const network = fetch(req.mode === 'navigate' ? req : new Request(req, { cache: 'no-cache' })).then((res) => {
         if (res && res.ok) cache.put(req, res.clone());
         return res;
       }).catch(() => null);

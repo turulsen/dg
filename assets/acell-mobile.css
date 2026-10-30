@@ -184,8 +184,8 @@ body.acm-writing .acm-tabs, body.acm-writing .acm-fab{ display:none; }
 .acm-deckcas{ width:250px; max-width:80%; margin:0 auto 12px; }
 
 /* ── Play ── */
-.acm-pads{ display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:6px; }
-.acm-pads.sm{ grid-template-columns:repeat(4, 1fr); gap:9px; }
+.acm-pads{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; margin-bottom:6px; }
+.acm-pads.sm{ grid-template-columns:repeat(4, minmax(0, 1fr)); gap:9px; }
 .acm-pad{ aspect-ratio:1; border-radius:50%; background:radial-gradient(circle at 40% 35%, #3a332a, #15110c); border:3px solid #5a4e38; box-shadow:0 5px 10px rgba(0,0,0,.5), inset 0 2px 0 rgba(255,255,255,.08);
   display:grid; place-items:center; text-align:center; color:#e9dfbf; font:11px/1.15 'Courier Prime',monospace; padding:8px; cursor:pointer; }
 .acm-pads.sm .acm-pad{ font-size:9.5px; padding:5px; }
@@ -350,3 +350,11 @@ body.acm .acm-cx-chs button{ flex:1; min-height:34px; border:1px solid #6d6040; 
 body.acm .acm-cx-chs button.on{ background:#f3e9c8; color:#1c1608; border-color:#f3e9c8; }
 body.acm .acm-cx-chs button.has::after{ content:''; position:absolute; top:4px; right:4px; width:6px; height:6px; border-radius:50%; background:#f2d98a; }
 /* Pads: the Music tab's player, lent (2026-10-30): the deck, not the desk */
+
+/* Pads: the rest of the library, folded (2026-10-30) */
+body.acm .acm-lib{ margin-top:14px; border-top:1px dashed rgba(233,223,191,.25); padding-top:6px; }
+body.acm .acm-lib > summary{ cursor:pointer; list-style:none; padding:10px 0; color:#d9ccaa; font:12px 'Special Elite','Courier New',monospace; letter-spacing:.12em; text-transform:uppercase; }
+body.acm .acm-lib > summary::-webkit-details-marker{ display:none; }
+body.acm .acm-lib > summary::before{ content:'+ '; color:#f2d98a; }
+body.acm .acm-lib[open] > summary::before{ content:'\2212 '; }
+body.acm .acm-desk{ min-width:0; overflow-x:hidden; }
