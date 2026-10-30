@@ -5229,6 +5229,26 @@ def test_acell_hear_here(p):
     record("acell-hear", "no JS errors (hear it here)", not errs, str(errs))
     ctx.close()
 
+def test_acell_mobile_waiting(p):
+    """2026-10-30: "Alfred is dead, long dead" stayed in Waiting on you as
+    wounded. An Agent at HP 0 is KIA, not wounded; and any row can be
+    dismissed for the session with its x, until what it says changes."""
+    docs = acell_cell_fixture()
+    cj = json.loads(docs["characters/MARA-KS01"]["character_json"])
+    cj.setdefault("live", {})
+    s = json.dumps(cj).replace('"hp": 11', '"hp": 0')
+    docs["characters/MARA-KS01"] = dict(docs["characters/MARA-KS01"], character_json=s)
+    page, errs = open_phone(p, docs=docs)
+    acm(page, "dgAcm.go('session')")
+    wait_for_condition(lambda: "wounded" in page.inner_text("#acm-view"), timeout_ms=5000)
+    txt = page.inner_text("#acm-view")
+    record("acell-mobile", "Waiting on you: a wounded Agent, but not one at HP 0 (KIA)", "Reyes is wounded" in txt and "Kessler is wounded" not in txt, txt[:300])
+    page.click("[data-acm=w-x][data-k^='agent:TOMA']")
+    page.wait_for_timeout(300)
+    record("acell-mobile", "…x dismisses a row for this session", "Reyes is wounded" not in page.inner_text("#acm-view"), "")
+    record("acell-mobile", "no JS errors (waiting)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14398,6 +14418,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_mobile_waiting, browser, area="acell-mobile")
         safe(test_acell_hear_here, browser, area="acell-hear")
         safe(test_acell_vault_format, browser, area="acell-vault-fmt")
         safe(test_acell_desk_player, browser, area="acell-desk-player")
