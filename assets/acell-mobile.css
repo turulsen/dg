@@ -349,3 +349,8 @@ body.acm .acm-cx-chs{ display:flex; gap:6px; margin-top:10px; }
 body.acm .acm-cx-chs button{ flex:1; min-height:34px; border:1px solid #6d6040; background:transparent; color:#b8a878; font:11px 'Special Elite',monospace; letter-spacing:.08em; position:relative; cursor:pointer; }
 body.acm .acm-cx-chs button.on{ background:#f3e9c8; color:#1c1608; border-color:#f3e9c8; }
 body.acm .acm-cx-chs button.has::after{ content:''; position:absolute; top:4px; right:4px; width:6px; height:6px; border-radius:50%; background:#f2d98a; }
+/* Pads: the Music tab's player, lent (2026-10-30): the deck, not the desk */
+body.acm .acm-cxhost{ margin:4px 0 14px; }
+body.acm .cc-lent .cc{ display:block; }
+body.acm .cc-lent .cc-side, body.acm .cc-lent .cc-link, body.acm .cc-lent .cc-cell, body.acm .cc-lent .cc-status{ display:none; }
+body.acm .cc-lent .cc-deck{ margin:0; }

@@ -80,7 +80,13 @@
     var lines = [];
     lines.push(cur.track_url ? (cur.paused ? '❚❚ ' : '▶ ') + esc((cur.track_title || cur.track_url).toUpperCase()) + (cur.loop ? ' <i>LOOP</i>' : '') : '— NO TRACK —');
     (now.ambient || []).forEach(function (x) { lines.push('≈ ' + esc(m.label('ambient', x.id).toUpperCase()) + (x.paused ? ' ❚❚' : '')); });
-    q('scr').innerHTML = '<span class="cc-chr">CH ' + esc(ch) + '</span>' + lines.join('<br>');
+    // The whole cue list on the screen (2026-10-30): tap a track to play it.
+    var cl = m.cueList(), at = -1;
+    if (cur.track_url) cl.forEach(function (t, i) { if (at < 0 && t.url === cur.track_url) at = i; });
+    var list = cl.length ? '<div class="cc-scr-list">' + cl.map(function (t, i) {
+      return '<button type="button" class="cc-scr-t' + (i === at ? ' on' : '') + '" data-cc="cue-play" data-i="' + i + '"><b>' + (i === at ? (cur.paused ? '❚❚' : '▶') : String(i + 1)) + '</b>' + esc(String(t.title || t.url).toUpperCase()) + '</button>';
+    }).join('') + '</div>' : '';
+    q('scr').innerHTML = '<span class="cc-chr">CH ' + esc(ch) + '</span>' + lines.join('<br>') + list;
     q('reels').className = 'cc-reels' + (playing ? ' spin' : '');
     drawSeek();
     q('loop').classList.toggle('on', !!cur.loop);
@@ -167,7 +173,7 @@
         q('url').value = ''; q('title').value = '';
         return;
       }
-      case 'cue-play': m.playCue(+irow.getAttribute('data-i')); return;
+      case 'cue-play': m.playCue(+(b.getAttribute('data-i') || irow.getAttribute('data-i'))); return;
       case 'cue-rm': m.uncue(+irow.getAttribute('data-i')); return;
       case 'tape': m.playCue(+b.getAttribute('data-i')); return;
       case 'insert': window.dgTapes.insert(b.getAttribute('data-id')); return;
@@ -208,10 +214,35 @@
     }
   });
 
-  var t0 = null;
+  var t0 = null, onTab = false, home = null;
   function soon() { if (!st.open) return; clearTimeout(t0); t0 = setTimeout(draw, 30); }
+  function live(on) {
+    st.open = on;
+    clearInterval(st.tick);
+    if (!on) return;
+    draw();
+    st.tick = setInterval(function () { if (root.firstChild) drawSeek(); }, 1000);
+  }
+  // Lent to another screen (the phone's Pads, 2026-10-30): the player moves
+  // there, live, and back to the Music tab after.
+  function attach(host) {
+    if (!host) return;
+    if (!home) { home = document.createComment('ac-console'); root.parentNode.insertBefore(home, root); }
+    host.appendChild(root);
+    root.classList.add('cc-lent');
+    live(true);
+  }
+  function detach() {
+    if (!home || !home.parentNode) return;
+    home.parentNode.insertBefore(root, home);
+    home.parentNode.removeChild(home); home = null;
+    root.classList.remove('cc-lent');
+    live(onTab);
+  }
   document.addEventListener('dg-acell-tab', function (e) {
-    st.open = e.detail.tab === 'music';
+    onTab = e.detail.tab === 'music';
+    if (home) return;
+    st.open = onTab;
     clearInterval(st.tick);
     if (!st.open) return;
     // The session's Cell's channel, the first time the tab opens for it.
@@ -229,5 +260,5 @@
     classic.addEventListener('toggle', function () { try { localStorage.setItem('dg_acell_classic_open', classic.open ? '1' : '0'); } catch (e) { /* this time only */ } });
   }
 
-  window.dgAcConsole = { draw: draw };
+  window.dgAcConsole = { draw: draw, attach: attach, detach: detach };
 })();

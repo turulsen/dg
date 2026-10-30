@@ -122,7 +122,9 @@
     document.body.classList.toggle('acm-writing', !!out.writing);
     document.body.setAttribute('data-acm-screen', st.name);
     if (def.panel) {
+      if (st.cleanup) { try { st.cleanup(); } catch (e) { /* gone */ } st.cleanup = null; }
       view.innerHTML = '';
+      view.removeAttribute('data-for');
       if (window.dgAcellTab() !== def.panel || panelShown !== st.name) { panelShown = st.name; window.dgAcellTab(def.panel); }
       if (def.after) def.after(st.arg);
     } else {

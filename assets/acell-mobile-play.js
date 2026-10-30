@@ -86,21 +86,21 @@
       var on = t && t.id === x.id;
       return '<button type="button" class="acm-cx-tape' + (on ? ' on' : '') + '" data-acm="' + (on ? 'deck' : 'tape-in') + '" data-id="' + esc(x.id) + '">' + cass(x, { spin: on && playing }) + '<span>' + esc(x.name) + (on ? '<em>in the deck</em>' : '') + '</span></button>';
     }).join('') + '</div>' : '<p class="acm-none light">No tapes for this session yet. Make them on the Music tab.</p>');
-    // The player: the dialed channel, what plays, the transport.
-    var player = '<div class="acm-cx">' +
-      '<div class="acm-cx-now"><span class="acm-g"><b>' + esc(cur.track_url ? (cur.track_title || 'a track') : (t ? 'Stopped' : 'Nothing playing')) + '</b><small>' + esc((t ? t.name + ' · ' : '') + 'CH ' + ch + (cur.paused && cur.track_url ? ' · paused' : '') + (cur.loop ? ' · loop' : '')) + '</small></span></div>' +
-      '<div class="acm-transport acm-cx-tr">' + [['prev', 'prev', 'From the top'], [playing ? 'pause' : 'play', 'pause', 'Play or pause'], ['stop', 'stop', 'Stop'], ['next', 'next', 'Next track'], ['loop', 'loop', 'Loop the track']].map(function (x) {
-        return '<button type="button" class="' + (x[1] === 'loop' && cur.loop ? 'on' : '') + '" data-acm="cx" data-k="' + x[1] + '" aria-label="' + x[2] + '">' + I(x[0]) + '</button>';
-      }).join('') + '</div>' +
-      '<div class="acm-cx-chs">' + ['1', '2', '3', '4', '5'].map(function (c) {
-        return '<button type="button" class="' + (c === ch ? 'on' : '') + (inDeck[c] ? ' has' : '') + '" data-acm="cx-ch" data-ch="' + c + '" title="' + (inDeck[c] ? esc(inDeck[c].name) : 'empty') + '">CH ' + c + '</button>';
-      }).join('') + '</div></div>';
+    // The player: the Music tab's own, lent here (assets/acell-console.js).
+    var player = '<div class="acm-cxhost"></div>';
     return tapes + player;
   }
 
   /* ── Pads ── */
   C.screen('pads', {
     mode: 'play', tab: 'pads',
+    // Redrawn only when what it shows changes; the player keeps itself live.
+    sig: function () {
+      var s = A.session(), m = M(), t = deckTape();
+      if (!m) return '';
+      return (s ? s.id + s.pads.join() : '') + '|' + (t ? t.id + t.pads.join() + t.loops.join() : '') + '|' + tapesFor(s).map(function (x) { return x.id + x.name + x.color; }).join() + '|' + m.channel() + '|' +
+        (m.state().ambient || []).map(function (x) { return x.id || x; }).join() + '|' + !!(m.state().current || {}).track_url + !!(m.state().current || {}).paused;
+    },
     render: function () {
       var s = A.session(), m = M();
       if (!m) return { bar: { title: 'Pads' }, html: '<p class="acm-none">The broadcast isn\'t available.</p>' };
@@ -117,7 +117,13 @@
           m.stingerGroups().map(function (g) {
             var ids = (g.stingers || []).map(function (x) { return x.id; }).filter(function (id) { return !seen[id]; });
             return ids.length ? lab(g.label || g.name || 'Effects') + '<div class="acm-pads sm">' + ids.map(function (id) { return pad(id); }).join('') + '</div>' : '';
-          }).join('') + '</div>'
+          }).join('') + '</div>',
+        after: function (el) {
+          var P = window.dgAcConsole;
+          if (!P || !P.attach) return null;
+          P.attach(el.querySelector('.acm-cxhost'));
+          return function () { P.detach(); };
+        }
       };
     }
   });

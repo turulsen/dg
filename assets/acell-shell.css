@@ -383,3 +383,10 @@ body.folder-theme[data-ac-mode] footer.site-footer{ color:#b8a878; position:rela
 .ac-gdocf{ margin-top:8px; }
 .ac-nedit .ac-note{ margin-top:10px; border-top:1px dashed #cbbd94; padding-top:6px; }
 .ac-cnt{ color:var(--ac-ink3); font-size:11px; }
+
+/* The console's screen: the whole cue list, tap a track to play it (2026-10-30) */
+.cc-scr-list{ margin-top:6px; padding-top:6px; border-top:1px dashed rgba(159,227,154,.3); max-height:168px; overflow-y:auto; }
+.cc-scr-t{ display:flex; gap:10px; width:100%; text-align:left; background:none; border:0; padding:4px 2px; font:inherit; color:#6fae6b; cursor:pointer; letter-spacing:.04em; }
+.cc-scr-t b{ font-weight:400; width:22px; flex:none; text-align:right; color:#4f8a4c; }
+.cc-scr-t.on, .cc-scr-t.on b{ color:#c8f5c3; text-shadow:0 0 6px rgba(159,227,154,.5); }
+.cc-scr-t:hover{ color:#9fe39a; }
