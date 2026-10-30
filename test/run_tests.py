@@ -4684,7 +4684,7 @@ def test_acell_mobile_play(p):
     record("acell-mobile-play", "Dice: the Dice Roller's Live Rolls", "DICE ROLLER" in page.inner_text(".acm-drp") and page.locator(".acm-drsel").count() == 1, "")
     page.click("#acm-fab")
     play_add = page.eval_on_selector_all(".acm-pi b", "els => els.map(e => e.textContent)")
-    record("acell-mobile-play", "the add button in Play: quick note, Add evidence, NPC, Agent, a pad, End the game", play_add == ["Quick note", "Add evidence", "NPC", "Agent", "Fire a pad", "End the game"], str(play_add))
+    record("acell-mobile-play", "the add button in Play: quick note, Add evidence, Release evidence, NPC, Agent, a pad, End the game", play_add == ["Quick note", "Add evidence", "Release evidence", "NPC", "Agent", "Fire a pad", "End the game"], str(play_add))
     page.click(".acm-pi[data-add=qnote]")
     page.click(".acm-qform [data-who='TOMA-RY02']")
     page.fill(".acm-qform input[name=t]", "Lied about the boat")
@@ -4966,6 +4966,26 @@ def test_acell_mobile_decks(p):
     wait_for_condition(lambda: page.evaluate("() => dgAcm.current()") == "music", timeout_ms=3000)
     record("acell-mobile", "…tapping a tape opens the console on its channel", page.evaluate("() => dgAcm.current() === 'music' && dgAcellMusic.channel() === '3'"), page.evaluate("() => dgAcellMusic.channel()"))
     record("acell-mobile", "no JS errors (decks)", not errs, str(errs))
+    page.close()
+
+def test_acell_mobile_release(p):
+    """2026-10-30: in Play, the big + has a Release evidence post-it: the
+    session's evidence, then the Cell's other unreleased items, each with
+    its switch."""
+    page, errs = open_phone(p, mode="play")
+    acell_feed_evidence(page)
+    acm(page, "dgAcm.go('pads')")
+    page.click("#acm-fab")
+    page.wait_for_timeout(300)
+    names = [x.strip() for x in page.eval_on_selector_all(".acm-pi b", "els => els.map(e => e.textContent)")]
+    record("acell-mobile-play", "the big + in Play has Release evidence", "Release evidence" in names, str(names))
+    page.click(".acm-pi[data-add=rel]")
+    page.wait_for_timeout(400)
+    record("acell-mobile-play", "…the session's evidence first, then the Cell's unreleased", "IN THIS SESSION" in page.inner_text(".acm-sheet").upper() and "Keeper" in page.inner_text(".acm-sheet"), page.inner_text(".acm-sheet")[:200])
+    page.click(".acm-sheet [data-acm=release][data-id=ev_log]")
+    wait_for_condition(lambda: any((w.get("data") or {}).get("released") is True for w in fs_writes(page, "evidence/ev_log")), timeout_ms=4000)
+    record("acell-mobile-play", "…its switch releases it", any((w.get("data") or {}).get("released") is True for w in fs_writes(page, "evidence/ev_log")), "")
+    record("acell-mobile-play", "no JS errors (release)", not errs, str(errs))
     page.close()
 
 def test_acell_console(p):
@@ -14129,6 +14149,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_mobile_release, browser, area="acell-mobile-play")
         safe(test_acell_mobile_decks, browser, area="acell-mobile")
         safe(test_acell_session_notes_desk, browser, area="acell-notes")
         safe(test_acell_tape_steps_once, browser, area="acell-tapes")

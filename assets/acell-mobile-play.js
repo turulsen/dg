@@ -380,6 +380,28 @@
     C.go('evidence');
     setTimeout(function () { if (E()) E().newItem(s ? { cell_id: s.cell_id, operation_id: s.operation_id } : null); }, 80);
   };
+  // Release evidence (2026-10-30): the session's evidence first, then the
+  // Cell's other unreleased items, each with its switch.
+  C.add.rel = function () {
+    var s = A.session();
+    if (!E()) return;
+    E().start();
+    var w = C.sheet('<h2 class="acm-h">Release evidence</h2><div data-rel></div>');
+    function draw() {
+      var box = w.querySelector('[data-rel]');
+      if (!box) return;
+      var items = E().items(), inS = s ? s.evidence : [];
+      function row(h) { return '<div class="acm-row"><span class="acm-g"><b>' + esc(h.title || 'Untitled') + '</b><small>' + (h.released ? 'released' : 'not released') + '</small></span>' + sw(h.released, 'data-acm="release" data-id="' + esc(h.evidence_id) + '"') + '</div>'; }
+      var mine = inS.map(function (id) { return E().find(id); }).filter(Boolean);
+      var more = items.filter(function (h) { return !h.released && inS.indexOf(h.evidence_id) < 0 && (!s || !s.cell_id || h.cell_id === s.cell_id); });
+      box.innerHTML = (mine.length ? lab('In this session') + '<div class="acm-card">' + mine.map(row).join('') + '</div>' : '') +
+        (more.length ? lab('The Cell\'s, not released yet') + '<div class="acm-card">' + more.map(row).join('') + '</div>' : '') +
+        (mine.length || more.length ? '' : '<p class="acm-none">' + (items.length ? 'Nothing left to release.' : 'Loading the evidence…') + '</p>');
+    }
+    draw();
+    function again() { if (!w.isConnected) { document.removeEventListener('dg-acell-evidence', again); return; } draw(); }
+    document.addEventListener('dg-acell-evidence', again);
+  };
   C.add.agent = function () {
     var s = A.session(), ms = C.agentsByDex(s);
     var w = C.sheet('<h2 class="acm-h">Which Agent?</h2><div class="acm-faces">' + ms.map(function (a) { return '<button type="button" class="acm-face" data-code="' + esc(a.code) + '">' + C.photo(a.code) + '<span>' + esc(a.name.split(' ').pop()) + '</span></button>'; }).join('') + '</div>');

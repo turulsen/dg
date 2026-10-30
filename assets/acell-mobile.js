@@ -451,9 +451,9 @@
 
   /* ── The add sheet: post-its ── */
   var PREP_ADD = [['ev', 'Add Evidence', 'photo, PDF or text, to a Cell', 'y'], ['cell', 'Add Cell', 'a group of Agents', 'bl'], ['op', 'Add Operation', 'evidence folders, sessions, tapes', 'gr'],
-    ['anote', 'Agent Notes', 'into an Agent\'s file', 'pk'], ['snote', 'Session Notes', 'a scene in the session note', 'or'], ['npc', 'NPCs', 'DEX · HP · WP · SAN', 'pu'],
+    ['anote', 'Agent Notes', 'into an Agent\'s file', 'pk'], ['snote', 'Session Notes', 'vault notes, Docs, pages for Play', 'or'], ['npc', 'NPCs', 'DEX · HP · WP · SAN', 'pu'],
     ['tape', 'Tape', 'Soundtrack (for session)', 'wh'], ['sess', 'New Session', 'blank, template or a copy', 'y']];
-  var PLAY_ADD = [['qnote', 'Quick note', 'the session or an Agent', 'y'], ['qev', 'Add evidence', 'quickly, to the Cell and operation', 'gr'], ['npc', 'NPC', 'into initiative', 'pu'],
+  var PLAY_ADD = [['qnote', 'Quick note', 'the session or an Agent', 'y'], ['qev', 'Add evidence', 'quickly, to the Cell and operation', 'gr'], ['rel', 'Release evidence', 'hand it to the players', 'or'], ['npc', 'NPC', 'into initiative', 'pu'],
     ['agent', 'Agent', 'their sheet, read only', 'pk'], ['pads', 'Fire a pad', 'any effect', 'bl'], ['end', 'End the game', 'to Debrief', 'wh']];
   var ADD_ACTIONS = {};
   function addSheet() {
@@ -475,7 +475,7 @@
   ADD_ACTIONS.cell = function () { go('cells'); setTimeout(function () { var b = document.getElementById('cells-create-btn'); if (b) b.click(); }, 60); };
   ADD_ACTIONS.op = function () { opSheet(); };
   ADD_ACTIONS.anote = function () { agentNoteSheet(); };
-  ADD_ACTIONS.snote = function () { var s = sess(); if (!s) { toast('Choose a session first.'); sessionsSheet(); return; } go('scene', { title: null }); };
+  ADD_ACTIONS.snote = function () { var s = sess(); if (!s) { toast('Choose a session first.'); sessionsSheet(); return; } go('desk', { seg: 'notes' }); setTimeout(function () { noteSheet(s); }, 60); };
   ADD_ACTIONS.tape = function () {
     var s = sess(), op = opOf(s);
     if (!T()) return;
