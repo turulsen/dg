@@ -394,7 +394,16 @@ body.folder-theme[data-ac-mode] footer.site-footer{ color:#b8a878; position:rela
 .cc-scr-t.on, .cc-scr-t.on b{ color:#c8f5c3; text-shadow:0 0 6px rgba(159,227,154,.5); }
 .cc-scr-t:hover{ color:#9fe39a; }
 
-/* Hear it here (2026-10-30): this device plays the channel too */
-.cc-hear{ font:inherit; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; border:1px solid #a58a62; background:transparent; color:#e9dfbf; padding:4px 9px; cursor:pointer; margin-left:auto; }
+/* Play on this device (2026-10-30): one square speaker button */
+.cc-hear{ display:inline-grid; place-items:center; width:32px; height:32px; padding:0; margin-left:auto; border:1px solid #a58a62; border-radius:0; background:transparent; color:#e9dfbf; cursor:pointer; -webkit-appearance:none; appearance:none; }
+.cc-hear .ic{ width:18px; height:18px; }
 .cc-hear.on{ background:#f2d98a; border-color:#f2d98a; color:#2a2418; }
-body.acm .cc-hear{ padding:8px 10px; }
+.cc-hear.wait{ animation:cc-hear-wait 1.2s ease-in-out infinite; }
+@keyframes cc-hear-wait{ 50%{ opacity:.45; } }
+body.acm .cc-hear{ width:36px; height:36px; }
+body.acm .cc-hear .ic{ width:20px; height:20px; }
+/* On a phone the channel row holds the speaker too: no CH label */
+body.acm .cc-desk .cc-chl{ display:none; }
+body.acm .cc-desk .cc-top{ flex-wrap:nowrap; gap:5px; }
+body.acm .cc-desk .cc-chs{ display:inline-flex; gap:5px; }
+body.acm .cc-desk .cc-air{ font-size:9.5px; padding:3px 6px; white-space:nowrap; }

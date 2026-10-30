@@ -34,7 +34,7 @@
     root.innerHTML =
       '<div class="cc">' +
       '<section class="cc-deck">' +
-        '<div class="cc-top"><span class="cc-chs" data-cc="chs"></span><span class="cc-air" data-cc="air"></span><button type="button" class="cc-hear" data-cc="hear" aria-pressed="false">Hear it here</button>' +
+        '<div class="cc-top"><span class="cc-chs" data-cc="chs"></span><span class="cc-air" data-cc="air"></span><button type="button" class="cc-hear" data-cc="hear" aria-pressed="false" title="Play on this device" aria-label="Play on this device"></button>' +
         '<span class="cc-cell"><select data-cc="cell" aria-label="Cell"></select><button type="button" class="cc-mini" data-cc="assign"></button></span></div>' +
         '<div class="cc-scr" data-cc="scr"></div>' +
         '<div class="cc-reels" data-cc="reels"><i></i><span class="cc-tape"></span><i></i></div>' +
@@ -62,7 +62,7 @@
     if (!root.firstChild) build();
     var s = A.session(), now = m.state(), cur = now.current || {}, ch = m.channel();
     // Channels and the Cell
-    q('chs').innerHTML = 'CH ' + m.channels().map(function (c) { return '<button type="button" class="cc-ch' + (c === ch ? ' on' : '') + '" data-ch="' + c + '">' + c + '</button>'; }).join('');
+    q('chs').innerHTML = '<span class="cc-chl">CH </span>' + m.channels().map(function (c) { return '<button type="button" class="cc-ch' + (c === ch ? ' on' : '') + '" data-ch="' + c + '">' + c + '</button>'; }).join('');
     var playing = !!cur.track_url && !cur.paused;
     q('air').className = 'cc-air' + (playing ? ' on' : '');
     q('air').textContent = playing ? '● ON AIR' : cur.track_url ? '❚❚ PAUSED' : 'OFF AIR';
@@ -236,7 +236,12 @@
     var on = st.hear && (!r || (s && s.channel === m.channel() && !s.muted));
     b.classList.toggle('on', !!on);
     b.setAttribute('aria-pressed', String(!!on));
-    b.textContent = on ? (s && s.resumeNeeded ? 'Tap to hear' : 'Hearing it here') : 'Hear it here';
+    // One speaker button: struck through off, sounding in gold on (2026-10-30);
+    // iOS still waiting for a tap shows it pulsing.
+    var wait = !!(on && s && s.resumeNeeded);
+    b.classList.toggle('wait', wait);
+    b.innerHTML = window.dgIcons ? window.dgIcons.svg(on ? 'speaker' : 'speaker-off') : '';
+    b.title = on ? (wait ? 'Tap to start the sound on this device' : 'Playing on this device: tap to stop') : 'Play on this device';
   }
   // The channel changed while hearing: the radio follows it.
   function follow() {

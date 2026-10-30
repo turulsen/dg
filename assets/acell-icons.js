@@ -47,6 +47,8 @@
     trash: '<path d="M5 7h14M9.5 7V4h5v3M7 7l1 13h8l1-13"/>',
     copy: '<rect x="8" y="8" width="12" height="12"/><path d="M4 16V4h12"/>',
     debrief: '<rect x="5" y="4" width="14" height="17"/><rect x="9" y="2.5" width="6" height="3"/><path d="M8 10h8M8 13.5h8M8 17h5"/>',
+    speaker: '<path d="M4 9.5h4l5-4v13l-5-4H4z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/>',
+    'speaker-off': '<path d="M4 9.5h4l5-4v13l-5-4H4z"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5"/>',
     radio: '<rect x="3" y="9" width="18" height="11"/><path d="M6 9l11-5"/><circle cx="9" cy="14.5" r="2.6"/><path d="M14.5 13h3.5M14.5 16h3.5"/>',
     link: '<path d="M9 4H5v16h4M15 4h4v16h-4"/><path d="M8 8v8M16 8v8" stroke-width="1.2"/>',
     sort: '<path d="M7 4v15"/><path d="M4 16l3 3 3-3"/><path d="M13 6h7M13 11h5M13 16h3"/>',

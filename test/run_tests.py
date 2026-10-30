@@ -5176,7 +5176,7 @@ def test_acell_hear_here(p):
     fr.click(".acm-cxbox [data-cc=hear]")
     page.wait_for_timeout(400)
     r = page.evaluate("() => window.dgRadio.state()")
-    record("acell-hear", "Hear it here: the Hub's radio, tuned to the player's channel, unmuted", r.get("channel") == ch and r.get("muted") is False and "HEARING" in fr.inner_text(".acm-cxbox [data-cc=hear]").upper(), str(r)[:200])
+    record("acell-hear", "Hear it here: the Hub's radio, tuned to the player's channel, unmuted", r.get("channel") == ch and r.get("muted") is False and fr.get_attribute(".acm-cxbox [data-cc=hear]", "aria-pressed") == "true" and fr.locator(".acm-cxbox [data-cc=hear].on svg").count() == 1, str(r)[:200])
     other = "2" if ch != "2" else "4"
     fr.click(".acm-cxbox .cc-ch[data-ch='%s']" % other)
     wait_for_condition(lambda: page.evaluate("() => window.dgRadio.state().channel") == other, timeout_ms=3000)

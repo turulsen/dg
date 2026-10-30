@@ -225,7 +225,7 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
 .pd-cxhost{ display:contents; }
 /* The same player on a phone's Pads */
 .acm-cxbox{ background:linear-gradient(#5c4a36,#3a2c1e); border-radius:12px; padding:10px 12px 12px; color:#e9dfbf; box-shadow:0 12px 24px rgba(0,0,0,.5); margin:4px 0 14px; }
-body.acm .acm-cxbox .cc-ch{ width:34px; height:34px; font-size:12px; }
+body.acm .acm-cxbox .cc-ch{ width:32px; height:32px; font-size:12px; flex:none; }
 body.acm .acm-cxbox .cc-keys button{ min-height:42px; }
 body.acm .acm-cxbox .cc-scr-t{ padding:6px 2px; }
 body.acm .acm-cxbox [data-cc=live] .cc-mini{ min-height:34px; min-width:38px; }
