@@ -4817,10 +4817,65 @@ def test_acell_mobile_panels(p):
         record("acell-mobile-panels", "Music: a tape has Play tape (no Open, no Into CH)", "PLAY TAPE" in page.inner_text("#ac-tapes .ac-tcard").upper() and page.locator("#ac-tapes .ac-tcard [data-mu=open]").count() == 0, page.inner_text("#ac-tapes .ac-tcard")[:120])
         record("acell-mobile-panels", "…drawn to the real cassette's shape", abs(page.evaluate("() => { var r = document.querySelector('#ac-tapes .ac-tcard .cas-svg').getBoundingClientRect(); return r.width / r.height; }") - 1005 / 638) < 0.02, "")
         record("acell-mobile-panels", "…the open tape has an Add at Tracks, Loops and Pads", page.locator("#ac-tapes .ac-topen [data-mu=add-part]").count() == 3, "")
+        # Reported 2026-10-30: tapping a tape opened it out of sight, below the racks.
+        page.evaluate("() => { window.scrollTo(0, 0); document.querySelectorAll('.folder-wrap, #acm-main').forEach(function (e) { e.scrollTop = 0; }); }")
+        page.click("#ac-tapes .ac-tcard .cas")
+        page.wait_for_timeout(900)
+        top = page.evaluate("() => document.querySelector('#ac-tapes .ac-topen').getBoundingClientRect().top")
+        record("acell-mobile-panels", "tapping a tape takes the phone to the open tape, below the top bar", page.evaluate("() => document.getElementById('acm-bar') ? document.getElementById('acm-bar').getBoundingClientRect().bottom : 50") <= top < 400, str(top))
+        record("acell-mobile-panels", "the open tape has Save and Save & play", page.locator("#ac-tapes .ac-topen [data-mu=save-tape]").count() == 1 and page.locator("#ac-tapes .ac-topen [data-mu=save-play]").count() == 1, "")
+        n0 = len(fs_writes(page, "tapes/tape_dread"))
+        page.click("#ac-tapes .ac-topen [data-mu=save-tape]")
+        wait_for_condition(lambda: len(fs_writes(page, "tapes/tape_dread")) > n0, timeout_ms=3000)
+        record("acell-mobile-panels", "Save writes the tape and says so", len(fs_writes(page, "tapes/tape_dread")) > n0 and "saved" in page.inner_text("body").lower(), "")
+        page.click("#ac-tapes .ac-topen [data-mu=save-play]")
+        wait_for_condition(lambda: any(((w.get("data") or {}).get("tape") or {}).get("id") == "tape_dread" for w in fs_writes(page, "radio/")), timeout_ms=4000)
+        record("acell-mobile-panels", "Save & play puts the tape in the deck", any(((w.get("data") or {}).get("tape") or {}).get("id") == "tape_dread" for w in fs_writes(page, "radio/")), "")
     acm(page, "dgAcm.go('ids')")
     page.wait_for_timeout(800)
     record("acell-mobile-panels", "the ID creator fits the phone, its three kinds one switch", page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1") and page.locator("#idc-root .idc-kinds .paper-btn").count() == 3, "")
     record("acell-mobile-panels", "no JS errors (panels)", not errs, str(errs))
+    page.close()
+
+def test_acell_tape_steps_once(p):
+    """Reported 2026-10-30: a tape of two tracks flipped between them. A
+    track only steps the tape on when it is the live one and really ran,
+    and the step is from that exact broadcast, so a stale 'ended' (a
+    second device, a seek parked at the end) changes nothing."""
+    import time as _t
+    page, errs = open_acell_shell(p)
+    page.click("#acell-tab-strip .tw[data-tab=music]")
+    push_collection(page, "tracks")
+    page.evaluate("() => window.dgTapes.insert('tape_dread')")
+    wait_for_condition(lambda: any(l.get("isDoc") and l["path"].startswith("radio/") for l in page.evaluate("() => window.__dgFirestoreListeners || []")) or None, timeout_ms=5000)
+    ch = page.evaluate("() => window.dgAcellMusic.channel()")
+    path = "radio/" + ch
+    url1 = page.evaluate("() => window.dgAcellMusic.cueList()[0].url")
+    url2 = page.evaluate("() => window.dgAcellMusic.cueList()[1].url")
+    def deliver(d):
+        page.evaluate("(a) => { window.__dgFirestoreDocs[a[0]] = Object.assign({}, window.__dgFirestoreDocs[a[0]] || {}, a[1]); }", [path, d])
+        push_firestore_doc_snapshot(page, path, True, fs_doc(page, path))
+        page.wait_for_timeout(150)
+    def track(): return (fs_doc(page, path) or {}).get("track_url")
+    now = int(_t.time() * 1000)
+    # Track 1 just started: an 'ended' a second in is not the track finishing.
+    deliver({"track_url": url1, "track_title": "Lighthouse at Dusk", "track_kind": "audio", "started_at": now - 1000, "paused": False, "paused_at": "", "loop": False})
+    page.evaluate("() => document.getElementById('music-preview-audio').dispatchEvent(new Event('ended'))")
+    page.wait_for_timeout(400)
+    record("acell-tapes", "an 'ended' seconds after the track started doesn't step the tape", track() == url1, str(track())[:60])
+    # Track 1 ran its length: one step to track 2.
+    deliver({"started_at": now - 400000})
+    page.evaluate("() => document.getElementById('music-preview-audio').dispatchEvent(new Event('ended'))")
+    wait_for_condition(lambda: track() == url2, timeout_ms=3000)
+    record("acell-tapes", "a finished track steps the tape to the next", track() == url2, str(track())[:60])
+    # A late 'ended' for the same broadcast from before the step (another
+    # device, seen through this tab's stale state) must not step it again.
+    d2 = fs_doc(page, path)
+    page.evaluate("(a) => { window.__dgFirestoreDocs[a[0]] = Object.assign({}, window.__dgFirestoreDocs[a[0]], { track_url: a[1], started_at: 1 }); }", [path, url2])
+    page.evaluate("() => document.getElementById('music-preview-audio').dispatchEvent(new Event('ended'))")
+    page.wait_for_timeout(500)
+    record("acell-tapes", "a stale 'ended' doesn't step the tape back", track() == url2, str(track())[:60])
+    record("acell-tapes", "no JS errors (tape steps)", not errs, str(errs))
     page.close()
 
 def test_acell_console(p):
@@ -13984,6 +14039,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_tape_steps_once, browser, area="acell-tapes")
         safe(test_acell_in_shell, browser, area="acell-shell-hub")
         safe(test_player_pages_never_get_the_handler_feed, browser, area="dice")
         safe(test_handler_rolls_filter_by_cell, browser, area="dice")

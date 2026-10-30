@@ -6087,6 +6087,9 @@
   // for real playback progress and fight it with the Handler's own
   // slider drag.
   var suppressPreviewEvents = false;
+  // A broadcast that ran past the track is parked at its end, not played:
+  // the 'ended' that seek can fire is not the track finishing.
+  var previewParkedAtEnd = false;
   // True only while the Handler's thumb is on the preview scrubber --
   // 'timeupdate' must not overwrite the slider's value out from under
   // an active drag, same reasoning as isSeekDragging for the fallback
@@ -6146,7 +6149,7 @@
           // very end -- so .play() below immediately hit 'ended' and
           // visibly "did nothing" on Pause/Resume.
           var elapsed = liveElapsedSeconds_();
-          var duration = previewAudio.duration;
+          var duration = previewAudio.duration, parkAtEnd = false;
           var overran = isFinite(duration) && duration > 0 && elapsed >= duration;
           var playThisTime = !current.paused;
           if (overran) {
@@ -6170,8 +6173,10 @@
               // correctly, just never (re-)plays from there.
               elapsed = duration;
               playThisTime = false;
+              parkAtEnd = true;
             }
           }
+          previewParkedAtEnd = parkAtEnd;
           try { previewAudio.currentTime = elapsed; } catch (e) { /* not seekable yet */ }
           previewSlider.value = elapsed;
           previewElapsedEl.textContent = formatSeekTime_(elapsed);
@@ -6873,8 +6878,21 @@
   try { autoAdvanceEnabled = localStorage.getItem(AUTO_ADVANCE_KEY) !== '0'; } catch (e) { autoAdvanceEnabled = true; }
   autoAdvanceInput.checked = autoAdvanceEnabled;
 
-  function maybeAutoAdvance_() {
-    if (!autoAdvanceEnabled || !current.track_url || current.loop) return;
+  // Reported 2026-10-30: a tape of two tracks flipped between them. An
+  // 'ended' is now only believed when it is the live track that ended,
+  // after it really ran (not a seek parked at the end, not seconds after
+  // it started), and the step itself is a transaction from that exact
+  // broadcast (track and start): a second device, or a stale event, that
+  // tries the same step after the first one finds the doc already moved
+  // on and does nothing, instead of stepping again (back to track 1).
+  function maybeAutoAdvance_(fromAudio) {
+    if (!autoAdvanceEnabled || !current.track_url || current.loop || current.paused) return;
+    if (fromAudio === true) {
+      if (suppressPreviewEvents || previewParkedAtEnd || previewLoadedUrl !== current.track_url) return;
+      var dur = previewAudio.duration, ran = liveElapsedSeconds_();
+      if (isFinite(dur) && dur > 0 && ran < Math.min(dur - 5, dur * 0.8)) return;
+    }
+    if (current.started_at && Date.now() - current.started_at < 2500) return;
     var idx = -1;
     for (var i = 0; i < playlist.length; i++) {
       if (playlist[i].url === current.track_url) { idx = i; break; }
@@ -6882,9 +6900,23 @@
     // The last track goes round to the first (a one-track list replays it).
     if (idx === -1) return;
     var next = playlist[(idx + 1) % playlist.length];
-    setNowPlaying(next.url, next.title || '', next.kind || '', false);
+    var ch = currentChannel, fromUrl = current.track_url, fromStart = current.started_at || 0;
+    ensureHandlerSignedIn().then(function () {
+      var db = window.firebase.firestore(), ref = radioDocRef_(ch);
+      return db.runTransaction(function (tx) {
+        return tx.get(ref).then(function (snap) {
+          var d = snap.exists ? snap.data() : {};
+          if (d.track_url !== fromUrl || (d.started_at || 0) !== fromStart || d.paused) return false;
+          var now = Date.now();
+          tx.set(ref, { channel: ch, track_url: next.url, track_title: next.title || '', track_kind: next.kind || '', started_at: now, updated_at: now, paused: false, paused_at: '', loop: false }, { merge: true });
+          return true;
+        });
+      });
+    }).then(function (moved) {
+      if (moved) statusEl.textContent = 'Broadcasting to CH ' + ch + ': ' + (next.title || next.url);
+    }).catch(function () { /* the next 'ended' (or the Handler) moves it on */ });
   }
-  previewAudio.addEventListener('ended', maybeAutoAdvance_);
+  previewAudio.addEventListener('ended', function () { maybeAutoAdvance_(true); });
 
   // Same on-demand-load, chain-safe idiom assets/table-radio.js's own
   // ensureYouTubeApi()/ensureSoundCloudApi() use -- wrapping (not

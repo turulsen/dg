@@ -171,7 +171,10 @@
       partHd('effects', 'Effect pads') + '<div class="ac-tpads">' + t.pads.map(function (id) {
         return '<span class="ac-tpad">' + esc(m.label('stinger', id)) + '<button type="button" data-mu="p-rm" data-id="' + esc(id) + '" aria-label="Take it off">✕</button></span>';
       }).join('') + (t.pads.length ? '' : '<span class="ac-none">None — tap a cartridge below.</span>') + '</div>' +
-      '<div class="ac-acts"><button type="button" class="ac-btn p" data-mu="insert-open">▶ Play tape</button><span class="ac-sp"></span><button type="button" class="ac-link ac-del" data-mu="del-tape">Delete tape</button></div>';
+      // Save and Save & play (2026-10-30): edits already save as they're
+      // made; Save says so (and keeps a half-typed name or link), Save &
+      // play also puts this version of the tape in the deck.
+      '<div class="ac-acts ac-tsave"><button type="button" class="ac-btn" data-mu="save-tape">Save</button><button type="button" class="ac-btn p" data-mu="save-play">▶ Save &amp; play</button><span class="ac-sp"></span><button type="button" class="ac-link ac-del" data-mu="del-tape">Delete tape</button></div>';
   }
 
   // A part of the open tape with its own Add: the shelf below, showing that kind.
@@ -179,6 +182,28 @@
   function showConsole() {
     var c = document.getElementById('ac-console');
     if (c && c.scrollIntoView) setTimeout(function () { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 120);
+  }
+  // Tapping a tape opens it; where the open tape sits below the racks
+  // (a phone, a narrow window), go down to it, so it's plain it opened.
+  function showOpen() {
+    if (!window.matchMedia('(max-width: 980px)').matches) return;
+    var o = tapesEl.querySelector('.ac-topen');
+    if (o && o.scrollIntoView) setTimeout(function () { o.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
+  }
+  function saved(msg) {
+    if (window.dgAcm && document.body.classList.contains('acm')) { window.dgAcm.toast(msg); return; }
+    var b = tapesEl.querySelector('[data-mu=save-tape]');
+    if (b) { b.textContent = 'Saved'; setTimeout(function () { var x = tapesEl.querySelector('[data-mu=save-tape]'); if (x) x.textContent = 'Save'; }, 1600); }
+  }
+  // Whatever is half-typed on the open tape (its name, a link), then the
+  // whole tape written once more.
+  function saveOpen(t) {
+    var D = T(), patch = { name: t.name, color: t.color, tracks: t.tracks.slice(), loops: t.loops.slice(), pads: t.pads.slice() };
+    var ni = tapesEl.querySelector('[data-mu-tname]'), lu = tapesEl.querySelector('[data-mu-lurl]'), lt = tapesEl.querySelector('[data-mu-ltitle]');
+    if (ni && ni.value.trim()) patch.name = ni.value.trim();
+    if (lu && lu.value.trim()) patch.tracks.push({ kind: 'link', ref: lu.value.trim(), title: (lt && lt.value.trim()) || lu.value.trim(), dur: 0 });
+    mu.naming = false; mu.linking = false;
+    return D.update(t.id, patch);
   }
   function partHd(part, html) {
     return '<div class="ac-sub ac-parthd"><span>' + html + '</span><button type="button" class="ac-btn ac-add" data-mu="add-part" data-part="' + part + '">+ Add</button></div>';
@@ -260,11 +285,13 @@
   });
   tapesEl.addEventListener('click', function (e) {
     var b = e.target.closest('[data-mu]');
-    if (!b) { var c = e.target.closest('.ac-tcard .cas'); if (c) { mu.open = c.closest('[data-tape]').getAttribute('data-tape'); drawTapes(); drawShelf(); } return; }
+    if (!b) { var c = e.target.closest('.ac-tcard .cas'); if (c) { mu.open = c.closest('[data-tape]').getAttribute('data-tape'); drawTapes(); drawShelf(); showOpen(); } return; }
     var D = T(), m = M(), a = b.getAttribute('data-mu'), card = b.closest('[data-tape]'), id = card ? card.getAttribute('data-tape') : mu.open, t = D.get(id);
     switch (a) {
       case 'open': mu.open = mu.open === id ? '' : id; mu.naming = false; mu.linking = false; drawTapes(); drawShelf(); return;
       case 'insert': case 'insert-open': D.insert(id).then(showConsole, function (err) { A.ask((err && err.message) || String(err), 'OK', 'Close'); }); return;
+      case 'save-tape': if (t) saveOpen(t).then(function () { drawTapes(); saved('Tape saved.'); }); return;
+      case 'save-play': if (t) saveOpen(t).then(function () { drawTapes(); return D.insert(t.id); }).then(function () { saved('Saved. Playing on CH ' + m.channel() + '.'); showConsole(); }, function (err) { A.ask((err && err.message) || String(err), 'OK', 'Close'); }); return;
       case 'add-part': {
         mu.f = b.getAttribute('data-part'); mu.pop = null; drawShelf();
         if (shelf.scrollIntoView) shelf.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -441,5 +468,5 @@
   document.addEventListener('dg-vault', function () { if (noOpen) { vs.loaded = true; drawVault(); } });
   document.addEventListener('dg-sessions', function () { if (noOpen) drawVault(); });
 
-  window.dgAcLibrary = { drawShelf: drawShelf, drawTapes: drawTapes, openTape: function (id) { mu.open = id; muDraw(); }, drawChips: drawChips, openNote: openNote };
+  window.dgAcLibrary = { drawShelf: drawShelf, drawTapes: drawTapes, openTape: function (id) { mu.open = id; muDraw(); showOpen(); }, drawChips: drawChips, openNote: openNote };
 })();

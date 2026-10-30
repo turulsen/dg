@@ -311,3 +311,6 @@ body.acm-panel .ac-tnew{ -webkit-appearance:none; appearance:none; display:flex;
 body.acm-panel .ac-tnew small{ font-family:'Courier Prime','Courier New',monospace; text-transform:none; letter-spacing:0; font-size:11px; }
 body.acm-panel .ac-tsub b{ color:#2a2418; }
 body.acm-panel .ac-opsel{ background:#fbf8ec; color:#2a2418; border:1px solid #cbbd94; border-radius:0; }
+/* Tapping a tape (or Save & play) scrolls here: clear of the top bar */
+body.acm-panel .ac-topen, body.acm-panel #ac-console{ scroll-margin-top:calc(var(--acm-top) + 10px); }
+body.acm-panel .ac-tsave{ gap:8px; }
