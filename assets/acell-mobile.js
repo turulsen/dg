@@ -554,7 +554,7 @@
   var BLOCKS = [
     ['waiting', 'Waiting on you', 'what needs you before the game', true], ['cell', 'The Cell', 'the Agents, by DEX', true],
     ['session', 'This session', 'its checklist and scenes', true], ['shortcuts', 'Shortcuts', 'four buttons you choose', true],
-    ['tape', 'Tape in the deck', 'what the channel is playing', false], ['evidence', 'Evidence not released', 'release from here', false],
+    ['tape', 'Tapes in the decks', 'what each channel is playing', false], ['evidence', 'Evidence not released', 'release from here', false],
     ['notes', 'Recent notes', 'the last vault notes you touched', false], ['quick', 'Quick notes', 'from the last game', false],
     ['rolls', 'Live rolls', 'the Cell\'s dice', false], ['next', 'Next session', 'date and what\'s left to prep', false]
   ];
@@ -614,9 +614,13 @@
       tape: function () {
         var m = M(), D = T();
         if (!m || !D) return '';
-        var t = D.inDeck(), cur = m.state().current || {};
-        return '<div class="acm-card">' + (t ? '<div class="acm-row"><span class="acm-g"><b>' + esc(t.name) + '</b><small>CH ' + esc(m.channel()) + (cur.track_title ? ' · ' + esc(cur.track_title) : '') + '</small></span>' + btn('Console', 'go:music', 's') + '</div>'
-          : '<p class="acm-none">No tape in CH ' + esc(m.channel()) + '.</p>') + '</div>';
+        // Every channel with a tape in its deck, as its cassette (2026-10-30).
+        var ds = D.decks();
+        return '<div class="acm-card">' + (ds.length ? ds.map(function (d) {
+          // Tap the tape for that channel's console; x takes it out of the deck.
+          return '<div class="acm-row acm-deckrow"><button type="button" class="acm-deckgo" data-acm="deck-console" data-ch="' + esc(d.ch) + '"><span class="acm-deckcas" aria-hidden="true">' + D.svg(d.tape, { meta: '' }) + '</span><span class="acm-g"><b>' + esc(d.tape.name || 'Tape') + '</b><small>CH ' + esc(d.ch) + (d.track ? ' · ' + esc(d.track) : '') + (d.paused ? ' · paused' : '') + '</small></span></button>' +
+            btn(I('close'), 'deck-out', 's red', 'data-ch="' + esc(d.ch) + '" aria-label="Take the tape out of CH ' + esc(d.ch) + '"') + '</div>';
+        }).join('') : '<p class="acm-none">No tape in any deck.</p>') + '</div>';
       },
       evidence: function () {
         if (!E()) return '';
@@ -1036,6 +1040,8 @@
         return;
       }
       case 'new-npc': npcSheet(); return;
+      case 'deck-console': { var dc = b.getAttribute('data-ch'); if (M()) M().setChannel(dc); go('music'); return; }
+      case 'deck-out': T().ejectCh(b.getAttribute('data-ch')).then(function () { toast('Tape out of CH ' + b.getAttribute('data-ch') + '.'); }); return;
       case 'tape-open': go('music'); setTimeout(function () { if (window.dgAcLibrary) window.dgAcLibrary.openTape(b.getAttribute('data-id')); }, 60); return;
       case 'tape-play': T().insert(b.getAttribute('data-id')).then(function () { go('music'); }); return;
       case 'blk': {

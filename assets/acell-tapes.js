@@ -113,6 +113,37 @@
   }
   function eject() { var m = M(); if (m) m.setTape(null, null); }
 
+  // Every channel's deck (2026-10-30): which tape is in CH 1–5 and what it
+  // plays, read live off radio/{ch}, for the dashboard's Tapes in the decks.
+  var CHANNELS = ['1', '2', '3', '4', '5'], deckBy = {}, decksOn = false;
+  function watchDecks() {
+    if (decksOn) return;
+    decksOn = true;
+    fb().then(function (f) {
+      CHANNELS.forEach(function (ch) {
+        try {
+          f.firestore().collection('radio').doc(ch).onSnapshot(function (snap) {
+            var d = snap.exists ? snap.data() || {} : {};
+            deckBy[ch] = d.tape && d.tape.id ? { ch: ch, tape: d.tape, track: d.track_title || '', paused: !!d.paused } : null;
+            emit();
+          }, function () { /* keep what was read */ });
+        } catch (e) { /* no listener, no decks */ }
+      });
+    }).catch(function () { decksOn = false; });
+  }
+  function decks() {
+    watchDecks();
+    return CHANNELS.map(function (ch) { return deckBy[ch]; }).filter(Boolean).map(function (d) { return Object.assign({}, d, { tape: get(d.tape.id) || d.tape }); });
+  }
+  // Takes the tape out of that channel's deck (what plays goes on playing).
+  function ejectCh(ch) {
+    var m = M();
+    deckBy[ch] = null;
+    if (m && m.channel() === ch) { eject(); emit(); return Promise.resolve(); }
+    emit();
+    return fb().then(function (f) { return f.firestore().collection('radio').doc(ch).set({ tape: null, updated_at: Date.now() }, { merge: true }); });
+  }
+
   /* ── A cassette, drawn to the real 100.5 × 63.8 mm (v3.13.0) ──
      The Music tab, the control center, the desk and the phone. */
   function esc(x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -155,6 +186,6 @@
     cassette: cassette, svg: svg,
     load: load, list: list, get: get, create: create, update: update, remove: remove,
     forOperation: forOperation, forCell: forCell, operations: function () { return ops.slice(); }, operation: operation,
-    inDeck: inDeck, insert: insert, eject: eject, runtime: runtime, fmt: fmt, COLORS: COLORS, reloadOps: reloadOps
+    inDeck: inDeck, insert: insert, eject: eject, decks: decks, ejectCh: ejectCh, runtime: runtime, fmt: fmt, COLORS: COLORS, reloadOps: reloadOps
   };
 })();

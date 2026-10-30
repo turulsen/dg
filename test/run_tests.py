@@ -4937,6 +4937,37 @@ def test_acell_session_notes_desk(p):
     record("acell-notes", "no JS errors (session notes)", not errs, str(errs))
     page.close()
 
+def test_acell_mobile_decks(p):
+    """2026-10-30: the dashboard's Tapes in the decks shows every channel
+    with a tape in its deck (not only the dialed one), each as its own
+    cassette in its colour, with an x that takes it out of that deck."""
+    page, errs = open_phone(p)
+    page.evaluate("() => { dgTapes.create({ name: 'Spooner Ave', scope: 'cell', cell_id: 'cell_osiris', color: '#7a2a24' }).then(function (t) { window.__t2 = t.id; }); }")
+    page.wait_for_timeout(300)
+    page.evaluate("() => dgTapes.decks()")
+    wait_for_condition(lambda: sum(1 for l in page.evaluate("() => window.__dgFirestoreListeners || []") if l.get("isDoc") and l["path"].startswith("radio/")) >= 5, timeout_ms=5000)
+    t2 = page.evaluate("() => window.__t2")
+    push_firestore_doc_snapshot(page, "radio/1", True, {"tape": {"id": t2, "name": "Spooner Ave", "color": "#7a2a24"}, "track_title": "Any Human Heart"})
+    push_firestore_doc_snapshot(page, "radio/3", True, {"tape": {"id": "tape_dread", "name": "Lighthouse · dread", "color": "#2a2a2a"}, "track_title": "Lighthouse at Dusk"})
+    acm(page, "dgAcm.go('customise')")
+    blk = page.locator("[data-acm=blk][data-k=tape]")
+    if blk.count() and "on" not in (blk.get_attribute("class") or ""): blk.click()
+    acm(page, "dgAcm.go('session')")
+    wait_for_condition(lambda: page.locator(".acm-deckrow").count() == 2, timeout_ms=3000)
+    rows = page.eval_on_selector_all(".acm-deckrow .acm-g", "els => els.map(e => e.innerText.replace(/\\s+/g, ' '))")
+    fills = page.eval_on_selector_all(".acm-deckrow .acm-deckcas svg", "els => els.map(e => e.innerHTML.indexOf('#7a2a24') >= 0)")
+    record("acell-mobile", "Tapes in the decks: every channel's tape (CH 1 and CH 3), not only the dialed one", len(rows) == 2 and "Spooner Ave" in rows[0] and "CH 1" in rows[0] and "CH 3" in rows[1], str(rows))
+    record("acell-mobile", "…each drawn as its cassette, in its own colour", len(fills) == 2 and fills[0] is True, str(fills))
+    page.click(".acm-deckrow [data-acm=deck-out][data-ch='1']")
+    wait_for_condition(lambda: (fs_doc(page, "radio/1") or {}).get("tape", 1) is None, timeout_ms=3000)
+    wait_for_condition(lambda: page.locator(".acm-deckrow").count() == 1, timeout_ms=3000)
+    record("acell-mobile", "…x takes that tape out of its deck", (fs_doc(page, "radio/1") or {}).get("tape", 1) is None and page.locator(".acm-deckrow").count() == 1, str(fs_doc(page, "radio/1")))
+    page.click(".acm-deckrow [data-acm=deck-console]")
+    wait_for_condition(lambda: page.evaluate("() => dgAcm.current()") == "music", timeout_ms=3000)
+    record("acell-mobile", "…tapping a tape opens the console on its channel", page.evaluate("() => dgAcm.current() === 'music' && dgAcellMusic.channel() === '3'"), page.evaluate("() => dgAcellMusic.channel()"))
+    record("acell-mobile", "no JS errors (decks)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14098,6 +14129,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_mobile_decks, browser, area="acell-mobile")
         safe(test_acell_session_notes_desk, browser, area="acell-notes")
         safe(test_acell_tape_steps_once, browser, area="acell-tapes")
         safe(test_acell_in_shell, browser, area="acell-shell-hub")
