@@ -454,7 +454,7 @@
     ['anote', 'Agent Notes', 'into an Agent\'s file', 'pk'], ['snote', 'Session Notes', 'vault notes, Docs, pages for Play', 'or'], ['npc', 'NPCs', 'DEX · HP · WP · SAN', 'pu'],
     ['tape', 'Tape', 'Soundtrack (for session)', 'wh'], ['sess', 'New Session', 'blank, template or a copy', 'y']];
   var PLAY_ADD = [['qnote', 'Quick note', 'the session or an Agent', 'y'], ['qev', 'Add evidence', 'quickly, to the Cell and operation', 'gr'], ['rel', 'Release evidence', 'hand it to the players', 'or'], ['npc', 'NPC', 'into initiative', 'pu'],
-    ['agent', 'Agent', 'their sheet, read only', 'pk'], ['pads', 'Fire a pad', 'any effect', 'bl'], ['end', 'End the game', 'to Debrief', 'wh']];
+    ['agent', 'Agent', 'their sheet, read only', 'pk'], ['console', 'Tape', 'the console: decks, tracks, loops', 'bl'], ['end', 'End the game', 'to Debrief', 'wh']];
   var ADD_ACTIONS = {};
   function addSheet() {
     var set = st.mode === 'play' ? PLAY_ADD : PREP_ADD;
@@ -485,6 +485,11 @@
   ADD_ACTIONS.sess = function () { go('new-session'); };
   ADD_ACTIONS.end = function () { setMode('debrief'); };
   ADD_ACTIONS.pads = function () { go('pads'); };
+  // Tape (Play, 2026-10-30): the Music tab, at the console.
+  ADD_ACTIONS.console = function () {
+    go('music');
+    setTimeout(function () { var c = document.getElementById('ac-console'); if (c && c.scrollIntoView) c.scrollIntoView({ block: 'start' }); }, 120);
+  };
 
   // A note on an Agent (or on the session), into their player file.
   function agentNoteSheet(code) {
