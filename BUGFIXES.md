@@ -7037,3 +7037,120 @@ that does (CON 11 Average, DEX 15 Nimble); a feature a player wrote
 stays. Edit mode files the corrected words on Save, and the PDF export
 uses them too. The New Recruit wizard was never affected (its own
 suggestions are by band). Test: `test_agent_rules_unit`.
+
+---
+
+## A-Cell on a phone, tapes and the player (v3.13.0, PR #94)
+
+Play-testing the new A-Cell (sessions, tapes, the console; the Field kit
+phone layout) on an iPhone and an iPad, 2026-10-29/30.
+
+### New scripts with hour-old styles
+
+Several reports were the same thing: the open tape read pale and
+sans-serif with collapsed colour swatches on an iPhone, the iPad's Play
+desk showed panels a newer stylesheet hid, and the phone's Pads came up
+without its brown player. The markup was the new version each time; the
+CSS wasn't. `firebase.json` sent `no-cache` for `assets/*.js` and HTML
+but nothing for CSS, so Firebase Hosting's default let a browser keep a
+stylesheet for an hour, and the service worker's install filled its new
+cache through that HTTP cache (`cache.addAll`), storing the old CSS
+under the new `CACHE_NAME`. `assets/*.css` is `no-cache` now, the
+install fetches with `cache: 'reload'` and the background refresh with
+`cache: 'no-cache'`. (The phone layout also carries its own copy of the
+open tape's styles, added before the cause was found.)
+
+### A tape of two tracks flipped between them
+
+Every open A-Cell tab moved the tape on when its preview `<audio>`
+fired `ended`, and a stale or second `ended` (another device, a seek
+parked at the end of an overrun track) stepped it again, from the
+tab's possibly stale idea of the current track: with two tracks, back
+to the first. `maybeAutoAdvance_` now believes `ended` only for the
+live track after it really ran (not within 2.5 s of its start, not a
+seek parked at the end), and steps in a transaction from that exact
+broadcast (`track_url` and `started_at`), so a second attempt finds it
+moved on and does nothing. Test: `test_acell_tape_steps_once`.
+
+### Sheet → Columns read pale
+
+The Sheet's view bar and the Cells channel buttons (v3.12.0) used the
+Agent File's `--ink`/`--paper` variables, which are defined only inside
+`.af-root`; elsewhere they were undefined and the text took the
+folder's light colour. Both panels define them now, and the Columns tick
+boxes no longer take the panel's 36 px input height (the name sat under
+the box).
+
+### What a sheet saved didn't show until you left the screen
+
+A held sheet (one you type into: New NPC, Add a note) keeps the phone
+screen from redrawing under it, so the redraw its own save triggered was
+skipped, and nothing redrew after it closed. First seen as Add a note
+(given its own fix), then as a new NPC never reaching Initiative,
+whichever button or switch was used. The sheet itself now redraws the
+screen when a held sheet closes, which replaced the earlier one-off fix;
+the NPC is also added to the session as it is now, not as it was when
+the sheet opened. Test: `test_acell_mobile_release` (fails on the old
+code both ways).
+
+### Vault notes: bold didn't show
+
+The markup was right (`<b>`); the note text inherited the page's light
+300 weight, and `<b>` means "bolder", which from 300 is only 400.
+`.vn-body` is 400 and `b`/`strong` 700 now. Test:
+`test_acell_vault_format`.
+
+### The player vanished from Pads
+
+Behind the phone frame the computer's Play desk is open too (A-Cell's
+tab is `desk` in Play), and every Firestore update to the channel
+rebuilt its deck, which took the lent player (`dgAcConsole.attach`)
+back into its hidden panel. Tapping an effect or a channel sends such an
+update, so the player disappeared constantly. On the phone layout the
+desk leaves the player alone. Test: `test_acell_hear_here`.
+
+### Pads loaded another Cell's tape
+
+Pads (and the desk's Effect pads) took "this tape" from whatever was in
+the dialed channel's deck, even a tape another Cell had left on it. They
+use the deck's tape only when it is one of the session's (its operation
+or Cell), and Pads tunes to the session's Cell's channel the first time
+it opens for a session.
+
+### The progress bar sat at 0:00 / 30:00 on a phone
+
+A phone never loads the track (its preview element is refused), and the
+player's length then fell back to the old desk's seek slider, whose
+default is 1800 s. The player takes the tape's own time for the track
+first (else the library's measured duration).
+
+### Effects silent on the Handler's phone; the Music level did nothing
+
+With Play on this device (the Hub's radio playing the channel inside
+A-Cell's frame), pads didn't sound and the Music fader didn't change
+the level.
+- *Effects:* a fire reached that device's radio only with the next
+  snapshot, after the tap, where iOS can refuse a one-shot, and the
+  radio drops a refused one-shot that would have finished. A fire's
+  time is taken at the tap now (`fireStinger_(id, label, at)`), and
+  A-Cell hands the same fire to the radio inside the tap
+  (`dgRadio.playStinger`; the radio's per-stinger code is now
+  `startStinger_`), which the snapshot then finds already playing.
+  Before the radio's first snapshot of a channel it leaves it to the
+  snapshot (otherwise the backlog guard would be lost). Not yet
+  confirmed on a real iPhone.
+- *Music level:* this finishes issue #39 again. On iOS a track's level
+  only works through Web Audio, which the radio uses only for a host
+  that passes the CORS probe; `storage.cors.json` allowed only
+  `turulsen.github.io`, and the site moved to Firebase Hosting.
+  It now lists `dg-app-b3447.web.app` and `.firebaseapp.com` (a preview
+  channel's origin is added by hand when the config is applied). Needs
+  `gcloud storage buckets update gs://dg-app-b3447.firebasestorage.app
+  --cors-file=storage.cors.json`.
+
+### New round looked like it did nothing
+
+It counted the round up and put the turn back on top, but with the turn
+already on top only the title's number changed. A round marker above the
+post-its now says Round N and whose turn it is, New round says so in a
+toast, and Start over goes back to round 1.
