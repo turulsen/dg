@@ -502,8 +502,14 @@
   .evidence-create-error{ color:var(--red); font-size:11px; min-height:1.3em; }
   /* v3.6.0: languages, formatting toolbar, growing body, Share-with rows */
   .evidence-view-switch{ margin-left:auto; }
-  .evidence-restrict-dd{ border:1px solid #cbbd94; background:#fffdf4; }
-  .evidence-restrict-dd summary{ cursor:pointer; padding:8px 10px; font-size:13px; list-style:none; }
+  /* Ink and type of their own (2026-10-31: the picker took the folder's
+     pale sans-serif text) */
+  .evidence-restrict-dd{ border:1px solid #cbbd94; background:#fffdf4; color:#2a2418; font-family:'Courier Prime',monospace; }
+  .evidence-restrict-dd summary{ cursor:pointer; padding:8px 10px; font-size:13px; list-style:none; color:#5a4e38; }
+  .evidence-restrict-dd summary b{ color:#2a2418; font-weight:700; }
+  .evidence-restrict-dd label{ display:flex; align-items:center; gap:8px; padding:4px 0; color:#2a2418; font-size:13px; }
+  .evidence-restrict-dd input[type="checkbox"]{ accent-color:#2a2418; width:16px; height:16px; margin:0; }
+  .evidence-restrict-dd .evidence-restrict-note{ color:#8a7a5a; font-size:11.5px; }
   .evidence-restrict-dd summary::-webkit-details-marker{ display:none; }
   .evidence-restrict-dd summary::after{ content:' \25BE'; }
   .evidence-restrict-dd[open] summary{ border-bottom:1px dashed #cbbd94; }

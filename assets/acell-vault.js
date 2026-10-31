@@ -222,9 +222,11 @@
         html.push('<li style="margin-left:' + (m[1].length * 8) + 'px">' + inline(m[2], opts) + '</li>');
         continue;
       }
-      if ((m = /^(\s*)\d+[.)]\s+(.*)$/.exec(l))) {
+      // A numbered item keeps the number written (2026-10-31: a list broken
+      // by a blank line or a paragraph started again at 1 every time).
+      if ((m = /^(\s*)(\d+)[.)]\s+(.*)$/.exec(l))) {
         if (list !== 'ol') { closeList(); html.push('<ol class="vn-list">'); list = 'ol'; }
-        html.push('<li>' + inline(m[2], opts) + '</li>');
+        html.push('<li value="' + (+m[2]) + '" style="margin-left:' + (m[1].length * 8) + 'px">' + inline(m[3], opts) + '</li>');
         continue;
       }
       closeList();
@@ -301,10 +303,9 @@
       var fl = folderLabel(dirOf(path));
       var head = opts.hideHead ? '' : '<div class="vn-bar"><span class="vn-file" title="' + esc(path) + '">' + esc((fl ? fl + ' › ' : '') + title(path)) + '</span>' +
         '<span class="vn-status">' + (n ? '' : 'new note') + '</span>' +
-        (mode === 'edit' ? urHtml() : '') +
         '<span class="vn-modes"><button type="button" data-vmode="read" class="' + (mode === 'read' ? 'on' : '') + '">Read</button><button type="button" data-vmode="edit" class="' + (mode === 'edit' ? 'on' : '') + '">✎ Edit</button></span></div>';
       var body;
-      if (mode === 'edit') body = (opts.hideHead ? '<div class="vn-urbar">' + urHtml() + '</div>' : '') + '<textarea class="vn-ta" spellcheck="true">' + esc(shown()) + '</textarea>';
+      if (mode === 'edit') body = tbHtml() + '<textarea class="vn-ta" spellcheck="true">' + esc(shown()) + '</textarea>';
       else body = '<div class="vn-body">' + (shown().trim() ? render(shown(), opts) : '<p class="vn-empty">' + esc(opts.emptyText || 'Nothing here yet — ✎ Edit to write.') + '</p>') + '</div>';
       host.innerHTML = head + body;
       var ta = host.querySelector('.vn-ta');
@@ -322,7 +323,12 @@
           grow(); commit(setShown(ta.value));
         });
         ta.addEventListener('keydown', function (e) {
+          if (sugEl) return;   // the [[ list has the keys
+          if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); indent(ta, e.shiftKey); return; }
+          if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && ta.selectionStart === ta.selectionEnd && listEnter(ta)) { e.preventDefault(); return; }
           if (!(e.ctrlKey || e.metaKey)) return;
+          var k0 = e.key.toLowerCase();
+          if (k0 === 'b' || k0 === 'i') { e.preventDefault(); mdApply(ta, k0); return; }
           var k = e.key.toLowerCase();
           if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
           else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
@@ -330,6 +336,14 @@
         linkSuggest(ta, path);
         urState();
       }
+    }
+    // The formatting bar (2026-10-31): Evidence's tools, a checklist and
+    // [[ ]], then Undo / Redo.
+    function tbHtml() {
+      return '<div class="vn-tb">' + [['h1', 'H1', 'Heading'], ['h2', 'H2', 'Smaller heading'], ['b', '<b>B</b>', 'Bold (Ctrl+B)'], ['i', '<i>I</i>', 'Italic (Ctrl+I)'],
+        ['ul', '&bull; List', 'Bulleted list'], ['ol', '1. List', 'Numbered list'], ['task', '&#9744; Tasks', 'Checklist'], ['q', '&#10077; Quote', 'Quote'], ['hr', '&mdash; Rule', 'Divider line'], ['link', '[[ ]]', 'Link a note']]
+        .map(function (b) { return '<button type="button" data-vmd="' + b[0] + '" title="' + b[2] + '">' + b[1] + '</button>'; }).join('') +
+        '<span class="vn-tb-sp"></span>' + urHtml() + '</div>';
     }
     function urHtml() { return '<span class="vn-ur"><button type="button" data-vur="undo" title="Undo (Ctrl+Z)">Undo</button><button type="button" data-vur="redo" title="Redo (Ctrl+Shift+Z)">Redo</button></span>'; }
     function urState() {
@@ -349,8 +363,10 @@
     }
     function undo() { var ta = host.querySelector('.vn-ta'); if (!ta || !hist.past.length) return; hist.future.push(ta.value); setText(hist.past.pop()); }
     function redo() { var ta = host.querySelector('.vn-ta'); if (!ta || !hist.future.length) return; hist.past.push(ta.value); setText(hist.future.pop()); }
-    host.addEventListener('mousedown', function (e) { if (e.target.closest('[data-vur]')) e.preventDefault(); });
+    host.addEventListener('mousedown', function (e) { if (e.target.closest('[data-vur],[data-vmd]')) e.preventDefault(); });
     host.addEventListener('click', function (e) {
+      var md = e.target.closest('[data-vmd]');
+      if (md) { var t = host.querySelector('.vn-ta'); if (t) mdApply(t, md.getAttribute('data-vmd')); return; }
       var ur = e.target.closest('[data-vur]');
       if (ur) { if (ur.getAttribute('data-vur') === 'undo') undo(); else redo(); return; }
       var b = e.target.closest('[data-vmode]');
@@ -378,6 +394,71 @@
       destroy: function () { document.removeEventListener('dg-vault', onChange); clearTimeout(timer); }
     };
   }
+  /* Writing tools (2026-10-31), the same as Evidence's: a selection is
+     wrapped, or the selected lines marked; Tab indents, Enter continues
+     a list. Each change goes through 'input', so it saves and can be undone. */
+  function mdApply(ta, kind) {
+    var v = ta.value, s = ta.selectionStart, e = ta.selectionEnd, sel = v.slice(s, e);
+    if (kind === 'b' || kind === 'i') {
+      var mk = kind === 'b' ? '**' : '*', inner = sel || (kind === 'b' ? 'bold' : 'italic');
+      ta.setRangeText(mk + inner + mk, s, e, 'end');
+      if (!sel) ta.setSelectionRange(s + mk.length, s + mk.length + inner.length);
+    } else if (kind === 'hr') {
+      ta.setRangeText((s && v[s - 1] !== '\n' ? '\n' : '') + '\n---\n\n', s, e, 'end');
+    } else if (kind === 'link') {
+      ta.setRangeText('[[' + sel + ']]', s, e, 'end');
+      if (!sel) ta.setSelectionRange(s + 2, s + 2);
+    } else {
+      var ls = v.lastIndexOf('\n', s - 1) + 1, le = v.indexOf('\n', e);
+      if (le < 0) le = v.length;
+      var prefix = { h1: '# ', h2: '## ', ul: '- ', q: '> ', task: '- [ ] ' }[kind], n = 0;
+      var out = v.slice(ls, le).split('\n').map(function (l) {
+        var ind = /^\s*/.exec(l)[0], body = l.slice(ind.length);
+        var bare = body.replace(/^(#{1,6}\s+|[-*+]\s+\[[ xX]\]\s+|[-*+•]\s+|\d+[.)]\s+|>\s?)/, '');
+        if (kind === 'ol') return /^\d+[.)]\s/.test(body) ? ind + bare : ind + (++n) + '. ' + bare;
+        if (kind === 'task') return /^[-*+]\s+\[[ xX]\]\s/.test(body) ? ind + bare : ind + prefix + bare;
+        return body.indexOf(prefix) === 0 ? ind + bare : ind + prefix + bare;
+      }).join('\n');
+      ta.setRangeText(out, ls, le, 'select');
+    }
+    ta.focus();
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  // Tab / Shift+Tab: the line, or every selected line, in or out by two spaces.
+  function indent(ta, out) {
+    var v = ta.value, s = ta.selectionStart, e = ta.selectionEnd;
+    var ls = v.lastIndexOf('\n', s - 1) + 1, le = v.indexOf('\n', e);
+    if (le < 0) le = v.length;
+    if (!out && s === e && !/^\s*([-*+]|\d+[.)])\s/.test(v.slice(ls, le))) {
+      ta.setRangeText('  ', s, e, 'end');
+    } else {
+      var first = 0, total = 0;
+      var lines = v.slice(ls, le).split('\n').map(function (l, k) {
+        var d = out ? -Math.min(2, /^ */.exec(l)[0].length) : 2;
+        if (k === 0) first = d; total += d;
+        return d < 0 ? l.slice(-d) : '  ' + l;
+      });
+      ta.setRangeText(lines.join('\n'), ls, le, 'preserve');
+      ta.setSelectionRange(Math.max(ls, s + first), Math.max(ls, e + total));
+    }
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  // Enter in a list carries it on (the next number, - [ ], > ); Enter on an
+  // empty item ends the list.
+  function listEnter(ta) {
+    var v = ta.value, s = ta.selectionStart, ls = v.lastIndexOf('\n', s - 1) + 1, line = v.slice(ls, s);
+    var m = /^(\s*)([-*+]\s+\[[ xX]\]\s+|[-*+]\s+|(\d+)([.)])\s+|>\s?)(.*)$/.exec(line);
+    if (!m) return false;
+    if (!m[5].trim() && v.slice(s, (v.indexOf('\n', s) + 1 || v.length + 1) - 1).trim() === '') {
+      ta.setRangeText('', ls, s, 'end');
+    } else {
+      var next = m[3] ? (+m[3] + 1) + m[4] + ' ' : /\[[ xX]\]/.test(m[2]) ? m[2].replace(/\[[xX]\]/, '[ ]') : m[2];
+      ta.setRangeText('\n' + m[1] + next, s, s, 'end');
+    }
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+
   /* [[ suggestions, as in Obsidian (2026-10-30): typing [[ in any note
      lists the vault's notes under the cursor, narrowing as you type; a tap,
      Enter or Tab writes the link and closes it with ]]. */

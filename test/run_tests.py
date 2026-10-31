@@ -5145,6 +5145,25 @@ def test_acell_vault_format(p):
     page.click(".ac-vnote [data-vv=fwd]")
     wait_for_condition(lambda: "Lighthouse" in page.inner_text(".ac-vnote .vn-file"), timeout_ms=3000)
     record("acell-vault-fmt", "…Forward", "Lighthouse" in page.inner_text(".ac-vnote .vn-file"), "")
+    # 2026-10-31: numbering kept, Tab stays in the note, Enter continues a
+    # list, and Evidence's formatting bar.
+    page.evaluate("() => dgVault.save('T/Steps.md', '# Steps\\n\\n1. First\\n\\nBetween.\\n\\n2. Second')")
+    page.evaluate("() => window.dgAcLibrary.openNote('T/Steps.md')")
+    page.wait_for_selector(".ac-vnote .vn-list li", timeout=4000)
+    nums = page.eval_on_selector_all(".ac-vnote .vn-list li", "e => e.map(x => x.value)")
+    record("acell-vault-fmt", "a numbered list keeps its numbers across a paragraph", nums == [1, 2], str(nums))
+    page.click(".ac-vnote [data-vmode=edit]")
+    record("acell-vault-fmt", "editing has Evidence's formatting bar (and a checklist, [[ ]])", page.locator(".ac-vnote .vn-tb [data-vmd]").count() == 10, "")
+    page.click(".ac-vnote .vn-ta"); page.keyboard.press("Control+End")
+    page.keyboard.press("Enter")
+    page.keyboard.type("Third")
+    page.keyboard.press("Tab")
+    page.keyboard.press("Enter"); page.keyboard.press("Enter"); page.keyboard.type("end")
+    v = page.input_value(".ac-vnote .vn-ta")
+    record("acell-vault-fmt", "Enter carries the numbering on, Tab indents and stays in the note, Enter on an empty item ends the list",
+           "\n  3. Third\nend" in v and page.evaluate("() => document.activeElement.classList.contains('vn-ta')"), repr(v[-40:]))
+    page.click(".ac-vnote [data-vmd=task]")
+    record("acell-vault-fmt", "…the bar's Tasks marks the line", page.input_value(".ac-vnote .vn-ta").endswith("- [ ] end"), repr(page.input_value(".ac-vnote .vn-ta")[-20:]))
     record("acell-vault-fmt", "no JS errors (vault format)", not errs, str(errs))
     page.close()
 

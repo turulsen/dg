@@ -85,3 +85,10 @@ h1.vn-h{font-size:24px}h2.vn-h{font-size:20px}h3.vn-h{font-size:17px}h4.vn-h,h5.
 .vn-ur button:disabled{opacity:.35;cursor:default}
 .vn-urbar{display:flex;justify-content:flex-end;margin-bottom:6px}
 @media (max-width:760px){.vn-ur button{padding:8px 14px;font-size:12px}}
+
+/* The formatting bar while editing (2026-10-31), as Evidence's */
+.vn-tb{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:0 0 6px}
+.vn-tb [data-vmd]{font:11px 'Courier Prime',monospace;color:#2a2418;background:rgba(28,22,8,.04);border:1px solid #cbbd94;padding:4px 8px;cursor:pointer;min-height:28px}
+.vn-tb [data-vmd]:active{background:#2a2418;color:#fbf8ec}
+.vn-tb-sp{flex:1}
+@media (max-width:760px){.vn-tb{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}.vn-tb [data-vmd]{flex:none;min-height:36px;padding:6px 10px}.vn-tb-sp{display:none}}
