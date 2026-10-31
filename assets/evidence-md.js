@@ -30,18 +30,29 @@
   function render(text) {
     const lines = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n');
     const out = [];
-    let para = [], list = null, quote = [];
+    let para = [], list = null, quote = [], olLast = 0;
     function flushPara() { if (para.length) { out.push('<p>' + para.map(inline).join('<br>') + '</p>'); para = []; } }
     // A numbered list starts at the number written: "2. Step" after a
     // paragraph stays 2, not 1.
-    function flushList() { if (list) { out.push('<' + list.tag + (list.start > 1 ? ' start="' + list.start + '"' : '') + '>' + list.items.map(function (x) { return '<li>' + inline(x) + '</li>'; }).join('') + '</' + list.tag + '>'); list = null; } }
+    // Within a list items count on from the first ("1. 1. 1." is 1, 2, 3);
+    // steps parted by text, the next written as 1 again, carry on from the
+    // last in the same section (2026-10-31).
+    function flushList() { if (list) { out.push('<' + list.tag + (list.start > 1 ? ' start="' + list.start + '"' : '') + '>' + list.items.map(function (x) { return '<li>' + inline(x) + '</li>'; }).join('') + '</' + list.tag + '>'); if (list.tag === 'ol') olLast = list.start + list.items.length - 1; list = null; } }
     function flushQuote() { if (quote.length) { out.push('<blockquote>' + quote.map(inline).join('<br>') + '</blockquote>'); quote = []; } }
     function flush() { flushPara(); flushList(); flushQuote(); }
-    lines.forEach(function (raw) {
+    function nextIsItem(from, tag) {
+      for (let k = from; k < lines.length; k++) {
+        if (!lines[k].trim()) continue;
+        return tag === 'ol' ? /^\s*\d+[.)]\s+/.test(lines[k]) : /^\s*[-*•]\s+/.test(lines[k]);
+      }
+      return false;
+    }
+    lines.forEach(function (raw, idx) {
       const line = raw.replace(/\s+$/, '');
       let m;
-      if (!line.trim()) { flush(); return; }
-      if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) { flush(); out.push('<h' + (m[1].length + 2) + '>' + inline(m[2]) + '</h' + (m[1].length + 2) + '>'); return; }
+      // A blank line between two items of a list keeps the list going.
+      if (!line.trim()) { if (list && !para.length && nextIsItem(idx + 1, list.tag)) return; flush(); return; }
+      if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) { flush(); olLast = 0; out.push('<h' + (m[1].length + 2) + '>' + inline(m[2]) + '</h' + (m[1].length + 2) + '>'); return; }
       if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flush(); out.push('<hr>'); return; }
       if ((m = /^\s*>\s?(.*)$/.exec(line))) { flushPara(); flushList(); quote.push(m[1]); return; }
       if ((m = /^\s*[-*•]\s+(.*)$/.exec(line))) {
@@ -51,7 +62,7 @@
       }
       if ((m = /^\s*(\d+)[.)]\s+(.*)$/.exec(line))) {
         flushPara(); flushQuote();
-        if (!list || list.tag !== 'ol') { flushList(); list = { tag: 'ol', items: [], start: parseInt(m[1], 10) }; }
+        if (!list || list.tag !== 'ol') { flushList(); const n0 = parseInt(m[1], 10); list = { tag: 'ol', items: [], start: n0 === 1 && olLast ? olLast + 1 : n0 }; }
         m[1] = m[2];
         list.items.push(m[1]); return;
       }

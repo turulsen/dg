@@ -5145,6 +5145,32 @@ def test_acell_vault_format(p):
     page.click(".ac-vnote [data-vv=fwd]")
     wait_for_condition(lambda: "Lighthouse" in page.inner_text(".ac-vnote .vn-file"), timeout_ms=3000)
     record("acell-vault-fmt", "…Forward", "Lighthouse" in page.inner_text(".ac-vnote .vn-file"), "")
+    # 2026-10-31: numbering kept, Tab stays in the note, Enter continues a
+    # list, and Evidence's formatting bar.
+    page.evaluate("() => dgVault.save('T/Steps.md', '# Steps\\n\\n1. First\\n\\nBetween.\\n\\n2. Second')")
+    page.evaluate("() => window.dgAcLibrary.openNote('T/Steps.md')")
+    page.wait_for_selector(".ac-vnote .vn-list li", timeout=4000)
+    nums = page.eval_on_selector_all(".ac-vnote .vn-list li", "e => e.map(x => x.value)")
+    record("acell-vault-fmt", "a numbered list keeps its numbers across a paragraph", nums == [1, 2], str(nums))
+    page.evaluate("() => dgVault.save('T/Lazy.md', '# Lazy\\n\\n1. a\\n1. b\\n\\n1. c\\n\\nA note.\\n\\n1. d\\n\\n## Next\\n\\n1. e\\n\\nText.\\n\\n4. f')")
+    page.evaluate("() => window.dgAcLibrary.openNote('T/Lazy.md')")
+    page.wait_for_function("() => document.querySelectorAll('.ac-vnote .vn-list li').length === 6", timeout=4000)
+    lz = page.eval_on_selector_all(".ac-vnote .vn-list li", "e => e.map(x => x.value)")
+    record("acell-vault-fmt", "'1.' on every item counts 1, 2, 3 (blank lines and a note between carry on; a heading starts over; 4. stays 4)", lz == [1, 2, 3, 4, 1, 4], str(lz))
+    page.evaluate("() => window.dgAcLibrary.openNote('T/Steps.md')")
+    page.wait_for_selector(".ac-vnote .vn-list li", timeout=4000)
+    page.click(".ac-vnote [data-vmode=edit]")
+    record("acell-vault-fmt", "editing has Evidence's formatting bar (and a checklist, [[ ]])", page.locator(".ac-vnote .vn-tb [data-vmd]").count() == 10, "")
+    page.click(".ac-vnote .vn-ta"); page.keyboard.press("Control+End")
+    page.keyboard.press("Enter")
+    page.keyboard.type("Third")
+    page.keyboard.press("Tab")
+    page.keyboard.press("Enter"); page.keyboard.press("Enter"); page.keyboard.type("end")
+    v = page.input_value(".ac-vnote .vn-ta")
+    record("acell-vault-fmt", "Enter carries the numbering on, Tab indents and stays in the note, Enter on an empty item ends the list",
+           "\n  3. Third\nend" in v and page.evaluate("() => document.activeElement.classList.contains('vn-ta')"), repr(v[-40:]))
+    page.click(".ac-vnote [data-vmd=task]")
+    record("acell-vault-fmt", "…the bar's Tasks marks the line", page.input_value(".ac-vnote .vn-ta").endswith("- [ ] end"), repr(page.input_value(".ac-vnote .vn-ta")[-20:]))
     record("acell-vault-fmt", "no JS errors (vault format)", not errs, str(errs))
     page.close()
 
@@ -5228,6 +5254,52 @@ def test_acell_hear_here(p):
     record("acell-hear", "a tape from another Cell in the deck doesn't load its pads on Pads", "THIS SESSION" in labs.upper() and "THIS TAPE · 3" not in labs.upper(), labs[:300])
     record("acell-hear", "no JS errors (hear it here)", not errs, str(errs))
     ctx.close()
+
+def test_acell_mobile_waiting(p):
+    """2026-10-30: "Alfred is dead, long dead" stayed in Waiting on you as
+    wounded. An Agent at HP 0 is KIA, not wounded; and any row can be
+    dismissed for the session with its x, until what it says changes."""
+    docs = acell_cell_fixture()
+    cj = json.loads(docs["characters/MARA-KS01"]["character_json"])
+    cj.setdefault("live", {})
+    s = json.dumps(cj).replace('"hp": 11', '"hp": 0')
+    docs["characters/MARA-KS01"] = dict(docs["characters/MARA-KS01"], character_json=s)
+    page, errs = open_phone(p, docs=docs)
+    acm(page, "dgAcm.go('session')")
+    wait_for_condition(lambda: "wounded" in page.inner_text("#acm-view"), timeout_ms=5000)
+    txt = page.inner_text("#acm-view")
+    record("acell-mobile", "Waiting on you: a wounded Agent, but not one at HP 0 (KIA)", "Reyes is wounded" in txt and "Kessler is wounded" not in txt, txt[:300])
+    page.click("[data-acm=w-x][data-k^='agent:TOMA']")
+    page.wait_for_timeout(300)
+    record("acell-mobile", "…x dismisses a row for this session", "Reyes is wounded" not in page.inner_text("#acm-view"), "")
+    record("acell-mobile", "no JS errors (waiting)", not errs, str(errs))
+    page.close()
+
+def test_acell_mobile_typing_kept(p):
+    """2026-10-31, iPhone: writing a session note, the keyboard closed every
+    few letters. Each pause saved the note and the vault's change redrew
+    the phone screen, text box and all. While a note is being written the
+    screen doesn't redraw; it catches up when the text box is left."""
+    page, errs = open_phone(p)
+    page.evaluate("() => dgVault.save('T/Typing.md', '# Typing\\n\\n')")
+    page.wait_for_timeout(300)
+    page.evaluate("() => window.dgAcmNotes.open('T/Typing.md')")
+    page.wait_for_timeout(500)
+    page.evaluate("() => dgAcm.actions.vedit ? null : null")
+    page.click("#acm-view .vn-body, #acm-view .acm-ed")
+    page.wait_for_selector("#acm-view .vn-ta", timeout=4000)
+    page.click("#acm-view .vn-ta")
+    page.keyboard.press("Control+End")
+    page.evaluate("() => { window.__ta = document.querySelector('#acm-view .vn-ta'); }")
+    page.keyboard.type("First words")
+    page.wait_for_timeout(1500)   # the save, and the vault's change event
+    page.keyboard.type(" and more")
+    page.wait_for_timeout(1500)
+    same = page.evaluate("() => document.querySelector('#acm-view .vn-ta') === window.__ta && document.activeElement === window.__ta")
+    saved = page.evaluate("() => (dgVault.get('T/Typing.md') || {}).content || ''")
+    record("acell-mobile", "writing a note on a phone: the save doesn't redraw the text box (the keyboard stays)", same and "First words and more" in saved, repr(saved[-40:]))
+    record("acell-mobile", "no JS errors (typing)", not errs, str(errs))
+    page.close()
 
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
@@ -14398,6 +14470,8 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
+        safe(test_acell_mobile_waiting, browser, area="acell-mobile")
         safe(test_acell_hear_here, browser, area="acell-hear")
         safe(test_acell_vault_format, browser, area="acell-vault-fmt")
         safe(test_acell_desk_player, browser, area="acell-desk-player")

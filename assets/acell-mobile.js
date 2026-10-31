@@ -139,7 +139,26 @@
     }
   }
   var rT = null;
-  function refresh() { if (!st.on || layer.querySelector('.acm-sheet[data-hold]')) return; clearTimeout(rT); rT = setTimeout(render, 30); }
+  // Never redraw under the keyboard (2026-10-31: on an iPhone the
+  // keyboard closed every few letters: each pause saved the note, the
+  // vault's change redrew the screen and the text box with it). While a
+  // note is being written (a textarea on the screen has the focus), a
+  // redraw waits for it to lose it.
+  var held = false;
+  function typing() {
+    var a = document.activeElement;
+    if (!a || !view.contains(a)) return false;
+    return a.tagName === 'TEXTAREA' || a.isContentEditable;
+  }
+  function refresh() {
+    if (!st.on || layer.querySelector('.acm-sheet[data-hold]')) return;
+    if (typing()) { held = true; return; }
+    clearTimeout(rT); rT = setTimeout(function () { if (typing()) { held = true; return; } render(); }, 30);
+  }
+  view.addEventListener('focusout', function () {
+    if (!held) return;
+    setTimeout(function () { if (held && !typing()) { held = false; refresh(); } }, 120);
+  });
 
   /* ── Sheets: slide up over a dim, close on the dim or [data-x] ── */
   function sheet(html, opts) {
@@ -595,14 +614,20 @@
           var un = s.evidence.map(function (id) { return E().find(id); }).filter(function (h) { return h && !h.released; });
           if (un.length) rows.push(['ev', un.length + ' evidence not released', un.map(function (h) { return h.title; }).slice(0, 3).join(' · '), 'Go']);
         }
-        agentsByDex(s).forEach(function (a) { if (a.hpMax && a.hp != null && a.hp <= a.hpMax / 2) rows.push(['agent:' + a.code, a.name.split(' ').pop() + ' is wounded · ' + a.hp + '/' + a.hpMax, '', 'File']); });
+        // Wounded, not dead: an Agent at HP 0 is KIA (2026-10-30: "Alfred is
+        // dead, long dead" kept showing as wounded).
+        agentsByDex(s).forEach(function (a) { if (a.hpMax && a.hp != null && a.hp > 0 && a.hp <= a.hpMax / 2) rows.push(['agent:' + a.code, a.name.split(' ').pop() + ' is wounded · ' + a.hp + '/' + a.hpMax, '', 'File']); });
         var D = T(), m = M();
         if (s && D && m && !m.state().tape) {
           var list = D.forOperation(s.operation_id).concat(D.forCell(s.cell_id));
           if (list.length) rows.push(['tape:' + list[0].id, 'No tape in CH ' + m.channel(), list[0].name + ' · ' + D.fmt(D.runtime(list[0])), 'Play']);
         }
         if (s && !S().notesOf(s).length) rows.push(['desk', 'No notes for this session yet', '', 'Add']);
-        return rows.length ? '<div class="acm-card">' + rows.map(function (r) { return '<div class="acm-row"><span class="acm-g"><b>' + esc(r[1]) + '</b>' + (r[2] ? '<small>' + esc(r[2]) + '</small>' : '') + '</span>' + btn(esc(r[3]), 'w:' + r[0], 's') + '</div>'; }).join('') + '</div>'
+        // x dismisses a row for this session, until what it says changes.
+        var gone = (A.store('dg_acm_dismiss', {})[s ? s.id : ''] || []);
+        rows = rows.filter(function (r) { return gone.indexOf(r[0] + '|' + r[1]) < 0; });
+        return rows.length ? '<div class="acm-card">' + rows.map(function (r) { return '<div class="acm-row"><span class="acm-g"><b>' + esc(r[1]) + '</b>' + (r[2] ? '<small>' + esc(r[2]) + '</small>' : '') + '</span>' + btn(esc(r[3]), 'w:' + r[0], 's') +
+          btn(I('close'), 'w-x', 's acm-wx', 'data-k="' + esc(r[0] + '|' + r[1]) + '" aria-label="Dismiss"') + '</div>'; }).join('') + '</div>'
           : '<p class="acm-none">Nothing waiting. Ready when you are.</p>';
       },
       cell: function () {
@@ -990,6 +1015,11 @@
     if (a.indexOf('go:') === 0) { go(a.slice(3)); return; }
     if (a.indexOf('add:') === 0) { if (ADD_ACTIONS[a.slice(4)]) ADD_ACTIONS[a.slice(4)](); return; }
     if (a.indexOf('sc:') === 0) { SHORTCUTS[a.slice(3)][1](); return; }
+    if (a === 'w-x') {
+      var dm = A.store('dg_acm_dismiss', {}), sid = (sess() || {}).id || '';
+      dm[sid] = (dm[sid] || []).concat([b.getAttribute('data-k')]).slice(-40);
+      A.keep('dg_acm_dismiss', dm); refresh(); return;
+    }
     if (a.indexOf('w:') === 0) {
       var w = a.slice(2);
       if (w === 'ev') go('desk', { seg: 'evidence' });
