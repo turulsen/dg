@@ -5249,6 +5249,32 @@ def test_acell_mobile_waiting(p):
     record("acell-mobile", "no JS errors (waiting)", not errs, str(errs))
     page.close()
 
+def test_acell_mobile_typing_kept(p):
+    """2026-10-31, iPhone: writing a session note, the keyboard closed every
+    few letters. Each pause saved the note and the vault's change redrew
+    the phone screen, text box and all. While a note is being written the
+    screen doesn't redraw; it catches up when the text box is left."""
+    page, errs = open_phone(p)
+    page.evaluate("() => dgVault.save('T/Typing.md', '# Typing\\n\\n')")
+    page.wait_for_timeout(300)
+    page.evaluate("() => window.dgAcmNotes.open('T/Typing.md')")
+    page.wait_for_timeout(500)
+    page.evaluate("() => dgAcm.actions.vedit ? null : null")
+    page.click("#acm-view .vn-body, #acm-view .acm-ed")
+    page.wait_for_selector("#acm-view .vn-ta", timeout=4000)
+    page.click("#acm-view .vn-ta")
+    page.keyboard.press("Control+End")
+    page.evaluate("() => { window.__ta = document.querySelector('#acm-view .vn-ta'); }")
+    page.keyboard.type("First words")
+    page.wait_for_timeout(1500)   # the save, and the vault's change event
+    page.keyboard.type(" and more")
+    page.wait_for_timeout(1500)
+    same = page.evaluate("() => document.querySelector('#acm-view .vn-ta') === window.__ta && document.activeElement === window.__ta")
+    saved = page.evaluate("() => (dgVault.get('T/Typing.md') || {}).content || ''")
+    record("acell-mobile", "writing a note on a phone: the save doesn't redraw the text box (the keyboard stays)", same and "First words and more" in saved, repr(saved[-40:]))
+    record("acell-mobile", "no JS errors (typing)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14418,6 +14444,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")
         safe(test_acell_hear_here, browser, area="acell-hear")
         safe(test_acell_vault_format, browser, area="acell-vault-fmt")

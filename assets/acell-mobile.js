@@ -139,7 +139,26 @@
     }
   }
   var rT = null;
-  function refresh() { if (!st.on || layer.querySelector('.acm-sheet[data-hold]')) return; clearTimeout(rT); rT = setTimeout(render, 30); }
+  // Never redraw under the keyboard (2026-10-31: on an iPhone the
+  // keyboard closed every few letters: each pause saved the note, the
+  // vault's change redrew the screen and the text box with it). While a
+  // note is being written (a textarea on the screen has the focus), a
+  // redraw waits for it to lose it.
+  var held = false;
+  function typing() {
+    var a = document.activeElement;
+    if (!a || !view.contains(a)) return false;
+    return a.tagName === 'TEXTAREA' || a.isContentEditable;
+  }
+  function refresh() {
+    if (!st.on || layer.querySelector('.acm-sheet[data-hold]')) return;
+    if (typing()) { held = true; return; }
+    clearTimeout(rT); rT = setTimeout(function () { if (typing()) { held = true; return; } render(); }, 30);
+  }
+  view.addEventListener('focusout', function () {
+    if (!held) return;
+    setTimeout(function () { if (held && !typing()) { held = false; refresh(); } }, 120);
+  });
 
   /* ── Sheets: slide up over a dim, close on the dim or [data-x] ── */
   function sheet(html, opts) {
