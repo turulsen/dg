@@ -921,7 +921,11 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   the phone by the `vaultSync` Cloud Function; `[[` suggests notes as
   you type, Undo/Redo while editing (the editor's own history), Back /
   Forward on the Notes tab, bold/italic/strike/highlight and a few plain
-  HTML tags.
+  HTML tags. Since v3.14.0 editing has Evidence's formatting bar (H1,
+  H2, B, I, lists, quote, rule) plus a checklist and `[[ ]]`, Tab /
+  Shift+Tab indent, and Enter carries a list on; numbered lists count
+  from the first item ("1. 1. 1." reads 1, 2, 3), in Evidence too. On
+  a phone the screen doesn't redraw while a note has the keyboard.
 - **Tapes** (`assets/acell-tapes.js`, Firestore `tapes/{id}`): a
   cassette per operation or Cell with its tracks (library tracks and
   links), the loops under them and its effect pads. Putting one in a

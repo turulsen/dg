@@ -7154,3 +7154,52 @@ It counted the round up and put the turn back on top, but with the turn
 already on top only the title's number changed. A round marker above the
 post-its now says Round N and whose turn it is, New round says so in a
 toast, and Start over goes back to round 1.
+
+---
+
+## Notes, the phone keyboard and numbered lists (v3.14.0, PR #95)
+
+### "Waiting on you" listed a dead Agent as wounded
+
+Reported 2026-10-30: "Alfred is dead, long dead" stayed on the phone
+dashboard as wounded, 0/13. The wounded row took any Agent at half HP
+or less, HP 0 included, which everywhere else is KIA. It skips HP 0
+now, and each row has an x that dismisses it for the session until
+what it says changes (kept on the device). Test:
+`test_acell_mobile_waiting` (fails on the old code).
+
+### The iPhone keyboard closed every few letters while writing a note
+
+Reported 2026-10-31, writing a session note on a phone. Each pause
+saved the note (600 ms), the vault's change event redrew the phone
+screen, and the redraw replaced the text box: the keyboard closed and
+the caret went back to the start (on the old code the test typed "and
+moreFirst words"). The phone frame doesn't redraw while a textarea on
+the screen has the focus now; it catches up when the text box is left.
+Single-line fields (a quick note) still redraw at once. Test:
+`test_acell_mobile_typing_kept`.
+
+### Notes: Tab left the note, no formatting tools; Only for unformatted
+
+Reported 2026-10-31 on an iPad. Tab moved the focus out of the note's
+text box, and notes had none of Evidence's formatting tools. The vault
+editor has Evidence's bar now (H1, H2, B, I, lists, quote, rule, plus a
+checklist and [[ ]]), Tab / Shift+Tab indent and outdent, and Enter
+carries a list on (an empty item ends it). The Evidence form's Only for
+picker had no colour or font of its own and took the folder's pale
+sans-serif (as the Sheet's Columns list once did, see "Sheet → Columns
+read pale"); it has ink and Courier of its own.
+
+### Numbered lists read 1, 1, 1
+
+The same symptom Evidence had before v3.6.1 ("every numbered step
+showed as 1."), and that fix was partial. Evidence started a list at
+the first number written but ended it at every blank line, and vault
+notes used each item's written number, so notes written with "1." on
+every item (as Obsidian allows) read 1, 1, 1 in both. Now, in vault
+notes and in Evidence (`assets/evidence-md.js`, A-Cell and players'
+pages alike): within a list each item counts on from the first; a
+blank line between items keeps the list going; steps parted by text,
+the next written as 1 again, carry on from the last in the same
+section (a heading starts over); a list that starts with another
+number keeps it. Test: `test_acell_vault_format`.
