@@ -158,7 +158,21 @@
     opts = opts || {};
     var lines = String(md || '').replace(/\r\n/g, '\n').split('\n');
     var html = [], i = 0, list = null;
-    function closeList() { if (list) { html.push('</' + list + '>'); list = null; } }
+    // Numbered lists count (2026-10-31: read mode showed 1, 1, 1): within a
+    // list each item is the one before plus one, whatever was written
+    // ("1. 1. 1." is 1, 2, 3); a blank line between items doesn't end the
+    // list; steps parted by text, where the next starts again at 1, carry
+    // on from the last in the same section (a heading starts over); any
+    // other first number is kept as written.
+    var olN = 0, olLast = 0;
+    function closeList() { if (list) { html.push('</' + list + '>'); if (list === 'ol') olLast = olN; list = null; } }
+    function nextIsItem(from, kind) {
+      for (var k = from; k < lines.length; k++) {
+        if (!lines[k].trim()) continue;
+        return kind === 'ol' ? /^\s*\d+[.)]\s+/.test(lines[k]) : /^\s*[-*+]\s+/.test(lines[k]);
+      }
+      return false;
+    }
     if (lines[0] === '---') {
       var end = lines.indexOf('---', 1);
       if (end > 0) {
@@ -176,7 +190,7 @@
         continue;
       }
       if ((m = /^(#{1,6})\s+(.*)$/.exec(l))) {
-        closeList();
+        closeList(); olLast = 0;
         html.push('<h' + m[1].length + ' class="vn-h" data-vline="' + i + '">' + inline(m[2], opts) + '</h' + m[1].length + '>');
         continue;
       }
@@ -225,10 +239,12 @@
       // A numbered item keeps the number written (2026-10-31: a list broken
       // by a blank line or a paragraph started again at 1 every time).
       if ((m = /^(\s*)(\d+)[.)]\s+(.*)$/.exec(l))) {
-        if (list !== 'ol') { closeList(); html.push('<ol class="vn-list">'); list = 'ol'; }
-        html.push('<li value="' + (+m[2]) + '" style="margin-left:' + (m[1].length * 8) + 'px">' + inline(m[3], opts) + '</li>');
+        if (list !== 'ol') { closeList(); html.push('<ol class="vn-list">'); list = 'ol'; olN = +m[2] === 1 && olLast ? olLast + 1 : +m[2]; }
+        else olN++;
+        html.push('<li value="' + olN + '" style="margin-left:' + (m[1].length * 8) + 'px">' + inline(m[3], opts) + '</li>');
         continue;
       }
+      if (!l.trim() && list && nextIsItem(i + 1, list)) continue;
       closeList();
       if (!l.trim()) { html.push('<div class="vn-gap"></div>'); continue; }
       html.push('<p class="vn-p">' + inline(l, opts) + '</p>');
