@@ -267,3 +267,11 @@ body.acm .acm-cxbox [data-cc=live] .cc-mini{ min-height:34px; min-width:38px; }
 .cc-desk [data-cc=live] .cc-k{ background:#e9dfbf; color:#2a2418; }
 .cc-desk [data-cc=live] .cc-mini{ background:transparent; color:#e9dfbf; border-color:rgba(233,223,191,.5); min-height:26px; }
 .cc-desk .cc-stopall{ font-size:9.5px; padding:2px 8px; }
+
+/* The notebook's note tabs and page inside the block (2026-11-02: the
+   page in its tab wrapper grew to the note's length and the block cut it
+   off, so the lower part of a vault note couldn't be reached) */
+.pd-grid .pd-notebook > .pd-ob{ display:flex; flex-direction:column; }
+.pd-grid .pd-notebook .pd-ntabs{ flex:none; }
+.pd-grid .pd-notebook .pd-nbody{ flex:1; min-height:0; display:flex; flex-direction:column; }
+.pd-grid .pd-notebook .pd-nbody > .pd-page{ flex:1; min-height:0; height:auto; overflow:auto; -webkit-overflow-scrolling:touch; }

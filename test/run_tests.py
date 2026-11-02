@@ -4937,6 +4937,17 @@ def test_acell_session_notes_desk(p):
     wait_for_condition(lambda: len(_sess(page).get("notes") or []) == 1, timeout_ms=4000)
     s4 = _sess(page)
     record("acell-notes", "✕ takes a note off the session (the session note too); the vault keeps it", s4.get("note_path") == "" and (s4.get("notes") or [{}])[0].get("kind") == "gdoc" and page.evaluate("() => !!dgVault.get('Pale Lantern/Session 4.md')"), str(s4.get("notes")))
+    # 2026-11-02 (in a session): a long vault note's lower part couldn't be
+    # reached in Play: the page in its tab wrapper grew and the block cut it.
+    page.evaluate("(md) => dgVault.save('Pale Lantern/Session 4.md', md)", "# Long\n\n" + "\n\n".join("Line %d." % i for i in range(1, 80)) + "\n\nTHE LAST LINE")
+    page.evaluate("() => dgSessions.setNotes('sess_4', [{ kind: 'vault', path: 'Pale Lantern/Session 4.md' }])")
+    page.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: page.locator(".pd-notebook .pd-page p").count() > 10, timeout_ms=5000)
+    page.wait_for_timeout(500)
+    sc = page.evaluate("""() => { var p = document.querySelector('.pd-notebook .pd-page'), ob = document.querySelector('.pd-notebook > .pd-ob');
+      p.scrollTop = 99999; var last = Array.from(p.querySelectorAll('p')).pop(), lr = last.getBoundingClientRect(), r = ob.getBoundingClientRect();
+      return p.scrollHeight > p.clientHeight && lr.bottom <= r.bottom + 2 && lr.top >= r.top; }""")
+    record("acell-notes", "Play's notebook scrolls: the end of a long vault note can be reached", sc, "")
     record("acell-notes", "no JS errors (session notes)", not errs, str(errs))
     page.close()
 
