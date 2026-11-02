@@ -44,6 +44,18 @@
   var barEl = root.querySelector('#acm-bar'), view = root.querySelector('#acm-view'), tabsEl = root.querySelector('#acm-tabs'),
     fab = root.querySelector('#acm-fab'), layer = root.querySelector('#acm-layer'), toastEl = root.querySelector('#acm-toast');
 
+  // Off the phone layout (the computer's Play desk uses the phone's
+  // Initiative, 2026-11-02) the sheets and the toast live in #acm-loose on
+  // the body, so a sheet opened from the desk still shows.
+  var loose = document.createElement('div');
+  loose.id = 'acm-loose';
+  function homeLayer(phone) {
+    var to = phone ? root : loose;
+    if (layer.parentNode !== to) { to.appendChild(layer); to.appendChild(toastEl); }
+    if (!phone && !loose.parentNode && document.body) document.body.appendChild(loose);
+  }
+  homeLayer(false);
+
   var SCREENS = {};
   var st = { on: false, mode: 'prep', name: '', arg: null, hist: [], drawn: '' };
   function screen(name, def) { SCREENS[name] = def; }
@@ -1123,6 +1135,7 @@
     if (st.on) return;
     st.on = true;
     if (!root.parentNode) document.body.appendChild(root);
+    homeLayer(true);
     document.body.classList.add('acm');
     hideOuterWidgets(true);
     var m = A.store('dg_acell_mode', 'prep');
@@ -1141,6 +1154,7 @@
     document.body.classList.remove('acm', 'acm-panel');
     hideOuterWidgets(false);
     if (root.parentNode) root.parentNode.removeChild(root);
+    homeLayer(false);
     window.dgAcellTab(st.mode === 'play' ? 'desk' : st.mode === 'debrief' ? 'debrief' : 'session');
   }
   var backBtn = null;

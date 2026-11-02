@@ -211,6 +211,9 @@
     });
   }
 
+  // The computer's Play desk draws the same Initiative (assets/acell-play.js).
+  window.dgAcmInit = { order: order, live: live, turn: turnState, vit: vit, setNpc: setNpc, npcSheet: npcSheet };
+
   /* ── An Agent, read only: the Players tab's paper ── */
   C.screen('agent-sheet', {
     panel: 'play', tab: 'initiative',

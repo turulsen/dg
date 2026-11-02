@@ -4267,34 +4267,40 @@ def test_acell_play_desk(p):
     page, errs = open_acell_shell(p)
     acell_feed_evidence(page)
     page.click("#ac-modes [data-mode=play]")
-    wait_for_condition(lambda: page.locator(".pd-dos").count() == 4, timeout_ms=5000)
+    wait_for_condition(lambda: page.locator(".pd-ag").count() == 4, timeout_ms=5000)
     start = _sess(page).get("start") or {}
     record("acell-play", "entering Play notes every Agent's vitals once (session.start)",
            start.get("TOMA-RY02", {}).get("hp") == 6 and start.get("ILSE-VR03", {}).get("san") == 22 and len(start) == 4, str(start)[:200])
-    reyes = page.inner_text(".pd-dos[data-code=TOMA-RY02]")
-    ilse = page.inner_text(".pd-dos[data-code=ILSE-VR03]")
-    record("acell-play", "a dossier: name, DEX, HP/WP of their max, SAN, BP, and the warnings",
-           "Tomas Reyes" in reyes and "DEX 13" in reyes and "HP 6/13" in reyes and "wounded" in reyes and "2 from BP" in ilse and "Paranoia" in ilse, reyes + " | " + ilse)
-    cards = page.eval_on_selector_all(".pd-ic:not(.add)", "els => els.map(e => e.innerText.replace(/\\s+/g, ' ').trim())")
-    record("acell-play", "initiative: the Cell and the session's NPC by DEX",
-           [c.split(" ")[0] for c in cards] == ["KESSLER", "KEEPER", "REYES", "VARGA", "PRICE"], str(cards))
-    page.click(".pd-next")
-    record("acell-play", "Next ▸ moves the turn on", "REYES" not in page.inner_text(".pd-ic.now") and "KEEPER" in page.inner_text(".pd-ic.now"), page.inner_text(".pd-ic.now"))
-    page.click(".pd-ic.add")
-    page.fill(".pd-npcf input[name=n]", "Ruth")
-    page.fill(".pd-npcf input[name=d]", "9")
-    page.fill(".pd-npcf input[name=hp]", "10")
-    page.fill(".pd-npcf input[name=wp]", "8")
-    page.click(".pd-npcf button")
-    wait_for_condition(lambda: any(n.get("name") == "Ruth" for n in _sess(page).get("npcs") or []), timeout_ms=4000)
+    reyes = page.inner_text(".pd-ag[data-code=TOMA-RY02]")
+    ilse = page.inner_text(".pd-ag[data-code=ILSE-VR03]")
+    record("acell-play", "an Agent's post-it: DEX, name, HP/WP of their max, SAN, BP, the warnings, their File",
+           "13" in reyes and "Tomas Reyes" in reyes and "HP 6/13" in reyes and "wounded" in reyes and "2 from BP" in ilse and "Paranoia" in ilse and page.locator(".pd-ag[data-code=ILSE-VR03] .pd-file").count() == 1, reyes + " | " + ilse)
+    cards = page.eval_on_selector_all(".pd-init .acm-ip", "els => els.map(e => e.innerText.replace(/\\s+/g, ' ').trim())")
+    record("acell-play", "initiative: the Cell and the session's NPC by DEX, one list (no separate DEX row)",
+           [c.split(" ")[1] for c in cards] == ["Mara", "Keeper", "Tomas", "Ilse", "Wendell"] and page.locator(".pd-initiative").count() == 0, str(cards))
+    page.click(".pd-init [data-acm=next-turn]")
+    record("acell-play", "Next turn moves the turn on", "Keeper" in page.inner_text(".pd-init .acm-ip.now") and "Keeper's turn" in page.inner_text(".pd-init .acm-round"), page.inner_text(".pd-init .acm-ip.now"))
+    page.click(".pd-init [data-acm=new-round]")
+    record("acell-play", "New round: round 2, the top of the order, and a toast",
+           "Round 2" in page.inner_text(".pd-init .acm-round") and "Mara" in page.inner_text(".pd-init .acm-ip.now") and page.locator("#acm-loose .acm-toast:not([hidden])").count() == 1, page.inner_text(".pd-init .acm-round"))
+    page.click(".pd-init [data-acm=new-npc-init]")
+    page.wait_for_selector("#acm-loose .acm-sheet form", state="visible", timeout=3000)
+    page.fill("#acm-loose .acm-sheet input[name=name]", "Ruth")
+    page.click("#acm-loose [data-st=dex][data-d='-1']")
+    page.click("#acm-loose [data-st=wp][data-d='-1']")
+    page.click("#acm-loose [data-st=wp][data-d='-1']")
+    page.click("#acm-loose [data-go=init]")
+    wait_for_condition(lambda: any(n.get("name") == "Ruth" for n in _sess(page).get("npcs") or []), timeout_ms=5000)
     ruth = [n for n in _sess(page).get("npcs") or [] if n.get("name") == "Ruth"]
-    record("acell-play", "an NPC is added with DEX, HP and WP (SAN left blank)", ruth and ruth[0] == {"name": "Ruth", "dex": 9, "hp": 10, "wp": 8}, str(ruth))
-    wait_for_condition(lambda: "HP 10 · WP 8" in page.inner_text(".pd-initiative"), timeout_ms=3000)
-    record("acell-play", "the NPC's card shows the vitals given", "HP 10 · WP 8" in page.inner_text(".pd-initiative"), page.inner_text(".pd-initiative"))
-    page.locator(".pd-ic.npc").filter(has_text="RUTH").locator("[data-pd=npc-edit]").click()
-    page.click(".pd-npced [data-k=hp][data-d='-1']")
+    record("acell-play", "+ NPC opens the phone's New NPC sheet on the desk; saved into the order with DEX, HP, WP",
+           ruth and ruth[0].get("dex") == 9 and ruth[0].get("hp") == 10 and ruth[0].get("wp") == 8, str(ruth))
+    wait_for_condition(lambda: "Ruth" in page.inner_text(".pd-init"), timeout_ms=3000)
+    page.locator(".pd-init .pd-npc").filter(has_text="Ruth").locator("[data-acm=npcv][data-k=hp][data-d='-1']").click()
     wait_for_condition(lambda: any(n.get("name") == "Ruth" and n.get("hp") == 9 for n in _sess(page).get("npcs") or []), timeout_ms=4000)
-    record("acell-play", "✎ on the card, then − takes a point of HP off", any(n.get("name") == "Ruth" and n.get("hp") == 9 for n in _sess(page).get("npcs") or []), str(_sess(page).get("npcs")))
+    record("acell-play", "− on the NPC's post-it takes a point of HP off", any(n.get("name") == "Ruth" and n.get("hp") == 9 for n in _sess(page).get("npcs") or []), str(_sess(page).get("npcs")))
+    page.locator(".pd-init .pd-npc").filter(has_text="Ruth").locator("[data-acm=npc-out]").click()
+    wait_for_condition(lambda: page.locator(".pd-init .acm-chip").filter(has_text="Ruth").count() == 1, timeout_ms=4000)
+    record("acell-play", "taking an NPC out puts them under Upcoming", page.locator(".pd-init .acm-chip").filter(has_text="Ruth").count() == 1, page.inner_text(".pd-init")[-200:])
 
     tabs = page.eval_on_selector_all(".pd-tab", "els => els.map(e => e.innerText)")
     record("acell-play", "the notebook has a tab per ## scene (and the opening, and the whole note)",
@@ -4309,15 +4315,15 @@ def test_acell_play_desk(p):
 
     page.fill(".pd-pad .pd-in", "Reyes found the boat key")
     page.press(".pd-pad .pd-in", "Enter")
-    page.click(".pd-dos[data-code=MARA-KS01] [data-pd=jot]")
-    page.fill(".pd-dos[data-code=MARA-KS01] .pd-qin", "Wants to call Sam")
-    page.press(".pd-dos[data-code=MARA-KS01] .pd-qin", "Enter")
+    page.click(".pd-ag[data-code=MARA-KS01] [data-pd=jot]")
+    page.fill(".pd-ag[data-code=MARA-KS01] .pd-qin", "Wants to call Sam")
+    page.press(".pd-ag[data-code=MARA-KS01] .pd-qin", "Enter")
     wait_for_condition(lambda: len(_sess(page).get("quick_notes") or []) == 2, timeout_ms=4000)
     q = _sess(page).get("quick_notes") or []
     record("acell-play", "quick notes: on the pad (the session's) and on a dossier (that Agent's)",
            len(q) == 2 and q[0]["code"] == "" and q[1]["code"] == "MARA-KS01" and q[1]["text"] == "Wants to call Sam", str(q))
-    wait_for_condition(lambda: "Wants to call Sam" in page.inner_text(".pd-dos[data-code=MARA-KS01]"), timeout_ms=3000)
-    record("acell-play", "the Agent's quick note sits on their dossier", "Wants to call Sam" in page.inner_text(".pd-dos[data-code=MARA-KS01]"), "")
+    wait_for_condition(lambda: "Wants to call Sam" in page.inner_text(".pd-ag[data-code=MARA-KS01]"), timeout_ms=3000)
+    record("acell-play", "the Agent's quick note sits on their dossier", "Wants to call Sam" in page.inner_text(".pd-ag[data-code=MARA-KS01]"), "")
 
     page.click(".pd-f[data-ev=ev_log] [data-pd=release]")
     wait_for_condition(lambda: (fs_doc(page, "evidence/ev_log") or {}).get("released") is True, timeout_ms=5000)
@@ -4335,7 +4341,7 @@ def test_acell_play_desk(p):
            page.evaluate("() => { var p = document.querySelector('.pd-dice #dr-panel'); return !!p && !p.classList.contains('dr-collapsed') && getComputedStyle(p).position !== 'fixed'; }"), "")
 
     page.click("#ac-tools [data-tool=arrange]")
-    record("acell-play", "✥ Arrange shows the drawer and each object's grip", page.is_visible(".pd-drawer") and page.locator(".pd-grip").count() == 8, "")
+    record("acell-play", "✥ Arrange shows the drawer and each object's grip", page.is_visible(".pd-drawer") and page.locator(".pd-grip").count() == 7, "")
     def cell_xy(cx, cy):
         g = page.locator(".pd-grid").bounding_box()
         cw = (g["width"] - 12 * 11) / 12
@@ -4371,14 +4377,14 @@ def test_acell_play_desk(p):
     page.mouse.click(gx, gy)
     it = lay3()
     record("acell-play", "…and tapping the grid puts it there", it["evidence"]["y"] == ev0["y"] + 6, str(ev0) + " -> " + str(it.get("evidence")))
-    page.click(".pd-o[data-o=initiative] [data-pd=away]")
+    page.click(".pd-o[data-o=dossiers] [data-pd=away]")
     record("acell-play", "✕ puts an object away; the drawer brings it back",
-           page.locator(".pd-o[data-o=initiative]").count() == 0 and page.locator(".pd-drawer [data-id=initiative]").count() == 1, "")
-    page.click(".pd-drawer [data-id=initiative]")
-    record("acell-play", "…and back it comes", page.locator(".pd-o[data-o=initiative]").count() == 1, "")
+           page.locator(".pd-o[data-o=dossiers]").count() == 0 and page.locator(".pd-drawer [data-id=dossiers]").count() == 1, "")
+    page.click(".pd-drawer [data-id=dossiers]")
+    record("acell-play", "…and back it comes", page.locator(".pd-o[data-o=dossiers]").count() == 1, "")
     page.click("#ac-tools [data-tool=arrange]")
 
-    page.click(".pd-dos[data-code=ILSE-VR03] [data-pd=sheet]")
+    page.click(".pd-ag[data-code=ILSE-VR03] .pd-file")
     page.wait_for_selector(".ac-sheetmodal .ap-head", timeout=10000)
     record("acell-play", "a dossier's name opens their Agent File as it is (vitals ±, Roll SAN), with their photo",
            page.locator(".ac-sheetmodal .ap-name-in").count() == 0 and page.locator(".ac-sheetmodal [data-a=rollsan]").count() == 1
@@ -4405,9 +4411,9 @@ def test_acell_debrief(p):
     wait_for_condition(lambda: bool(_sess(page).get("start")), timeout_ms=5000)
     page.fill(".pd-pad .pd-in", "Reyes found the boat key")
     page.press(".pd-pad .pd-in", "Enter")
-    page.click(".pd-dos[data-code=ILSE-VR03] [data-pd=jot]")
-    page.fill(".pd-dos[data-code=ILSE-VR03] .pd-qin", "Trusts nobody with the log")
-    page.press(".pd-dos[data-code=ILSE-VR03] .pd-qin", "Enter")
+    page.click(".pd-ag[data-code=ILSE-VR03] [data-pd=jot]")
+    page.fill(".pd-ag[data-code=ILSE-VR03] .pd-qin", "Trusts nobody with the log")
+    page.press(".pd-ag[data-code=ILSE-VR03] .pd-qin", "Enter")
     wait_for_condition(lambda: len(_sess(page).get("quick_notes") or []) == 2, timeout_ms=4000)
     # The night costs Varga 3 SAN (her sheet changes live).
     st = json.loads(fs_doc(page, "characters/ILSE-VR03")["character_json"])
@@ -4452,7 +4458,7 @@ def test_acell_phone(p):
     page.click("#acell-tab-strip .tw[data-tab=music]")
     record("acell-phone", "picking one opens it", page.is_visible("#ac-console .cc-deck") and "MUSIC" in page.inner_text("#ac-index-btn").upper(), "")
     page.click("#ac-modes [data-mode=play]")
-    wait_for_condition(lambda: page.locator(".pd-dos").count() == 4, timeout_ms=5000)
+    wait_for_condition(lambda: page.locator(".pd-ag").count() == 4, timeout_ms=5000)
     d = page.locator(".pd-o[data-o=dossiers]").bounding_box()
     n = page.locator(".pd-o[data-o=notebook]").bounding_box()
     record("acell-phone", "the desk: dossiers first, then the notebook", d["y"] < n["y"], str([d, n]))
