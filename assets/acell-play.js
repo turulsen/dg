@@ -436,7 +436,11 @@
     ps.setProperty('right', 'auto', 'important');
     ps.setProperty('bottom', 'auto', 'important');
     ps.setProperty('width', Math.round(r.width) + 'px', 'important');
-    ps.visibility = visible && r.top >= -4 ? '' : 'hidden';
+    // Laid over the desk from the Hub's page, it would float above any
+    // A-Cell pop-up (2026-11-02: over an open Agent File): hidden while one
+    // is open.
+    var covered = !!document.querySelector('.vn-modal');
+    ps.visibility = visible && r.top >= -4 && !covered ? '' : 'hidden';
     dice.raf = requestAnimationFrame(follow);
   }
   function releaseDice() {
