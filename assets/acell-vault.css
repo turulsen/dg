@@ -92,3 +92,6 @@ h1.vn-h{font-size:24px}h2.vn-h{font-size:20px}h3.vn-h{font-size:17px}h4.vn-h,h5.
 .vn-tb [data-vmd]:active{background:#2a2418;color:#fbf8ec}
 .vn-tb-sp{flex:1}
 @media (max-width:760px){.vn-tb{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}.vn-tb [data-vmd]{flex:none;min-height:36px;padding:6px 10px}.vn-tb-sp{display:none}}
+
+/* A link to a note not written yet (2026-11-02): a tap makes it */
+.vn-link.vn-link-new{opacity:.7;border-bottom-style:dashed}

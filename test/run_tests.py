@@ -5301,6 +5301,42 @@ def test_acell_mobile_typing_kept(p):
     record("acell-mobile", "no JS errors (typing)", not errs, str(errs))
     page.close()
 
+def test_acell_vault_new_link(p):
+    """2026-11-02: as in Obsidian, a [[link]] to a note that doesn't exist
+    yet looks it, and a tap makes the note (in the operation's folder) and
+    opens it; a link with a folder makes it there."""
+    page, errs = open_acell_shell(p)
+    wait_for_condition(lambda: page.evaluate("() => (window.dgTapes && dgTapes.operations().length) > 0"), timeout_ms=5000)
+    page.evaluate("() => dgVault.save('Pale Lantern/Sessions/Night 2.md', '# Night 2\\n\\nAsk [[Harbourmaster Quint]] and see [[Lore/Old lamps]]; [[Session 4]] exists.\\n')")
+    page.click("#acell-tab-strip .tw[data-tab=notes]")
+    page.evaluate("() => window.dgAcLibrary.openNote('Pale Lantern/Sessions/Night 2.md')")
+    page.wait_for_selector(".ac-vnote .vn-link", timeout=4000)
+    cls = page.eval_on_selector_all(".ac-vnote .vn-link", "e => e.map(x => x.textContent + ':' + x.classList.contains('vn-link-new'))")
+    record("acell-vault-link", "links to notes not written yet look new; one that exists doesn't", cls == ["Harbourmaster Quint:true", "Old lamps:true", "Session 4:false"], str(cls))
+    page.click(".ac-vnote .vn-link >> nth=0")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Pale Lantern/Harbourmaster Quint.md')"), timeout_ms=4000)
+    wait_for_condition(lambda: "Harbourmaster Quint" in page.inner_text(".ac-vnote .vn-file"), timeout_ms=3000)
+    record("acell-vault-link", "a tap makes the note in the operation's folder and opens it", page.evaluate("() => (dgVault.get('Pale Lantern/Harbourmaster Quint.md') || {}).content") == "# Harbourmaster Quint\n\n" and "Harbourmaster Quint" in page.inner_text(".ac-vnote .vn-file"), page.inner_text(".ac-vnote .vn-file"))
+    record("acell-vault-link", "…and it's saved to the vault", any((w.get("data") or {}).get("path") == "Pale Lantern/Harbourmaster Quint.md" for w in fs_writes(page, "vault/")), "")
+    page.click(".ac-vnote [data-vv=back]")
+    page.wait_for_selector(".ac-vnote .vn-link", timeout=4000)
+    page.click(".ac-vnote .vn-link >> nth=1")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Lore/Old lamps.md')"), timeout_ms=4000)
+    record("acell-vault-link", "a link with a folder makes the note there", page.evaluate("() => !!dgVault.get('Lore/Old lamps.md')"), "")
+    record("acell-vault-link", "no JS errors (new link)", not errs, str(errs))
+    page.close()
+    page, errs = open_phone(p)
+    wait_for_condition(lambda: page.evaluate("() => (window.dgTapes && dgTapes.operations().length) > 0"), timeout_ms=5000)
+    page.evaluate("() => dgVault.save('Pale Lantern/Night 3.md', '# Night 3\\n\\nMeet [[The Ferryman]].\\n')")
+    page.evaluate("() => window.dgAcmNotes.open('Pale Lantern/Night 3.md')")
+    page.wait_for_selector("#acm-view .vn-link-new", timeout=4000)
+    page.tap("#acm-view .vn-link-new")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Pale Lantern/The Ferryman.md')"), timeout_ms=4000)
+    page.wait_for_timeout(400)
+    record("acell-vault-link", "on a phone too: the tap makes the note and opens it", "Ferryman" in page.inner_text("#acm-bar"), page.inner_text("#acm-bar")[:80])
+    record("acell-vault-link", "no JS errors (new link, phone)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14470,6 +14506,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")
         safe(test_acell_hear_here, browser, area="acell-hear")
