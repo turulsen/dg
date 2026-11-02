@@ -1697,13 +1697,43 @@
   // see that function's own comment), keyed by code since this page can
   // hold several Agents' tabs at once, each needing their own identity
   // for their own visible_to query.
+  //
+  // Each Agent gets their OWN Firebase app (2026-11-02). Firebase Auth
+  // holds one user per app, so with several Agents on this page (a dead
+  // character still on the roster next to the new one) every sign-in
+  // replaced the one before it: only the last Agent's Evidence query was
+  // allowed, and the others' listeners were refused -- live report:
+  // two players saw no evidence at all on their own devices. A named app
+  // per Agent keeps every sign-in, and every listener, separate. Kept in
+  // memory only (Persistence.NONE): nothing to evict in another tab.
+  const _agentApps = {};
+  function agentApp(code) {
+    if (_agentApps[code]) return _agentApps[code];
+    let app = null;
+    try {
+      const name = 'agent-' + code;
+      app = (window.firebase.apps || []).filter(x => x && x.name === name)[0] || window.firebase.initializeApp(window.firebase.app().options, name);
+      if (app && app.firestore) app.firestore().settings({ experimentalAutoDetectLongPolling: true });
+    } catch (e) {
+      console.error('agent-hub: could not make a Firebase app for ' + code + ' (sharing the page\'s sign-in)', e);
+      app = null;
+    }
+    // No separate app (an old SDK, a test stub): the page's one sign-in, as before.
+    if (!app || !app.auth || !app.firestore) app = window.firebase;
+    _agentApps[code] = app;
+    return app;
+  }
   const _authPromisesByCode = {};
   function ensureAgentSignedInAs(code) {
     if (_authPromisesByCode[code]) return _authPromisesByCode[code];
     const p = new Promise((resolve, reject) => {
       ensureFirebaseApi(() => {
+        const app = agentApp(code);
+        const fa = window.firebase.auth, none = fa && fa.Auth && fa.Auth.Persistence && fa.Auth.Persistence.NONE;
+        const own = app !== window.firebase && none;
         window.firebase.functions().httpsCallable('exchangeAgentToken')({ agent_code: code })
-          .then(result => window.firebase.auth().signInWithCustomToken(result.data.token))
+          .then(result => (own ? app.auth().setPersistence(none).catch(() => {}) : Promise.resolve())
+            .then(() => app.auth().signInWithCustomToken(result.data.token)))
           .then(cred => resolve(cred.user))
           .catch(err => { delete _authPromisesByCode[code]; reject(err); });
       }, err => { delete _authPromisesByCode[code]; reject(err); });
@@ -1781,7 +1811,7 @@
     if (evidenceListenerStartedByCode[code]) return;
     evidenceListenerStartedByCode[code] = true;
     ensureAgentSignedInAs(code).then(() => {
-      window.firebase.firestore().collection('evidence')
+      agentApp(code).firestore().collection('evidence')
         .where('visible_to', 'array-contains-any', [code, 'ALL'])
         .onSnapshot(snap => {
           const relevant = [];

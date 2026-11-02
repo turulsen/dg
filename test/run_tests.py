@@ -1744,6 +1744,65 @@ def test_agent_hub_handouts(p):
     page.close()
     return errs
 
+def test_agent_hub_evidence_two_agents(p):
+    """2026-11-02 live report: two players saw no Evidence on their own
+    devices. Firebase Auth holds one user per app, so with two Agents on
+    one roster (a dead character next to the new one) each Agent's
+    sign-in replaced the other's, and only the last Agent's Evidence
+    query was allowed. Each Agent now gets their own named Firebase app:
+    every query runs under its own Agent's sign-in, and both stay."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    install_firestore_backend(page, {
+        "briefs/OWEN-CS12": {"char_name": "Owen Castillo"},
+        "briefs/PRIY-AN34": {"char_name": "Priya Anand"},
+    })
+    # Named apps, as the real SDK makes them: their own Auth user each;
+    # Firestore is the shared fake, noting whose sign-in ran each query.
+    page.add_init_script("""(function () {
+      var fb = window.firebase, base = fb.firestore;
+      window.__dgEvRuns = [];
+      fb.apps = [{ name: '[DEFAULT]' }];
+      fb.initializeApp = function (opts, name) {
+        if (!name) return fb.apps[0];
+        var user = null;
+        var app = { name: name, options: opts,
+          auth: function () { return { get currentUser() { return user; }, setPersistence: function () { return Promise.resolve(); },
+            signInWithCustomToken: function (tok) { user = { uid: tok }; return Promise.resolve({ user: user }); } }; },
+          firestore: function () { var d = base(); return { settings: function () {}, collection: function (n) {
+            if (n === 'evidence') window.__dgEvRuns.push({ app: name, as: function () { return user && user.uid; } });
+            return d.collection(n); } }; } };
+        fb.apps.push(app);
+        return app;
+      };
+    })();""")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    roster = {
+        "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "", "saved_at": 2000},
+        "PRIY-AN34": {"code": "PRIY-AN34", "char_name": "Priya Anand", "codename": "", "saved_at": 1000},
+    }
+    page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
+    page.reload(wait_until="domcontentloaded")
+    wait_for_condition(lambda: page.evaluate("() => (window.__dgEvRuns || []).length") >= 2, timeout_ms=8000)
+    page.wait_for_timeout(300)
+    runs = page.evaluate("() => window.__dgEvRuns.map(r => [r.app, r.as()])")
+    record("hub", "two Agents on one device: each Evidence query runs under that Agent's own sign-in, and both stay signed in",
+           sorted(runs) == [["agent-OWEN-CS12", "OWEN-CS12"], ["agent-PRIY-AN34", "PRIY-AN34"]], str(runs))
+    for code in ("OWEN-CS12", "PRIY-AN34"):
+        push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", [code, "ALL"]]],
+                                [{"evidence_id": "ev_" + code, "id": "ev_" + code, "title": "For " + code, "body": "", "photo": "", "cell_id": "", "created_at": "1000", "visible_to": [code]}])
+    page.wait_for_timeout(200)
+    page.click('.tw[data-tab="PRIY-AN34"] > span')
+    page.wait_for_timeout(150)
+    record("hub", "…and each Agent's tab shows their own Evidence",
+           "For OWEN-CS12" in page.inner_text("#ah-handouts-OWEN-CS12") and "For PRIY-AN34" in page.inner_text("#ah-handouts-PRIY-AN34"), "")
+    page.close()
+    return errs
+
 def test_agent_hub_handout_notes(p):
     """agent-hub.html: an Agent's private notes on a Handout, synced via
     the backend (list_handout_notes / save_handout_note) so they survive
@@ -14481,6 +14540,7 @@ def main():
         safe(test_agent_hub_recruit_flag, browser, area="hub")
 
         safe(test_agent_hub_handouts, browser, area="hub")
+        safe(test_agent_hub_evidence_two_agents, browser, area="hub")
 
         safe(test_agent_hub_handout_notes, browser, area="hub")
 
