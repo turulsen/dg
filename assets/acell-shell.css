@@ -407,3 +407,8 @@ body.acm .cc-desk .cc-chl{ display:none; }
 body.acm .cc-desk .cc-top{ flex-wrap:nowrap; gap:5px; }
 body.acm .cc-desk .cc-chs{ display:inline-flex; gap:5px; }
 body.acm .cc-desk .cc-air{ font-size:9.5px; padding:3px 6px; white-space:nowrap; }
+
+/* The Agent File pop-up's photo, small (2026-11-02: it filled the page) */
+.ac-sheetmodal .as-photo{ width:96px; height:120px; flex:none; overflow:hidden; border:1px solid #c9bd99; background:#e9dfbf; box-shadow:0 2px 4px rgba(0,0,0,.2); }
+.ac-sheetmodal .as-photo .ac-paperpic, .ac-sheetmodal .as-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
+@media (max-width:760px){ .ac-sheetmodal .as-photo{ width:72px; height:90px; } }
