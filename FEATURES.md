@@ -955,7 +955,19 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   the decks, every channel's tape), the session desk (Notes, NPCs,
   Evidence, Music), Agents by DEX, Pads, Initiative (the round and whose
   turn it is, NPC vitals, hide, Upcoming), the notebook and the
-  computer's panels fitted to the phone.
+  computer's panels fitted to the phone. Since v3.15.0 Play's tab bar is
+  Pads · Initiative · Evidence · Dice; the notes are + → Session notes.
+- **The Play desk's Initiative** (v3.15.0, `drawDossiers` in
+  `assets/acell-play.js`): the phone's post-its in the old dossiers'
+  slot (one list by DEX; the separate DEX row is gone). Agents show
+  vitals, BP, warnings, quick notes and **File** (the Agent File
+  pop-up); NPCs − / + HP, WP, SAN, hide and out to Upcoming. The order,
+  turn and NPC changes are the phone's (`window.dgAcmInit`,
+  `dgAcm.actions`); the phone's sheets and toast show off the phone
+  layout in `#acm-loose`, so + NPC opens the same New NPC sheet. An
+  uploaded HTML note fills the notebook; the Dice Roller's block is as
+  tall as the roller (`hugDice`). A `[[link]]` to a note not written
+  yet creates it in the same operation's folder.
 Tests: `test_acell_mobile_*`, `test_acell_tape_steps_once`,
 `test_acell_session_notes_desk`, `test_acell_desk_player`,
 `test_acell_link_suggest`, `test_acell_vault_format`,
