@@ -7203,3 +7203,53 @@ blank line between items keeps the list going; steps parted by text,
 the next written as 1 again, carry on from the last in the same
 section (a heading starts over); a list that starts with another
 number keeps it. Test: `test_acell_vault_format`.
+
+## Players on an old copy, and the live-session fixes (v3.15.0, PR #96)
+
+Reported 2026-11-02/03 during a live game.
+
+**Two players (Firefox, Edge) couldn't see Evidence images or open
+its files, PNG or PDF.** Root cause: they were on the app's *old
+address*, `turulsen.github.io/dg-campaign/`, from before the repository
+was renamed to `dg`. Their browsers had kept that copy's service worker,
+which kept serving its cached pages there, including the old character
+sheet (`stats/index.html`) removed in v3.3.0. None of the Evidence work
+since then reached them. The service worker never updated because
+`/dg-campaign/sw.js` no longer exists, and a failed update leaves the old
+worker in place. Fix: `assets/sw-update.js` (on every page) now
+unregisters any registration scoped to `/dg-campaign/` when the current
+address is opened, and `sw.js`'s activate already deletes every cache
+but its own. A player still has to open the new address once on that
+browser, so the old link needs replacing. By hand:
+`about:serviceworkers` (Firefox) or `edge://serviceworker-internals`
+(Edge), then Unregister. Test: `test_old_address_worker_removed`.
+
+**Found while chasing that, and fixed too: with several Agents on one
+device, only one could load Evidence.** Firebase Auth holds one user
+per app, and Agent Hub signed in once per Agent on its roster (for
+example a dead character next to the new one), each sign-in replacing the
+one before. Only the last Agent's Evidence query was allowed, and the
+others' listeners were refused ("Could not load handouts."). Each Agent
+now gets a named Firebase app with an in-memory sign-in (`agentApp()`
+in `agent-hub.html`). Test: `test_agent_hub_evidence_two_agents`.
+
+**The Play desk (computer):**
+- The Dice Roller floated over the Agent File pop-up. It is now hidden
+  while a pop-up is open.
+- The Evidence box squeezed its titles.
+- The Agent File pop-up's photo was full size; it is now small.
+- A long vault note couldn't be scrolled to its end in the notebook:
+  the page grew inside its tab wrapper and the block cut it off.
+- An uploaded HTML page didn't fill the notebook unless full screen.
+  It kept a window-based height; it is now absolutely placed in the
+  block.
+- The Dice Roller's block kept rows of empty space under the roller.
+  It is now as tall as the roller and follows it.
+
+**Dossier folders replaced.** On the user's request, the desk now shows
+the phone's Initiative instead. The phone's sheets and toast needed
+`#acm` attached to show, so off the phone layout they now live in
+`#acm-loose`. The desk doesn't draw its Initiative under the phone
+layout, which has its own tab; drawing both had doubled the post-its.
+The disorder tag's class `d` collided with the post-it's DEX box
+(`.acm-ip .d`) and is now `dis`.

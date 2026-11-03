@@ -44,13 +44,25 @@
   var barEl = root.querySelector('#acm-bar'), view = root.querySelector('#acm-view'), tabsEl = root.querySelector('#acm-tabs'),
     fab = root.querySelector('#acm-fab'), layer = root.querySelector('#acm-layer'), toastEl = root.querySelector('#acm-toast');
 
+  // Off the phone layout (the computer's Play desk uses the phone's
+  // Initiative, 2026-11-02) the sheets and the toast live in #acm-loose on
+  // the body, so a sheet opened from the desk still shows.
+  var loose = document.createElement('div');
+  loose.id = 'acm-loose';
+  function homeLayer(phone) {
+    var to = phone ? root : loose;
+    if (layer.parentNode !== to) { to.appendChild(layer); to.appendChild(toastEl); }
+    if (!phone && !loose.parentNode && document.body) document.body.appendChild(loose);
+  }
+  homeLayer(false);
+
   var SCREENS = {};
   var st = { on: false, mode: 'prep', name: '', arg: null, hist: [], drawn: '' };
   function screen(name, def) { SCREENS[name] = def; }
 
   var TABS = {
     prep: [['session', 'Session', 'session'], ['agents', 'Agents', 'agents'], null, ['evidence', 'Evidence', 'evidence'], ['more', 'More', '@more']],
-    play: [['pads', 'Pads', 'pads'], ['initiative', 'Initiative', 'initiative'], null, ['notes', 'Notes', 'notebook'], ['dice', 'Dice', 'dice']]
+    play: [['pads', 'Pads', 'pads'], ['initiative', 'Initiative', 'initiative'], null, ['evidence', 'Evidence', 'evidence'], ['dice', 'Dice', 'dice']]
   };
   function drawTabs() {
     var def = SCREENS[st.name] || {}, cur = def.tab || st.name;
@@ -477,7 +489,7 @@
     ['anote', 'Agent Notes', 'into an Agent\'s file', 'pk'], ['snote', 'Session Notes', 'vault notes, Docs, pages for Play', 'or'], ['npc', 'NPCs', 'DEX · HP · WP · SAN', 'pu'],
     ['tape', 'Tape', 'Soundtrack (for session)', 'wh'], ['sess', 'New Session', 'blank, template or a copy', 'y']];
   var PLAY_ADD = [['qnote', 'Quick note', 'the session or an Agent', 'y'], ['qev', 'Add evidence', 'quickly, to the Cell and operation', 'gr'], ['rel', 'Release evidence', 'hand it to the players', 'or'], ['npc', 'NPC', 'into initiative', 'pu'],
-    ['agent', 'Agent', 'their sheet, read only', 'pk'], ['console', 'Tape', 'the console: decks, tracks, loops', 'bl'], ['end', 'End the game', 'to Debrief', 'wh']];
+    ['agent', 'Agent', 'their sheet, read only', 'pk'], ['console', 'Tape', 'the console: decks, tracks, loops', 'bl'], ['notes', 'Session notes', 'the notes for this game', 'gr'], ['end', 'End the game', 'to Debrief', 'wh']];
   var ADD_ACTIONS = {};
   function addSheet() {
     var set = st.mode === 'play' ? PLAY_ADD : PREP_ADD;
@@ -494,6 +506,8 @@
       if (f) f();
     });
   }
+  // Play's tab bar has Evidence where Notes was (2026-11-03); the notes are here.
+  ADD_ACTIONS.notes = function () { go('notebook'); };
   ADD_ACTIONS.ev = function () { go('evidence'); setTimeout(function () { if (E()) E().newItem(); }, 60); };
   ADD_ACTIONS.cell = function () { go('cells'); setTimeout(function () { var b = document.getElementById('cells-create-btn'); if (b) b.click(); }, 60); };
   ADD_ACTIONS.op = function () { opSheet(); };
@@ -1123,6 +1137,7 @@
     if (st.on) return;
     st.on = true;
     if (!root.parentNode) document.body.appendChild(root);
+    homeLayer(true);
     document.body.classList.add('acm');
     hideOuterWidgets(true);
     var m = A.store('dg_acell_mode', 'prep');
@@ -1141,6 +1156,7 @@
     document.body.classList.remove('acm', 'acm-panel');
     hideOuterWidgets(false);
     if (root.parentNode) root.parentNode.removeChild(root);
+    homeLayer(false);
     window.dgAcellTab(st.mode === 'play' ? 'desk' : st.mode === 'debrief' ? 'debrief' : 'session');
   }
   var backBtn = null;

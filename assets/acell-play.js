@@ -28,16 +28,16 @@
   function V() { return window.dgVault; }
 
   var OBJ = {
-    dossiers: 'Dossiers', initiative: 'Initiative', dice: 'Dice Roller', notebook: 'Notebook',
+    dossiers: 'Initiative', dice: 'Dice Roller', notebook: 'Notebook',
     deck: 'Tape deck', pad: 'Quick notes', evidence: 'Evidence box', pads: 'Effect pads'
   };
   // A 12-column grid of 58px rows: each object { x, y, w, h } in cells.
   // Kept on this device (dg_acell_desk_v3); objects put away sit in `away`.
   var KEY3 = 'dg_acell_desk_v3', COLS = 12, ROW = 58, GAP = 12;
-  var MIN = { dossiers: [2, 3], initiative: [2, 2], dice: [2, 4], notebook: [3, 4], deck: [3, 7], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
+  var MIN = { dossiers: [3, 4], dice: [2, 2], notebook: [3, 4], deck: [3, 7], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
   var DEFAULT = { items: {
-    deck: { x: 0, y: 0, w: 4, h: 9 }, pads: { x: 4, y: 0, w: 5, h: 3 }, initiative: { x: 4, y: 3, w: 5, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
-    notebook: { x: 4, y: 6, w: 5, h: 12 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dossiers: { x: 9, y: 8, w: 3, h: 8 }, dice: { x: 0, y: 9, w: 4, h: 6 }
+    deck: { x: 0, y: 0, w: 4, h: 9 }, pads: { x: 4, y: 0, w: 5, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
+    notebook: { x: 4, y: 3, w: 5, h: 15 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dossiers: { x: 9, y: 8, w: 3, h: 10 }, dice: { x: 0, y: 9, w: 4, h: 6 }
   }, away: [] };
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   var L = (function () {
@@ -79,9 +79,23 @@
 
   /* ── Building the desk ── */
   function place(id) { var r = L.items[id]; return 'grid-column:' + (r.x + 1) + ' / span ' + r.w + ';grid-row:' + (r.y + 1) + ' / span ' + r.h; }
+  function builtKey() { var s = A.session(); return (s ? s.id : '') + '|' + JSON.stringify(L) + '|' + st.arrange; }
+  // The Dice Roller's block is as tall as the roller (2026-11-03: it kept
+  // its rows when the roller was shorter). Not while arranging.
+  function hugDice(px) {
+    var r = L.items.dice, sec = panel.querySelector('.pd-o[data-o=dice]'), o = ob('dice');
+    if (!r || !sec || !o || st.arrange || !px || window.innerWidth <= 720) return;
+    var cs = getComputedStyle(sec), co = getComputedStyle(o);
+    var px2 = px + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(co.paddingTop) + parseFloat(co.paddingBottom);
+    var rows = Math.max(MIN.dice[1], Math.ceil((px2 + GAP) / (ROW + GAP)));
+    if (rows === r.h) return;
+    r.h = rows; save();
+    sec.setAttribute('style', place('dice'));
+    st.built = builtKey();
+  }
   function build() {
     var s = A.session();
-    var key = (s ? s.id : '') + '|' + JSON.stringify(L) + '|' + st.arrange;
+    var key = builtKey();
     if (st.built === key) return;
     releaseDice();
     if (window.dgAcConsole && window.dgAcConsole.lent && window.dgAcConsole.lent() && panel.contains(document.getElementById('ac-console'))) window.dgAcConsole.detach();
@@ -115,76 +129,62 @@
   function drawAll() {
     var s = A.session();
     if (!s || !panel.querySelector('.pd-grid')) return;
-    drawDossiers(s); drawInitiative(s); drawNotebook(s); drawPad(s); drawDeck(s); drawEvidence(s); drawPads(s); placeDice();
+    drawDossiers(s); drawNotebook(s); drawPad(s); drawDeck(s); drawEvidence(s); drawPads(s); placeDice();
   }
 
-  /* ── Dossiers ── */
-  function present(s) { return A.members(s.cell_id).filter(function (a) { return s.away.indexOf(a.code) < 0; }); }
+  /* ── Initiative: the phone's post-its on the desk (2026-11-02, replacing
+     the dossier folders and the DEX row). Highest DEX first; an Agent's
+     post-it keeps what the dossier had (warnings, vitals, quick notes,
+     their Agent File); an NPC's has − / + for HP, WP, SAN, hide and out.
+     The order, the turn and the NPC changes are the phone's
+     (window.dgAcmInit, assets/acell-mobile-play.js), so both agree. ── */
+  function warns(a) {
+    var w = [];
+    if (a.hp != null && a.hp <= 0) w.push(['r', 'down']);
+    else if (a.hpMax && a.hp <= a.hpMax / 2) w.push(['o', 'wounded']);
+    if (a.san != null && a.bp != null && a.san - a.bp <= 3) w.push(['r', a.san - a.bp <= 0 ? 'at BP' : (a.san - a.bp) + ' from BP']);
+    a.disorders.forEach(function (d) { w.push(['dis', d]); });
+    return w.length ? '<span class="pd-warns">' + w.map(function (x) { return '<span class="pd-w ' + x[0] + '">' + esc(x[1]) + '</span>'; }).join('') + '</span>' : '';
+  }
+  function agentIp(s, a, k, on, out) {
+    var rot = [-0.6, 0.5, -0.3, 0.4, -0.5, 0.6, -0.2];
+    var notes = s.quick_notes.filter(function (q) { return q.code === a.code; }).slice(-2);
+    return '<div class="acm-ip c-y pd-ag' + (on ? ' now' : '') + (out ? ' out' : '') + '" style="--r:' + rot[k % rot.length] + 'deg" data-code="' + esc(a.code) + '">' +
+      '<span class="d">' + (a.dex == null ? '—' : a.dex) + '</span><span class="acm-g">' +
+      '<button type="button" class="pd-name" data-pd="sheet" title="Their Agent File (vitals ±, Roll SAN)">' + esc(a.name) + (out ? ' <i>' + out + '</i>' : '') + '</button>' +
+      '<small>' + A.vitalsHtml(a, true) + (a.bp != null ? ' · BP ' + a.bp : '') + '</small>' + warns(a) +
+      notes.map(function (q) { return '<span class="pd-q" title="' + esc(new Date(q.at).toLocaleTimeString()) + '">' + esc(q.text) + '</span>'; }).join('') +
+      (st.jot === a.code ? '<input class="pd-qin" data-jot="' + esc(a.code) + '" placeholder="Quick note on ' + esc(a.name.split(' ')[0]) + '… (Enter)">'
+        : '<button type="button" class="pd-q add" data-pd="jot">+ quick note</button>') + '</span>' +
+      '<button type="button" class="pd-file" data-pd="sheet">File</button></div>';
+  }
   function drawDossiers(s) {
     var el = ob('dossiers');
     if (!el) return;
-    var ms = A.members(s.cell_id);
+    // The phone layout has its own Initiative tab: one set of post-its.
+    if (document.body.classList.contains('acm')) { el.innerHTML = ''; return; }
     if (!A.cell(s.cell_id)) { el.innerHTML = '<div class="pd-hint">No Cell chosen for this session (Prep → Session prep).</div>'; return; }
-    el.innerHTML = ms.map(function (a, i) {
-      var away = s.away.indexOf(a.code) >= 0;
-      var warn = [];
-      if (a.hp != null && a.hp <= 0) warn.push(['r', 'down']);
-      else if (a.hpMax && a.hp <= a.hpMax / 2) warn.push(['o', 'wounded']);
-      if (a.san != null && a.bp != null && a.san - a.bp <= 3) warn.push(['r', a.san - a.bp <= 0 ? 'at BP' : (a.san - a.bp) + ' from BP']);
-      a.disorders.forEach(function (d) { warn.push(['d', d]); });
-      var notes = s.quick_notes.filter(function (q) { return q.code === a.code; }).slice(-2);
-      return '<div class="pd-dos' + (away ? ' away' : '') + '" style="--r:' + ((i % 2 ? 0.7 : -0.8) + (i % 3) * 0.2) + 'deg" data-code="' + esc(a.code) + '">' +
-        '<div class="pd-dn"><button type="button" class="pd-name" data-pd="sheet" title="Their Agent File (vitals ±, Roll SAN)">' + esc(a.name) + '</button><i>' + (away ? 'away' : 'DEX ' + (a.dex == null ? '—' : a.dex)) + '</i></div>' +
-        (warn.length ? '<div class="pd-warns">' + warn.map(function (w) { return '<span class="pd-w ' + w[0] + '">' + esc(w[1]) + '</span>'; }).join('') + '</div>' : '') +
-        '<div class="pd-v">' + A.vitalsHtml(a, true) + (a.bp != null ? ' · BP ' + a.bp : '') + '</div>' +
-        notes.map(function (q) { return '<div class="pd-q" title="' + esc(new Date(q.at).toLocaleTimeString()) + '">' + esc(q.text) + '</div>'; }).join('') +
-        (st.jot === a.code ? '<input class="pd-qin" data-jot="' + esc(a.code) + '" placeholder="Quick note on ' + esc(a.name.split(' ')[0]) + '… (Enter)">'
-          : '<button type="button" class="pd-q add" data-pd="jot">+ quick note</button>') + '</div>';
-    }).join('') || '<div class="pd-hint">No Agents in this Cell yet.</div>';
+    var J = window.dgAcmInit;
+    if (!J) { el.innerHTML = '<div class="pd-hint">Initiative is loading…</div>'; return; }
+    var rows = J.order(s), lv = J.live(rows), ts = J.turn(s), now = lv.length ? lv[ts.turn % lv.length] : null;
+    var rot = [-0.6, 0.5, -0.3, 0.4, -0.5, 0.6, -0.2];
+    var outs = A.members(s.cell_id).filter(function (a) { return s.away.indexOf(a.code) >= 0 || (a.hp != null && a.hp <= 0); });
+    var up = s.npcs.map(function (n, i) { return { n: n, i: i }; }).filter(function (x) { return x.n.init === false; });
+    var hold = el.scrollTop;
+    el.innerHTML = '<div class="pd-init acm-desk"><div class="acm-g3 acm-initbar">' +
+      '<button type="button" class="acm-btn cream" data-acm="next-turn">Next turn</button><button type="button" class="acm-btn dark" data-acm="new-round">New round</button><button type="button" class="acm-btn dark" data-acm="new-npc-init">+ NPC</button></div>' +
+      '<div class="acm-round"><b>Round ' + ts.round + '</b><span>' + esc(now ? (now.agent ? now.agent.name : now.npc.name) + '\'s turn' : 'no one in the order') + '</span>' + (ts.round > 1 || ts.turn ? '<button type="button" data-acm="round-reset">Start over</button>' : '') + '</div>' +
+      (rows.length ? rows.map(function (r, k) {
+        if (r.agent) return agentIp(s, r.agent, k, r === now, '');
+        var n = r.npc;
+        return '<div class="acm-ip c-pu pd-npc' + (r === now ? ' now' : '') + (n.hidden ? ' hid' : '') + '" style="--r:' + rot[k % rot.length] + 'deg"><span class="d">' + (n.dex || '—') + '</span><span class="acm-g"><b data-acm="npc-open" data-i="' + r.i + '" title="Vitals, note, remove">' + esc(n.name) + (n.hidden ? ' <i>hidden</i>' : '') + '</b><span class="acm-vit">' + J.vit('hp', n.hp, r.i) + J.vit('wp', n.wp, r.i) + (n.san != null && n.san !== '' ? J.vit('san', n.san, r.i) : '') + '</span></span>' +
+          '<span class="acm-xs"><button type="button" data-acm="npc-hide" data-i="' + r.i + '" title="' + (n.hidden ? 'Show' : 'Hide') + '" aria-label="' + (n.hidden ? 'Show' : 'Hide') + '">' + (window.dgIcons ? window.dgIcons.svg(n.hidden ? 'eye' : 'hide', 's') : (n.hidden ? 'show' : 'hide')) + '</button><button type="button" data-acm="npc-out" data-i="' + r.i + '" title="Take out of the order" aria-label="Take out of the order">' + (window.dgIcons ? window.dgIcons.svg('close', 's') : '✕') + '</button></span></div>';
+      }).join('') : '<p class="acm-none light">No one in the order yet.</p>') +
+      outs.map(function (a, k) { return agentIp(s, a, k + rows.length, false, s.away.indexOf(a.code) >= 0 ? 'away' : 'down'); }).join('') +
+      (up.length ? '<div class="acm-lab">Upcoming · not in the order yet</div><div class="acm-chips">' + up.map(function (x) { return '<button type="button" class="acm-chip c-pu" data-acm="npc-in" data-i="' + x.i + '">+ ' + esc(x.n.name) + ' · ' + (x.n.dex || '—') + '</button>'; }).join('') + '</div>' : '') + '</div>';
+    el.scrollTop = hold;
     var inp = el.querySelector('.pd-qin');
     if (inp) inp.focus();
-  }
-
-  /* ── Initiative ── */
-  function inits(s) {
-    var rows = present(s).filter(function (a) { return !(a.hp != null && a.hp <= 0); }).map(function (a) { return { name: a.name.split(' ').pop(), dex: a.dex, code: a.code }; });
-    // init:false = waiting in the session, not in the order yet; hidden = in it, skipped (the phone's initiative sets both).
-    s.npcs.forEach(function (n, i) { if (n.init !== false && !n.hidden) rows.push({ name: n.name, dex: +n.dex || 0, npc: i }); });
-    return rows.sort(function (a, b) { return (b.dex || 0) - (a.dex || 0) || (a.npc != null) - (b.npc != null); });
-  }
-  // NPCs: { name, dex, hp, wp, san } -- the vitals are optional; the ones
-  // given show on the card, and its ✎ opens − / + for them during play.
-  var NPCV = ['hp', 'wp', 'san'];
-  function npcVitals(n) { return NPCV.filter(function (k) { return n[k] !== '' && n[k] != null && !isNaN(+n[k]); }).map(function (k) { return k.toUpperCase() + ' ' + n[k]; }).join(' · '); }
-  function drawInitiative(s) {
-    var el = ob('initiative');
-    if (!el) return;
-    var rows = inits(s), turn = rows.length ? st.turn % rows.length : 0;
-    var ed = st.npcEdit != null ? s.npcs[st.npcEdit] : null;
-    el.innerHTML = '<div class="pd-inits">' + rows.map(function (r, i) {
-      var n = r.npc != null ? s.npcs[r.npc] : null, v = n ? npcVitals(n) : '';
-      return '<button type="button" class="pd-ic' + (i === turn ? ' now' : '') + (n ? ' npc' : '') + (n && st.npcEdit === r.npc ? ' editing' : '') + '" data-pd="turn" data-i="' + i + '">' + esc(r.name) + '<b>' + (r.dex == null ? '—' : r.dex) + '</b>' +
-        (v ? '<small>' + esc(v) + '</small>' : '') +
-        (n ? '<span class="pd-icx" data-pd="rm-npc" data-n="' + r.npc + '" aria-label="Remove">✕</span><span class="pd-ice" data-pd="npc-edit" data-n="' + r.npc + '" aria-label="Vitals">✎</span>' : '') + '</button>';
-    }).join('') + '<button type="button" class="pd-ic add" data-pd="add-npc" title="Add an NPC">+</button></div>' +
-      (rows.length ? '<button type="button" class="pd-next" data-pd="next">Next ▸</button>' : '') +
-      (ed ? '<div class="pd-npced"><b>' + esc(ed.name) + '</b>' + NPCV.map(function (k) {
-        var has = ed[k] !== '' && ed[k] != null && !isNaN(+ed[k]);
-        return '<span class="pd-npcv">' + k.toUpperCase() + ' <button type="button" data-pd="npc-v" data-k="' + k + '" data-d="-1" aria-label="' + k + ' down">−</button><i>' + (has ? ed[k] : '—') + '</i><button type="button" data-pd="npc-v" data-k="' + k + '" data-d="1" aria-label="' + k + ' up">+</button></span>';
-      }).join('') + '<button type="button" class="pd-next" data-pd="npc-edit" data-n="' + st.npcEdit + '">done</button></div>' : '') +
-      (st.npcForm ? '<form class="pd-npcf"><label>Name<input name="n" required></label><label>DEX<input name="d" type="number" min="1" max="30" required></label>' +
-        '<label>HP<input name="hp" type="number" min="0" max="99"></label><label>WP<input name="wp" type="number" min="0" max="99"></label><label>SAN<input name="san" type="number" min="0" max="99"></label><button class="ac-btn">Add</button></form>' : '');
-    var f = el.querySelector('.pd-npcf');
-    if (f) {
-      f.n.focus();
-      f.addEventListener('submit', function (e) {
-        e.preventDefault();
-        st.npcForm = false;
-        var npc = { name: f.n.value.trim(), dex: +f.d.value };
-        NPCV.forEach(function (k) { if (f[k].value !== '') npc[k] = +f[k].value; });
-        S().update(s.id, { npcs: s.npcs.concat([npc]) });
-      });
-    }
   }
 
   /* ── The notebook: a tab per note the session keeps (2026-10-30), and
@@ -406,6 +406,8 @@
       dice.moved = true;
       own.classList.add('pd-docked');
       if (own.classList.contains('dr-collapsed') && window.dgDice && window.dgDice._toggle) { window.dgDice._toggle(); dice.opened = true; }
+      hugDice(own.offsetHeight);
+      if (window.ResizeObserver && !dice.ro) { dice.ro = new ResizeObserver(function () { if (own.parentNode === ob('dice')) hugDice(own.offsetHeight); }); dice.ro.observe(own); }
       return;
     }
     var p = outerPanel();
@@ -426,7 +428,7 @@
     var hold = slot && slot.querySelector('.pd-diceslot');
     if (!slot || !hold || !frame) { releaseDice(); return; }
     var h = p.offsetHeight || 260;
-    if (Math.abs(h - dice.h) > 2) { dice.h = h; hold.style.height = h + 'px'; }
+    if (Math.abs(h - dice.h) > 2) { dice.h = h; hold.style.height = h + 'px'; hugDice(h); }
     var r = hold.getBoundingClientRect(), fr = frame.getBoundingClientRect();
     var visible = r.bottom > 0 && r.top < window.innerHeight;
     var ps = p.style;
@@ -436,7 +438,11 @@
     ps.setProperty('right', 'auto', 'important');
     ps.setProperty('bottom', 'auto', 'important');
     ps.setProperty('width', Math.round(r.width) + 'px', 'important');
-    ps.visibility = visible && r.top >= -4 ? '' : 'hidden';
+    // Laid over the desk from the Hub's page, it would float above any
+    // A-Cell pop-up (2026-11-02: over an open Agent File): hidden while one
+    // is open.
+    var covered = !!document.querySelector('.vn-modal');
+    ps.visibility = visible && r.top >= -4 && !covered ? '' : 'hidden';
     dice.raf = requestAnimationFrame(follow);
   }
   function releaseDice() {
@@ -459,6 +465,14 @@
 
   /* ── Clicks, keys, dragging ── */
   panel.addEventListener('click', function (e) {
+    // Initiative: the phone's own actions; then the post-its again (the
+    // turn is kept on this device, an NPC change comes back as dg-sessions).
+    var ab = e.target.closest('.pd-dossiers [data-acm]');
+    if (ab) {
+      var fn = window.dgAcm && window.dgAcm.actions[ab.getAttribute('data-acm')];
+      if (fn) { fn(ab, e); drawDossiers(A.session()); }
+      return;
+    }
     var b = e.target.closest('[data-pd]');
     if (!b) return;
     var a = b.getAttribute('data-pd'), s = A.session(), m = M();
@@ -468,17 +482,6 @@
       case 'new': A.editSession(null); return;
       case 'sheet': if (window.dgAcPlayers) { var w = window.dgAcPlayers.editSheet(code, { view: true }); w.classList.add('pd-sheet'); } return;
       case 'jot': st.jot = code; drawDossiers(s); return;
-      case 'turn': st.turn = +b.getAttribute('data-i'); drawInitiative(s); return;
-      case 'next': st.turn++; drawInitiative(s); return;
-      case 'add-npc': st.npcForm = !st.npcForm; drawInitiative(s); return;
-      case 'rm-npc': e.stopPropagation(); st.npcEdit = null; S().update(s.id, { npcs: s.npcs.filter(function (x, i) { return i !== +b.getAttribute('data-n'); }) }); return;
-      case 'npc-edit': { e.stopPropagation(); var ni = +b.getAttribute('data-n'); st.npcEdit = st.npcEdit === ni ? null : ni; drawInitiative(s); return; }
-      case 'npc-v': {
-        var k = b.getAttribute('data-k'), list = s.npcs.map(function (x) { return Object.assign({}, x); }), n = list[st.npcEdit];
-        if (!n) return;
-        n[k] = Math.max(0, (isNaN(+n[k]) || n[k] === '' || n[k] == null ? 0 : +n[k]) + +b.getAttribute('data-d'));
-        S().update(s.id, { npcs: list }); return;
-      }
       case 'scene': setScene(b.getAttribute('data-t')); return;
       case 'note': setNote(+b.getAttribute('data-i')); return;
       case 'edit': st.edit = !st.edit; if (st.ed) st.ed.setMode(st.edit ? 'edit' : 'read'); drawNotebook(s); return;

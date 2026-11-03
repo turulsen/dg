@@ -1744,6 +1744,90 @@ def test_agent_hub_handouts(p):
     page.close()
     return errs
 
+def test_agent_hub_evidence_two_agents(p):
+    """2026-11-02 live report: two players saw no Evidence on their own
+    devices. Firebase Auth holds one user per app, so with two Agents on
+    one roster (a dead character next to the new one) each Agent's
+    sign-in replaced the other's, and only the last Agent's Evidence
+    query was allowed. Each Agent now gets their own named Firebase app:
+    every query runs under its own Agent's sign-in, and both stay."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    install_notes_firestore_stub(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    install_firestore_backend(page, {
+        "briefs/OWEN-CS12": {"char_name": "Owen Castillo"},
+        "briefs/PRIY-AN34": {"char_name": "Priya Anand"},
+    })
+    # Named apps, as the real SDK makes them: their own Auth user each;
+    # Firestore is the shared fake, noting whose sign-in ran each query.
+    page.add_init_script("""(function () {
+      var fb = window.firebase, base = fb.firestore;
+      window.__dgEvRuns = [];
+      fb.apps = [{ name: '[DEFAULT]' }];
+      fb.initializeApp = function (opts, name) {
+        if (!name) return fb.apps[0];
+        var user = null;
+        var app = { name: name, options: opts,
+          auth: function () { return { get currentUser() { return user; }, setPersistence: function () { return Promise.resolve(); },
+            signInWithCustomToken: function (tok) { user = { uid: tok }; return Promise.resolve({ user: user }); } }; },
+          firestore: function () { var d = base(); return { settings: function () {}, collection: function (n) {
+            if (n === 'evidence') window.__dgEvRuns.push({ app: name, as: function () { return user && user.uid; } });
+            return d.collection(n); } }; } };
+        fb.apps.push(app);
+        return app;
+      };
+    })();""")
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    roster = {
+        "OWEN-CS12": {"code": "OWEN-CS12", "char_name": "Owen Castillo", "codename": "", "saved_at": 2000},
+        "PRIY-AN34": {"code": "PRIY-AN34", "char_name": "Priya Anand", "codename": "", "saved_at": 1000},
+    }
+    page.evaluate("(r) => localStorage.setItem('dg_agent_roster', JSON.stringify(r))", roster)
+    page.reload(wait_until="domcontentloaded")
+    wait_for_condition(lambda: page.evaluate("() => (window.__dgEvRuns || []).length") >= 2, timeout_ms=8000)
+    page.wait_for_timeout(300)
+    runs = page.evaluate("() => window.__dgEvRuns.map(r => [r.app, r.as()])")
+    record("hub", "two Agents on one device: each Evidence query runs under that Agent's own sign-in, and both stay signed in",
+           sorted(runs) == [["agent-OWEN-CS12", "OWEN-CS12"], ["agent-PRIY-AN34", "PRIY-AN34"]], str(runs))
+    for code in ("OWEN-CS12", "PRIY-AN34"):
+        push_firestore_snapshot(page, "evidence", [["visible_to", "array-contains-any", [code, "ALL"]]],
+                                [{"evidence_id": "ev_" + code, "id": "ev_" + code, "title": "For " + code, "body": "", "photo": "", "cell_id": "", "created_at": "1000", "visible_to": [code]}])
+    page.wait_for_timeout(200)
+    page.click('.tw[data-tab="PRIY-AN34"] > span')
+    page.wait_for_timeout(150)
+    record("hub", "…and each Agent's tab shows their own Evidence",
+           "For OWEN-CS12" in page.inner_text("#ah-handouts-OWEN-CS12") and "For PRIY-AN34" in page.inner_text("#ah-handouts-PRIY-AN34"), "")
+    page.close()
+    return errs
+
+def test_old_address_worker_removed(p):
+    """2026-11-03: a player's browser kept the app's old address
+    (/dg-campaign/) and its service worker served the long-gone pages
+    from cache. Opening the current address removes that worker, and
+    only that one (other sites on the same github.io origin keep theirs)."""
+    page = p.new_page()
+    errs = collect_errors(page)
+    page.add_init_script("""(function () {
+      if (!navigator.serviceWorker) return;
+      window.__dgUnreg = [];
+      function reg(scope) { return { scope: scope, unregister: function () { window.__dgUnreg.push(scope); return Promise.resolve(true); } }; }
+      navigator.serviceWorker.getRegistrations = function () {
+        return Promise.resolve([reg(location.origin + '/dg-campaign/'), reg(location.origin + '/other-site/'), reg(location.origin + '/')]);
+      };
+    })();""")
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.evaluate("() => (window.__dgUnreg || []).length") >= 1, timeout_ms=4000)
+    page.wait_for_timeout(200)
+    got = page.evaluate("() => (window.__dgUnreg || []).map(s => new URL(s).pathname)")
+    record("sw", "the old address's service worker (/dg-campaign/) is removed, nothing else", got == ["/dg-campaign/"], str(got))
+    page.close()
+    return errs
+
 def test_agent_hub_handout_notes(p):
     """agent-hub.html: an Agent's private notes on a Handout, synced via
     the backend (list_handout_notes / save_handout_note) so they survive
@@ -4267,34 +4351,40 @@ def test_acell_play_desk(p):
     page, errs = open_acell_shell(p)
     acell_feed_evidence(page)
     page.click("#ac-modes [data-mode=play]")
-    wait_for_condition(lambda: page.locator(".pd-dos").count() == 4, timeout_ms=5000)
+    wait_for_condition(lambda: page.locator(".pd-ag").count() == 4, timeout_ms=5000)
     start = _sess(page).get("start") or {}
     record("acell-play", "entering Play notes every Agent's vitals once (session.start)",
            start.get("TOMA-RY02", {}).get("hp") == 6 and start.get("ILSE-VR03", {}).get("san") == 22 and len(start) == 4, str(start)[:200])
-    reyes = page.inner_text(".pd-dos[data-code=TOMA-RY02]")
-    ilse = page.inner_text(".pd-dos[data-code=ILSE-VR03]")
-    record("acell-play", "a dossier: name, DEX, HP/WP of their max, SAN, BP, and the warnings",
-           "Tomas Reyes" in reyes and "DEX 13" in reyes and "HP 6/13" in reyes and "wounded" in reyes and "2 from BP" in ilse and "Paranoia" in ilse, reyes + " | " + ilse)
-    cards = page.eval_on_selector_all(".pd-ic:not(.add)", "els => els.map(e => e.innerText.replace(/\\s+/g, ' ').trim())")
-    record("acell-play", "initiative: the Cell and the session's NPC by DEX",
-           [c.split(" ")[0] for c in cards] == ["KESSLER", "KEEPER", "REYES", "VARGA", "PRICE"], str(cards))
-    page.click(".pd-next")
-    record("acell-play", "Next ▸ moves the turn on", "REYES" not in page.inner_text(".pd-ic.now") and "KEEPER" in page.inner_text(".pd-ic.now"), page.inner_text(".pd-ic.now"))
-    page.click(".pd-ic.add")
-    page.fill(".pd-npcf input[name=n]", "Ruth")
-    page.fill(".pd-npcf input[name=d]", "9")
-    page.fill(".pd-npcf input[name=hp]", "10")
-    page.fill(".pd-npcf input[name=wp]", "8")
-    page.click(".pd-npcf button")
-    wait_for_condition(lambda: any(n.get("name") == "Ruth" for n in _sess(page).get("npcs") or []), timeout_ms=4000)
+    reyes = page.inner_text(".pd-ag[data-code=TOMA-RY02]")
+    ilse = page.inner_text(".pd-ag[data-code=ILSE-VR03]")
+    record("acell-play", "an Agent's post-it: DEX, name, HP/WP of their max, SAN, BP, the warnings, their File",
+           "13" in reyes and "Tomas Reyes" in reyes and "HP 6/13" in reyes and "wounded" in reyes and "2 from BP" in ilse and "Paranoia" in ilse and page.locator(".pd-ag[data-code=ILSE-VR03] .pd-file").count() == 1, reyes + " | " + ilse)
+    cards = page.eval_on_selector_all(".pd-init .acm-ip", "els => els.map(e => e.innerText.replace(/\\s+/g, ' ').trim())")
+    record("acell-play", "initiative: the Cell and the session's NPC by DEX, one list (no separate DEX row)",
+           [c.split(" ")[1] for c in cards] == ["Mara", "Keeper", "Tomas", "Ilse", "Wendell"] and page.locator(".pd-initiative").count() == 0, str(cards))
+    page.click(".pd-init [data-acm=next-turn]")
+    record("acell-play", "Next turn moves the turn on", "Keeper" in page.inner_text(".pd-init .acm-ip.now") and "Keeper's turn" in page.inner_text(".pd-init .acm-round"), page.inner_text(".pd-init .acm-ip.now"))
+    page.click(".pd-init [data-acm=new-round]")
+    record("acell-play", "New round: round 2, the top of the order, and a toast",
+           "Round 2" in page.inner_text(".pd-init .acm-round") and "Mara" in page.inner_text(".pd-init .acm-ip.now") and page.locator("#acm-loose .acm-toast:not([hidden])").count() == 1, page.inner_text(".pd-init .acm-round"))
+    page.click(".pd-init [data-acm=new-npc-init]")
+    page.wait_for_selector("#acm-loose .acm-sheet form", state="visible", timeout=3000)
+    page.fill("#acm-loose .acm-sheet input[name=name]", "Ruth")
+    page.click("#acm-loose [data-st=dex][data-d='-1']")
+    page.click("#acm-loose [data-st=wp][data-d='-1']")
+    page.click("#acm-loose [data-st=wp][data-d='-1']")
+    page.click("#acm-loose [data-go=init]")
+    wait_for_condition(lambda: any(n.get("name") == "Ruth" for n in _sess(page).get("npcs") or []), timeout_ms=5000)
     ruth = [n for n in _sess(page).get("npcs") or [] if n.get("name") == "Ruth"]
-    record("acell-play", "an NPC is added with DEX, HP and WP (SAN left blank)", ruth and ruth[0] == {"name": "Ruth", "dex": 9, "hp": 10, "wp": 8}, str(ruth))
-    wait_for_condition(lambda: "HP 10 · WP 8" in page.inner_text(".pd-initiative"), timeout_ms=3000)
-    record("acell-play", "the NPC's card shows the vitals given", "HP 10 · WP 8" in page.inner_text(".pd-initiative"), page.inner_text(".pd-initiative"))
-    page.locator(".pd-ic.npc").filter(has_text="RUTH").locator("[data-pd=npc-edit]").click()
-    page.click(".pd-npced [data-k=hp][data-d='-1']")
+    record("acell-play", "+ NPC opens the phone's New NPC sheet on the desk; saved into the order with DEX, HP, WP",
+           ruth and ruth[0].get("dex") == 9 and ruth[0].get("hp") == 10 and ruth[0].get("wp") == 8, str(ruth))
+    wait_for_condition(lambda: "Ruth" in page.inner_text(".pd-init"), timeout_ms=3000)
+    page.locator(".pd-init .pd-npc").filter(has_text="Ruth").locator("[data-acm=npcv][data-k=hp][data-d='-1']").click()
     wait_for_condition(lambda: any(n.get("name") == "Ruth" and n.get("hp") == 9 for n in _sess(page).get("npcs") or []), timeout_ms=4000)
-    record("acell-play", "✎ on the card, then − takes a point of HP off", any(n.get("name") == "Ruth" and n.get("hp") == 9 for n in _sess(page).get("npcs") or []), str(_sess(page).get("npcs")))
+    record("acell-play", "− on the NPC's post-it takes a point of HP off", any(n.get("name") == "Ruth" and n.get("hp") == 9 for n in _sess(page).get("npcs") or []), str(_sess(page).get("npcs")))
+    page.locator(".pd-init .pd-npc").filter(has_text="Ruth").locator("[data-acm=npc-out]").click()
+    wait_for_condition(lambda: page.locator(".pd-init .acm-chip").filter(has_text="Ruth").count() == 1, timeout_ms=4000)
+    record("acell-play", "taking an NPC out puts them under Upcoming", page.locator(".pd-init .acm-chip").filter(has_text="Ruth").count() == 1, page.inner_text(".pd-init")[-200:])
 
     tabs = page.eval_on_selector_all(".pd-tab", "els => els.map(e => e.innerText)")
     record("acell-play", "the notebook has a tab per ## scene (and the opening, and the whole note)",
@@ -4309,15 +4399,15 @@ def test_acell_play_desk(p):
 
     page.fill(".pd-pad .pd-in", "Reyes found the boat key")
     page.press(".pd-pad .pd-in", "Enter")
-    page.click(".pd-dos[data-code=MARA-KS01] [data-pd=jot]")
-    page.fill(".pd-dos[data-code=MARA-KS01] .pd-qin", "Wants to call Sam")
-    page.press(".pd-dos[data-code=MARA-KS01] .pd-qin", "Enter")
+    page.click(".pd-ag[data-code=MARA-KS01] [data-pd=jot]")
+    page.fill(".pd-ag[data-code=MARA-KS01] .pd-qin", "Wants to call Sam")
+    page.press(".pd-ag[data-code=MARA-KS01] .pd-qin", "Enter")
     wait_for_condition(lambda: len(_sess(page).get("quick_notes") or []) == 2, timeout_ms=4000)
     q = _sess(page).get("quick_notes") or []
     record("acell-play", "quick notes: on the pad (the session's) and on a dossier (that Agent's)",
            len(q) == 2 and q[0]["code"] == "" and q[1]["code"] == "MARA-KS01" and q[1]["text"] == "Wants to call Sam", str(q))
-    wait_for_condition(lambda: "Wants to call Sam" in page.inner_text(".pd-dos[data-code=MARA-KS01]"), timeout_ms=3000)
-    record("acell-play", "the Agent's quick note sits on their dossier", "Wants to call Sam" in page.inner_text(".pd-dos[data-code=MARA-KS01]"), "")
+    wait_for_condition(lambda: "Wants to call Sam" in page.inner_text(".pd-ag[data-code=MARA-KS01]"), timeout_ms=3000)
+    record("acell-play", "the Agent's quick note sits on their dossier", "Wants to call Sam" in page.inner_text(".pd-ag[data-code=MARA-KS01]"), "")
 
     page.click(".pd-f[data-ev=ev_log] [data-pd=release]")
     wait_for_condition(lambda: (fs_doc(page, "evidence/ev_log") or {}).get("released") is True, timeout_ms=5000)
@@ -4334,8 +4424,10 @@ def test_acell_play_desk(p):
     record("acell-play", "the Dice Roller sits in its slot on the desk, open",
            page.evaluate("() => { var p = document.querySelector('.pd-dice #dr-panel'); return !!p && !p.classList.contains('dr-collapsed') && getComputedStyle(p).position !== 'fixed'; }"), "")
 
+    hug = page.evaluate("() => { var s = document.querySelector('.pd-o[data-o=dice]'), p = document.querySelector('.pd-dice #dr-panel'); return [Math.round(s.getBoundingClientRect().height), Math.round(p.getBoundingClientRect().height)]; }")
+    record("acell-play", "the Dice Roller's block hugs the roller (no rows of empty space under it)", hug[0] >= hug[1] and hug[0] - hug[1] < 58 + 12 + 40, str(hug))
     page.click("#ac-tools [data-tool=arrange]")
-    record("acell-play", "✥ Arrange shows the drawer and each object's grip", page.is_visible(".pd-drawer") and page.locator(".pd-grip").count() == 8, "")
+    record("acell-play", "✥ Arrange shows the drawer and each object's grip", page.is_visible(".pd-drawer") and page.locator(".pd-grip").count() == 7, "")
     def cell_xy(cx, cy):
         g = page.locator(".pd-grid").bounding_box()
         cw = (g["width"] - 12 * 11) / 12
@@ -4371,14 +4463,14 @@ def test_acell_play_desk(p):
     page.mouse.click(gx, gy)
     it = lay3()
     record("acell-play", "…and tapping the grid puts it there", it["evidence"]["y"] == ev0["y"] + 6, str(ev0) + " -> " + str(it.get("evidence")))
-    page.click(".pd-o[data-o=initiative] [data-pd=away]")
+    page.click(".pd-o[data-o=dossiers] [data-pd=away]")
     record("acell-play", "✕ puts an object away; the drawer brings it back",
-           page.locator(".pd-o[data-o=initiative]").count() == 0 and page.locator(".pd-drawer [data-id=initiative]").count() == 1, "")
-    page.click(".pd-drawer [data-id=initiative]")
-    record("acell-play", "…and back it comes", page.locator(".pd-o[data-o=initiative]").count() == 1, "")
+           page.locator(".pd-o[data-o=dossiers]").count() == 0 and page.locator(".pd-drawer [data-id=dossiers]").count() == 1, "")
+    page.click(".pd-drawer [data-id=dossiers]")
+    record("acell-play", "…and back it comes", page.locator(".pd-o[data-o=dossiers]").count() == 1, "")
     page.click("#ac-tools [data-tool=arrange]")
 
-    page.click(".pd-dos[data-code=ILSE-VR03] [data-pd=sheet]")
+    page.click(".pd-ag[data-code=ILSE-VR03] .pd-file")
     page.wait_for_selector(".ac-sheetmodal .ap-head", timeout=10000)
     record("acell-play", "a dossier's name opens their Agent File as it is (vitals ±, Roll SAN), with their photo",
            page.locator(".ac-sheetmodal .ap-name-in").count() == 0 and page.locator(".ac-sheetmodal [data-a=rollsan]").count() == 1
@@ -4405,9 +4497,9 @@ def test_acell_debrief(p):
     wait_for_condition(lambda: bool(_sess(page).get("start")), timeout_ms=5000)
     page.fill(".pd-pad .pd-in", "Reyes found the boat key")
     page.press(".pd-pad .pd-in", "Enter")
-    page.click(".pd-dos[data-code=ILSE-VR03] [data-pd=jot]")
-    page.fill(".pd-dos[data-code=ILSE-VR03] .pd-qin", "Trusts nobody with the log")
-    page.press(".pd-dos[data-code=ILSE-VR03] .pd-qin", "Enter")
+    page.click(".pd-ag[data-code=ILSE-VR03] [data-pd=jot]")
+    page.fill(".pd-ag[data-code=ILSE-VR03] .pd-qin", "Trusts nobody with the log")
+    page.press(".pd-ag[data-code=ILSE-VR03] .pd-qin", "Enter")
     wait_for_condition(lambda: len(_sess(page).get("quick_notes") or []) == 2, timeout_ms=4000)
     # The night costs Varga 3 SAN (her sheet changes live).
     st = json.loads(fs_doc(page, "characters/ILSE-VR03")["character_json"])
@@ -4452,7 +4544,7 @@ def test_acell_phone(p):
     page.click("#acell-tab-strip .tw[data-tab=music]")
     record("acell-phone", "picking one opens it", page.is_visible("#ac-console .cc-deck") and "MUSIC" in page.inner_text("#ac-index-btn").upper(), "")
     page.click("#ac-modes [data-mode=play]")
-    wait_for_condition(lambda: page.locator(".pd-dos").count() == 4, timeout_ms=5000)
+    wait_for_condition(lambda: page.locator(".pd-ag").count() == 4, timeout_ms=5000)
     d = page.locator(".pd-o[data-o=dossiers]").bounding_box()
     n = page.locator(".pd-o[data-o=notebook]").bounding_box()
     record("acell-phone", "the desk: dossiers first, then the notebook", d["y"] < n["y"], str([d, n]))
@@ -4646,7 +4738,7 @@ def test_acell_mobile_play(p):
     if wait_for_condition(lambda: page.evaluate("() => (window.__dgFirestoreListeners || []).some(l => l.path === 'tracks')"), timeout_ms=3000):
         push_collection(page, "tracks")
     tabs = page.eval_on_selector_all("#acm-tabs .acm-tab", "els => els.map(e => e.textContent.trim())")
-    record("acell-mobile-play", "Play's tabs: Pads · Initiative · Notes · Dice", tabs == ["Pads", "Initiative", "Notes", "Dice"], str(tabs))
+    record("acell-mobile-play", "Play's tabs: Pads · Initiative · Evidence · Dice", tabs == ["Pads", "Initiative", "Evidence", "Dice"], str(tabs))
     wait_for_condition(lambda: bool((_sess(page) or {}).get("start")), timeout_ms=4000)
     record("acell-mobile-play", "entering Play notes the Agents' vitals for the debrief", bool((_sess(page) or {}).get("start")), "")
     record("acell-mobile-play", "Pads: the session's, then every effect (not just nine)", page.locator(".acm-pad").count() > 9, str(page.locator(".acm-pad").count()))
@@ -4681,13 +4773,18 @@ def test_acell_mobile_play(p):
     record("acell-mobile-play", "an Agent's post-it opens their sheet, read only (the Players tab's paper, no list)",
            page.is_visible("#play-view") and not page.is_visible("#play-agent-list") and "Ilse Varga" in page.inner_text("#acm-bar"), page.inner_text("#acm-bar"))
     page.click("#acm-bar [data-acm=back]")
-    page.click("#acm-tabs [data-acm-go=notebook]")
+    page.click("#acm-tabs [data-acm-go=evidence]")
+    page.wait_for_timeout(250)
+    record("acell-mobile-play", "Evidence is on Play's tab bar: the Evidence list, still in Play",
+           page.is_visible("#panel-evidence") and page.locator("#acm-tabs .acm-tab.on").inner_text().strip().lower() == "evidence" and "pads" in page.inner_text("#acm-tabs").lower(), page.inner_text("#acm-tabs"))
+    page.click("#acm-fab")
+    page.click(".acm-addsheet [data-add=notes]")
     record("acell-mobile-play", "Notes: the session note by scene", "Scene 4 · The keeper's log" in page.inner_text(".acm-scenetabs"), "")
     page.click("#acm-tabs [data-acm-go=dice]")
     record("acell-mobile-play", "Dice: the Dice Roller's Live Rolls", "DICE ROLLER" in page.inner_text(".acm-drp") and page.locator(".acm-drsel").count() == 1, "")
     page.click("#acm-fab")
     play_add = page.eval_on_selector_all(".acm-pi b", "els => els.map(e => e.textContent)")
-    record("acell-mobile-play", "the add button in Play: quick note, Add evidence, Release evidence, NPC, Agent, Tape, End the game", play_add == ["Quick note", "Add evidence", "Release evidence", "NPC", "Agent", "Tape", "End the game"], str(play_add))
+    record("acell-mobile-play", "the add button in Play: quick note, Add evidence, Release evidence, NPC, Agent, Tape, Session notes, End the game", play_add == ["Quick note", "Add evidence", "Release evidence", "NPC", "Agent", "Tape", "Session notes", "End the game"], str(play_add))
     page.click(".acm-pi[data-add=qnote]")
     page.click(".acm-qform [data-who='TOMA-RY02']")
     page.fill(".acm-qform input[name=t]", "Lied about the boat")
@@ -4937,6 +5034,27 @@ def test_acell_session_notes_desk(p):
     wait_for_condition(lambda: len(_sess(page).get("notes") or []) == 1, timeout_ms=4000)
     s4 = _sess(page)
     record("acell-notes", "✕ takes a note off the session (the session note too); the vault keeps it", s4.get("note_path") == "" and (s4.get("notes") or [{}])[0].get("kind") == "gdoc" and page.evaluate("() => !!dgVault.get('Pale Lantern/Session 4.md')"), str(s4.get("notes")))
+    # 2026-11-02 (in a session): a long vault note's lower part couldn't be
+    # reached in Play: the page in its tab wrapper grew and the block cut it.
+    page.evaluate("(md) => dgVault.save('Pale Lantern/Session 4.md', md)", "# Long\n\n" + "\n\n".join("Line %d." % i for i in range(1, 80)) + "\n\nTHE LAST LINE")
+    page.evaluate("() => dgSessions.setNotes('sess_4', [{ kind: 'vault', path: 'Pale Lantern/Session 4.md' }])")
+    page.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: page.locator(".pd-notebook .pd-page p").count() > 10, timeout_ms=5000)
+    page.wait_for_timeout(500)
+    sc = page.evaluate("""() => { var p = document.querySelector('.pd-notebook .pd-page'), ob = document.querySelector('.pd-notebook > .pd-ob');
+      p.scrollTop = 99999; var last = Array.from(p.querySelectorAll('p')).pop(), lr = last.getBoundingClientRect(), r = ob.getBoundingClientRect();
+      return p.scrollHeight > p.clientHeight && lr.bottom <= r.bottom + 2 && lr.top >= r.top; }""")
+    record("acell-notes", "Play's notebook scrolls: the end of a long vault note can be reached", sc, "")
+    # 2026-11-03: an uploaded HTML page fills the notebook (it kept a fixed height).
+    page.click("#ac-modes [data-mode=prep]")
+    page.evaluate("""() => { var d = window.__dgFirestoreDocs; d['session_notes/snh'] = { title: 'Lamp room handout', file_en: true };
+      d['session_notes/snh/files/en'] = { html: '<html><body><h1>Handout</h1></body></html>' }; }""")
+    page.evaluate("() => dgSessions.setNotes('sess_4', [{ kind: 'html', id: 'snh', lang: 'en' }])")
+    page.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: page.locator(".pd-html .sn-viewer").count() == 1, timeout_ms=6000)
+    page.wait_for_timeout(300)
+    fill = page.evaluate("() => { var v = document.querySelector('.pd-html .sn-viewer').getBoundingClientRect(), b = document.querySelector('.pd-notebook .pd-nbody').getBoundingClientRect(); return [Math.round(v.height), Math.round(b.height), Math.round(v.width), Math.round(b.width)]; }")
+    record("acell-notes", "Play's notebook: an HTML page fills the whole block", abs(fill[0] - fill[1]) <= 2 and abs(fill[2] - fill[3]) <= 2 and fill[0] > 200, str(fill))
     record("acell-notes", "no JS errors (session notes)", not errs, str(errs))
     page.close()
 
@@ -5299,6 +5417,42 @@ def test_acell_mobile_typing_kept(p):
     saved = page.evaluate("() => (dgVault.get('T/Typing.md') || {}).content || ''")
     record("acell-mobile", "writing a note on a phone: the save doesn't redraw the text box (the keyboard stays)", same and "First words and more" in saved, repr(saved[-40:]))
     record("acell-mobile", "no JS errors (typing)", not errs, str(errs))
+    page.close()
+
+def test_acell_vault_new_link(p):
+    """2026-11-02: as in Obsidian, a [[link]] to a note that doesn't exist
+    yet looks it, and a tap makes the note (in the operation's folder) and
+    opens it; a link with a folder makes it there."""
+    page, errs = open_acell_shell(p)
+    wait_for_condition(lambda: page.evaluate("() => (window.dgTapes && dgTapes.operations().length) > 0"), timeout_ms=5000)
+    page.evaluate("() => dgVault.save('Pale Lantern/Sessions/Night 2.md', '# Night 2\\n\\nAsk [[Harbourmaster Quint]] and see [[Lore/Old lamps]]; [[Session 4]] exists.\\n')")
+    page.click("#acell-tab-strip .tw[data-tab=notes]")
+    page.evaluate("() => window.dgAcLibrary.openNote('Pale Lantern/Sessions/Night 2.md')")
+    page.wait_for_selector(".ac-vnote .vn-link", timeout=4000)
+    cls = page.eval_on_selector_all(".ac-vnote .vn-link", "e => e.map(x => x.textContent + ':' + x.classList.contains('vn-link-new'))")
+    record("acell-vault-link", "links to notes not written yet look new; one that exists doesn't", cls == ["Harbourmaster Quint:true", "Old lamps:true", "Session 4:false"], str(cls))
+    page.click(".ac-vnote .vn-link >> nth=0")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Pale Lantern/Harbourmaster Quint.md')"), timeout_ms=4000)
+    wait_for_condition(lambda: "Harbourmaster Quint" in page.inner_text(".ac-vnote .vn-file"), timeout_ms=3000)
+    record("acell-vault-link", "a tap makes the note in the operation's folder and opens it", page.evaluate("() => (dgVault.get('Pale Lantern/Harbourmaster Quint.md') || {}).content") == "# Harbourmaster Quint\n\n" and "Harbourmaster Quint" in page.inner_text(".ac-vnote .vn-file"), page.inner_text(".ac-vnote .vn-file"))
+    record("acell-vault-link", "…and it's saved to the vault", any((w.get("data") or {}).get("path") == "Pale Lantern/Harbourmaster Quint.md" for w in fs_writes(page, "vault/")), "")
+    page.click(".ac-vnote [data-vv=back]")
+    page.wait_for_selector(".ac-vnote .vn-link", timeout=4000)
+    page.click(".ac-vnote .vn-link >> nth=1")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Lore/Old lamps.md')"), timeout_ms=4000)
+    record("acell-vault-link", "a link with a folder makes the note there", page.evaluate("() => !!dgVault.get('Lore/Old lamps.md')"), "")
+    record("acell-vault-link", "no JS errors (new link)", not errs, str(errs))
+    page.close()
+    page, errs = open_phone(p)
+    wait_for_condition(lambda: page.evaluate("() => (window.dgTapes && dgTapes.operations().length) > 0"), timeout_ms=5000)
+    page.evaluate("() => dgVault.save('Pale Lantern/Night 3.md', '# Night 3\\n\\nMeet [[The Ferryman]].\\n')")
+    page.evaluate("() => window.dgAcmNotes.open('Pale Lantern/Night 3.md')")
+    page.wait_for_selector("#acm-view .vn-link-new", timeout=4000)
+    page.tap("#acm-view .vn-link-new")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Pale Lantern/The Ferryman.md')"), timeout_ms=4000)
+    page.wait_for_timeout(400)
+    record("acell-vault-link", "on a phone too: the tap makes the note and opens it", "Ferryman" in page.inner_text("#acm-bar"), page.inner_text("#acm-bar")[:80])
+    record("acell-vault-link", "no JS errors (new link, phone)", not errs, str(errs))
     page.close()
 
 def test_acell_console(p):
@@ -14428,6 +14582,8 @@ def main():
         safe(test_agent_hub_recruit_flag, browser, area="hub")
 
         safe(test_agent_hub_handouts, browser, area="hub")
+        safe(test_agent_hub_evidence_two_agents, browser, area="hub")
+        safe(test_old_address_worker_removed, browser, area="sw")
 
         safe(test_agent_hub_handout_notes, browser, area="hub")
 
@@ -14470,6 +14626,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")
         safe(test_acell_hear_here, browser, area="acell-hear")

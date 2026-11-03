@@ -92,6 +92,21 @@
     // every shell change means nothing if the browser never actually
     // re-fetches sw.js to notice the byte it changed -- this is the
     // one call that has to always hit the network, every time.
+    // The app's old address (/dg-campaign/, before the repo became dg):
+    // a browser that used it keeps that copy's service worker, which goes
+    // on serving the old pages from its cache there (2026-11-03: a player
+    // on Firefox was still on the long-gone character sheet, and the
+    // evidence never loaded). Opening the current address once removes
+    // it; its caches go too (sw.js drops every cache but its own).
+    if (navigator.serviceWorker.getRegistrations) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (r) {
+          var scope = '';
+          try { scope = new URL(r.scope).pathname; } catch (e) { return; }
+          if (/^\/dg-campaign(\/|$)/.test(scope) && location.pathname.indexOf('/dg-campaign/') !== 0) r.unregister();
+        });
+      }).catch(function () { /* not allowed here */ });
+    }
     navigator.serviceWorker.register(swPath, { updateViaCache: 'none' }).then(function (reg) {
       // A worker already waiting when we register means an update landed
       // while this page had no active controller yet to notice it.

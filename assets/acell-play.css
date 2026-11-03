@@ -42,7 +42,7 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
 .pd-dn i{ margin-left:auto; font-style:normal; font-size:10px; background:#2a2418; color:#e2cf98; padding:0 5px; white-space:nowrap; }
 .pd-warns{ display:flex; flex-wrap:wrap; gap:4px; margin-top:3px; }
 .pd-w{ font-size:9.5px; color:#fff; padding:0 5px; background:#e46a5a; transform:rotate(-1deg); }
-.pd-w.o{ background:#c48a1a; } .pd-w.d{ background:#6a3aa0; }
+.pd-w.o{ background:#c48a1a; } .pd-w.d, .pd-w.dis{ background:#6a3aa0; }
 .pd-v{ font-size:11.5px; margin-top:3px; }
 .pd-v b{ color:#a3221c; font-weight:400; }
 .pd-q{ display:block; width:100%; text-align:left; margin-top:5px; background:#f6e27a; padding:2px 8px; font-size:11.5px; font-family:'Special Elite',monospace; color:#3a3010; transform:rotate(-1deg); border:0; }
@@ -116,9 +116,12 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
 /* Evidence box */
 .pd-evidence{ background:#b79a62; border:1px solid #7a6334; padding:8px 12px 10px; box-shadow:0 12px 24px rgba(0,0,0,.5); }
 .pd-lid{ font-family:'Special Elite',monospace; font-size:14px; border-bottom:2px solid #7a6334; margin-bottom:6px; text-transform:uppercase; }
-.pd-f{ background:#f3ead0; border:1px solid #c9bd99; font-size:11.5px; padding:3px 8px; margin-bottom:4px; display:flex; gap:8px; align-items:center; }
-.pd-f span{ flex:1; min-width:0; }
-.pd-f i{ font-style:normal; font-size:10px; color:#2c3a22; text-align:right; }
+/* The title on its own line, the state under it (2026-11-02: a long
+   "unseen: …" squeezed titles to a word a line, two items filled the box) */
+.pd-evidence{ overflow-y:auto; }
+.pd-f{ background:#f3ead0; border:1px solid #c9bd99; font-size:11.5px; padding:4px 8px; margin-bottom:4px; display:flex; flex-wrap:wrap; gap:2px 8px; align-items:baseline; }
+.pd-f span{ flex:1 1 auto; min-width:0; font-size:12.5px; color:#2a2418; overflow-wrap:anywhere; }
+.pd-f i{ flex:1 1 100%; font-style:normal; font-size:10px; color:#2c3a22; text-align:left; }
 .pd-f button{ font:inherit; font-size:10.5px; color:#a3221c; background:none; border:1px solid #a3221c; padding:0 6px; cursor:pointer; white-space:nowrap; }
 
 /* Effect pads */
@@ -171,14 +174,37 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
 .pd-grid .pd-notebook > .pd-ob{ overflow:hidden; }
 .pd-grid .pd-page{ min-height:100%; height:100%; overflow:auto; }
 .pd-grid .pd-html{ min-height:0; }
-.pd-grid .pd-html .sn-viewer{ height:100%; }
-.pd-grid .pd-dossiers > .pd-ob{ padding:12px 4px 4px; }
+/* An uploaded HTML page fills the notebook, whatever its size (2026-11-03). */
+.pd-grid .pd-notebook .pd-nbody > .pd-html{ position:relative; overflow:hidden; padding:0; }
+.pd-grid .pd-html .sn-viewer, .pd-grid .pd-html .sn-viewer.sn-docked{ position:absolute; inset:0; height:auto; }
+.pd-grid .pd-dossiers > .pd-ob, .pd-dossiers > .pd-ob{ display:block; overflow-y:auto; overflow-x:hidden; padding:4px 8px 8px 4px; }
+/* Initiative (2026-11-02): the phone's post-its (assets/acell-mobile.css),
+   with what the dossiers had: warnings, quick notes, the Agent File. */
+.pd-init{ font-family:'Courier Prime','Courier New',monospace; padding:0; }
+.pd-init *, .pd-init *::before, .pd-init *::after{ box-sizing:border-box; }
+.pd-init .ic{ width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:square; flex:none; }
+.pd-init .acm-initbar{ margin:2px 0 8px; gap:6px; }
+.pd-init .acm-btn{ min-height:34px; padding:0 6px; font-size:10.5px; }
+.pd-init .acm-round{ margin:0 2px 10px; }
+.pd-init .acm-ip{ align-items:flex-start; margin-bottom:9px; cursor:default; }
+.pd-init .acm-ip .d{ width:36px; height:36px; font-size:15px; }
+.pd-init .acm-g{ flex:1; min-width:0; }
+.pd-init .acm-g small{ display:block; font-size:11.5px; margin-top:2px; }
+.pd-init .pd-name{ font-size:16px; }
+.pd-init .pd-name i{ font:11px 'Courier Prime',monospace; font-style:normal; color:#8b1a1a; text-transform:uppercase; letter-spacing:.08em; }
+.pd-init .acm-ip.out{ opacity:.6; }
+.pd-init .acm-ip.now{ outline:3px solid #f2d98a; outline-offset:2px; }
+.pd-init .pd-warns{ margin:3px 0 1px; }
+.pd-init .pd-q{ background:#fff3a8; }
+.pd-init .pd-q.add{ background:transparent; border-color:rgba(42,36,24,.4); color:#5a4e38; }
+.pd-file{ flex:none; align-self:center; font:10.5px 'Special Elite','Courier New',monospace; letter-spacing:.1em; text-transform:uppercase; padding:5px 8px; background:transparent; border:1px solid #2a2418; color:#2a2418; cursor:pointer; border-radius:0; }
+.pd-file:hover{ background:#2a2418; color:#f2d98a; }
+.pd-init .acm-xs{ align-self:center; }
 .pd-grid .pd-pad{ transform:none; }
 .pd-grid .pd-pad > .pd-ob{ overflow:auto; }
 .pd-grid .pd-dice > .pd-ob{ overflow:auto; }
 .pd-grid .pd-pads > .pd-ob{ background:rgba(0,0,0,.25); padding:6px; }
 .pd-grid .pd-padgrid{ grid-template-columns:repeat(auto-fill,minmax(54px,1fr)); }
-.pd-grid .pd-initiative > .pd-ob{ background:rgba(0,0,0,.2); padding:8px; }
 @media (max-width:720px){
   .pd-grid{ display:flex; flex-direction:column; gap:14px; }
   .pd-grid > .pd-o{ order:var(--pd-order,0); }
@@ -264,3 +290,11 @@ body.acm .acm-cxbox [data-cc=live] .cc-mini{ min-height:34px; min-width:38px; }
 .cc-desk [data-cc=live] .cc-k{ background:#e9dfbf; color:#2a2418; }
 .cc-desk [data-cc=live] .cc-mini{ background:transparent; color:#e9dfbf; border-color:rgba(233,223,191,.5); min-height:26px; }
 .cc-desk .cc-stopall{ font-size:9.5px; padding:2px 8px; }
+
+/* The notebook's note tabs and page inside the block (2026-11-02: the
+   page in its tab wrapper grew to the note's length and the block cut it
+   off, so the lower part of a vault note couldn't be reached) */
+.pd-grid .pd-notebook > .pd-ob{ display:flex; flex-direction:column; }
+.pd-grid .pd-notebook .pd-ntabs{ flex:none; }
+.pd-grid .pd-notebook .pd-nbody{ flex:1; min-height:0; display:flex; flex-direction:column; }
+.pd-grid .pd-notebook .pd-nbody > .pd-page{ flex:1; min-height:0; height:auto; overflow:auto; -webkit-overflow-scrolling:touch; }

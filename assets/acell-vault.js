@@ -135,7 +135,9 @@
     out = out
       .replace(/!\[\[([^\]]+)\]\]/g, function (m, t) { return '<span class="vn-embed">⧉ ' + t + '</span>'; })
       .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, function (m, t, alias) {
-        return '<a class="vn-link" data-vlink="' + t.replace(/"/g, '&quot;') + '">' + (alias || t.split('#')[0].split('/').pop()) + '</a>';
+        // A note that doesn't exist yet looks it (as in Obsidian): a tap makes it.
+        var isNew = opts && opts.from && notes().length && !get(resolveLink(t.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'"), opts.from));
+        return '<a class="vn-link' + (isNew ? ' vn-link-new' : '') + '" data-vlink="' + t.replace(/"/g, '&quot;') + '">' + (alias || t.split('#')[0].split('/').pop()) + '</a>';
       })
       .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
@@ -322,7 +324,7 @@
         '<span class="vn-modes"><button type="button" data-vmode="read" class="' + (mode === 'read' ? 'on' : '') + '">Read</button><button type="button" data-vmode="edit" class="' + (mode === 'edit' ? 'on' : '') + '">✎ Edit</button></span></div>';
       var body;
       if (mode === 'edit') body = tbHtml() + '<textarea class="vn-ta" spellcheck="true">' + esc(shown()) + '</textarea>';
-      else body = '<div class="vn-body">' + (shown().trim() ? render(shown(), opts) : '<p class="vn-empty">' + esc(opts.emptyText || 'Nothing here yet — ✎ Edit to write.') + '</p>') + '</div>';
+      else body = '<div class="vn-body">' + (shown().trim() ? render(shown(), Object.assign({}, opts, { from: path })) : '<p class="vn-empty">' + esc(opts.emptyText || 'Nothing here yet — ✎ Edit to write.') + '</p>') + '</div>';
       host.innerHTML = head + body;
       var ta = host.querySelector('.vn-ta');
       if (ta) {
@@ -395,7 +397,15 @@
         return;
       }
       var lk = e.target.closest('[data-vlink]');
-      if (lk && opts.onLink) { opts.onLink(resolveLink(lk.getAttribute('data-vlink'), path)); return; }
+      if (lk && opts.onLink) {
+        // A link to a note that doesn't exist yet makes it, as Obsidian
+        // does (2026-11-02): in the operation's folder, then opens it.
+        var target = lk.getAttribute('data-vlink'), to = resolveLink(target, path);
+        if (get(to)) { opts.onLink(to); return; }
+        var made = newLinkPath(target, path), name = made.split('/').pop().replace(/\.md$/i, '');
+        save(made, '# ' + name + '\n\n').then(function (p) { opts.onLink(p, { created: true }); }, function () { /* not saved: stay */ });
+        return;
+      }
       var cue = e.target.closest('[data-cue]');
       if (cue && opts.onCue) opts.onCue(cue.getAttribute('data-cue'), cue);
     });
@@ -549,6 +559,21 @@
     ta.addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== ta) closeSuggest(); }, 150); });
   }
 
+  // Where a link's new note goes: a link with a folder exactly there;
+  // otherwise the operation's folder when the note linking from is in one
+  // (operations/{id}.vault_folder), else beside that note.
+  function newLinkPath(target, from) {
+    var name = String(target || '').split('#')[0].trim();
+    if (name.indexOf('/') >= 0) return cleanPath(name);
+    var ops = (window.dgTapes && window.dgTapes.operations) ? window.dgTapes.operations() : [];
+    var opDir = '';
+    ops.forEach(function (o) {
+      var f = String(o.vault_folder || '').replace(/\/+$/, '');
+      if (f && from && from.indexOf(f + '/') === 0 && f.length > opDir.length) opDir = f;
+    });
+    var dir = opDir ? opDir + '/' : (from && from.indexOf('/') >= 0 ? from.slice(0, from.lastIndexOf('/') + 1) : '');
+    return cleanPath(dir + name);
+  }
   // [[Name]] -> the note's path: same folder first, then anywhere by name.
   function resolveLink(target, from) {
     var name = String(target || '').split('#')[0].trim();
@@ -720,7 +745,7 @@
     load: load, notes: notes, get: get, save: save, remove: remove, id: id, cleanPath: cleanPath, title: title,
     dirOf: dirOf, folderLabel: folderLabel, byName: byName,
     render: render, headings: headings, section: section, sectionRange: sectionRange, toggleTask: toggleTask,
-    editor: editor, picker: picker, settings: settings, resolveLink: resolveLink, modal: modal, esc: esc,
+    editor: editor, picker: picker, settings: settings, resolveLink: resolveLink, newLinkPath: newLinkPath, modal: modal, esc: esc,
     importFiles: importFiles, exportZip: exportZip, SYNC_URL: SYNC_URL
   };
 })();
