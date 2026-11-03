@@ -34,7 +34,7 @@
   // A 12-column grid of 58px rows: each object { x, y, w, h } in cells.
   // Kept on this device (dg_acell_desk_v3); objects put away sit in `away`.
   var KEY3 = 'dg_acell_desk_v3', COLS = 12, ROW = 58, GAP = 12;
-  var MIN = { dossiers: [3, 4], dice: [2, 4], notebook: [3, 4], deck: [3, 7], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
+  var MIN = { dossiers: [3, 4], dice: [2, 2], notebook: [3, 4], deck: [3, 7], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
   var DEFAULT = { items: {
     deck: { x: 0, y: 0, w: 4, h: 9 }, pads: { x: 4, y: 0, w: 5, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
     notebook: { x: 4, y: 3, w: 5, h: 15 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dossiers: { x: 9, y: 8, w: 3, h: 10 }, dice: { x: 0, y: 9, w: 4, h: 6 }
@@ -79,9 +79,23 @@
 
   /* ── Building the desk ── */
   function place(id) { var r = L.items[id]; return 'grid-column:' + (r.x + 1) + ' / span ' + r.w + ';grid-row:' + (r.y + 1) + ' / span ' + r.h; }
+  function builtKey() { var s = A.session(); return (s ? s.id : '') + '|' + JSON.stringify(L) + '|' + st.arrange; }
+  // The Dice Roller's block is as tall as the roller (2026-11-03: it kept
+  // its rows when the roller was shorter). Not while arranging.
+  function hugDice(px) {
+    var r = L.items.dice, sec = panel.querySelector('.pd-o[data-o=dice]'), o = ob('dice');
+    if (!r || !sec || !o || st.arrange || !px || window.innerWidth <= 720) return;
+    var cs = getComputedStyle(sec), co = getComputedStyle(o);
+    var px2 = px + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(co.paddingTop) + parseFloat(co.paddingBottom);
+    var rows = Math.max(MIN.dice[1], Math.ceil((px2 + GAP) / (ROW + GAP)));
+    if (rows === r.h) return;
+    r.h = rows; save();
+    sec.setAttribute('style', place('dice'));
+    st.built = builtKey();
+  }
   function build() {
     var s = A.session();
-    var key = (s ? s.id : '') + '|' + JSON.stringify(L) + '|' + st.arrange;
+    var key = builtKey();
     if (st.built === key) return;
     releaseDice();
     if (window.dgAcConsole && window.dgAcConsole.lent && window.dgAcConsole.lent() && panel.contains(document.getElementById('ac-console'))) window.dgAcConsole.detach();
@@ -392,6 +406,8 @@
       dice.moved = true;
       own.classList.add('pd-docked');
       if (own.classList.contains('dr-collapsed') && window.dgDice && window.dgDice._toggle) { window.dgDice._toggle(); dice.opened = true; }
+      hugDice(own.offsetHeight);
+      if (window.ResizeObserver && !dice.ro) { dice.ro = new ResizeObserver(function () { if (own.parentNode === ob('dice')) hugDice(own.offsetHeight); }); dice.ro.observe(own); }
       return;
     }
     var p = outerPanel();
@@ -412,7 +428,7 @@
     var hold = slot && slot.querySelector('.pd-diceslot');
     if (!slot || !hold || !frame) { releaseDice(); return; }
     var h = p.offsetHeight || 260;
-    if (Math.abs(h - dice.h) > 2) { dice.h = h; hold.style.height = h + 'px'; }
+    if (Math.abs(h - dice.h) > 2) { dice.h = h; hold.style.height = h + 'px'; hugDice(h); }
     var r = hold.getBoundingClientRect(), fr = frame.getBoundingClientRect();
     var visible = r.bottom > 0 && r.top < window.innerHeight;
     var ps = p.style;

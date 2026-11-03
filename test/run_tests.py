@@ -4399,6 +4399,8 @@ def test_acell_play_desk(p):
     record("acell-play", "the Dice Roller sits in its slot on the desk, open",
            page.evaluate("() => { var p = document.querySelector('.pd-dice #dr-panel'); return !!p && !p.classList.contains('dr-collapsed') && getComputedStyle(p).position !== 'fixed'; }"), "")
 
+    hug = page.evaluate("() => { var s = document.querySelector('.pd-o[data-o=dice]'), p = document.querySelector('.pd-dice #dr-panel'); return [Math.round(s.getBoundingClientRect().height), Math.round(p.getBoundingClientRect().height)]; }")
+    record("acell-play", "the Dice Roller's block hugs the roller (no rows of empty space under it)", hug[0] >= hug[1] and hug[0] - hug[1] < 58 + 12 + 40, str(hug))
     page.click("#ac-tools [data-tool=arrange]")
     record("acell-play", "✥ Arrange shows the drawer and each object's grip", page.is_visible(".pd-drawer") and page.locator(".pd-grip").count() == 7, "")
     def cell_xy(cx, cy):
@@ -5018,6 +5020,16 @@ def test_acell_session_notes_desk(p):
       p.scrollTop = 99999; var last = Array.from(p.querySelectorAll('p')).pop(), lr = last.getBoundingClientRect(), r = ob.getBoundingClientRect();
       return p.scrollHeight > p.clientHeight && lr.bottom <= r.bottom + 2 && lr.top >= r.top; }""")
     record("acell-notes", "Play's notebook scrolls: the end of a long vault note can be reached", sc, "")
+    # 2026-11-03: an uploaded HTML page fills the notebook (it kept a fixed height).
+    page.click("#ac-modes [data-mode=prep]")
+    page.evaluate("""() => { var d = window.__dgFirestoreDocs; d['session_notes/snh'] = { title: 'Lamp room handout', file_en: true };
+      d['session_notes/snh/files/en'] = { html: '<html><body><h1>Handout</h1></body></html>' }; }""")
+    page.evaluate("() => dgSessions.setNotes('sess_4', [{ kind: 'html', id: 'snh', lang: 'en' }])")
+    page.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: page.locator(".pd-html .sn-viewer").count() == 1, timeout_ms=6000)
+    page.wait_for_timeout(300)
+    fill = page.evaluate("() => { var v = document.querySelector('.pd-html .sn-viewer').getBoundingClientRect(), b = document.querySelector('.pd-notebook .pd-nbody').getBoundingClientRect(); return [Math.round(v.height), Math.round(b.height), Math.round(v.width), Math.round(b.width)]; }")
+    record("acell-notes", "Play's notebook: an HTML page fills the whole block", abs(fill[0] - fill[1]) <= 2 and abs(fill[2] - fill[3]) <= 2 and fill[0] > 200, str(fill))
     record("acell-notes", "no JS errors (session notes)", not errs, str(errs))
     page.close()
 

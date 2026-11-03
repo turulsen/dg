@@ -174,7 +174,9 @@ body[data-ac-mode="play"] footer.site-footer{ display:none; }
 .pd-grid .pd-notebook > .pd-ob{ overflow:hidden; }
 .pd-grid .pd-page{ min-height:100%; height:100%; overflow:auto; }
 .pd-grid .pd-html{ min-height:0; }
-.pd-grid .pd-html .sn-viewer{ height:100%; }
+/* An uploaded HTML page fills the notebook, whatever its size (2026-11-03). */
+.pd-grid .pd-notebook .pd-nbody > .pd-html{ position:relative; overflow:hidden; padding:0; }
+.pd-grid .pd-html .sn-viewer, .pd-grid .pd-html .sn-viewer.sn-docked{ position:absolute; inset:0; height:auto; }
 .pd-grid .pd-dossiers > .pd-ob, .pd-dossiers > .pd-ob{ display:block; overflow-y:auto; overflow-x:hidden; padding:4px 8px 8px 4px; }
 /* Initiative (2026-11-02): the phone's post-its (assets/acell-mobile.css),
    with what the dossiers had: warnings, quick notes, the Agent File. */
