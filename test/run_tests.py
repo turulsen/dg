@@ -1803,6 +1803,31 @@ def test_agent_hub_evidence_two_agents(p):
     page.close()
     return errs
 
+def test_old_address_worker_removed(p):
+    """2026-11-03: a player's browser kept the app's old address
+    (/dg-campaign/) and its service worker served the long-gone pages
+    from cache. Opening the current address removes that worker, and
+    only that one (other sites on the same github.io origin keep theirs)."""
+    page = p.new_page()
+    errs = collect_errors(page)
+    page.add_init_script("""(function () {
+      if (!navigator.serviceWorker) return;
+      window.__dgUnreg = [];
+      function reg(scope) { return { scope: scope, unregister: function () { window.__dgUnreg.push(scope); return Promise.resolve(true); } }; }
+      navigator.serviceWorker.getRegistrations = function () {
+        return Promise.resolve([reg(location.origin + '/dg-campaign/'), reg(location.origin + '/other-site/'), reg(location.origin + '/')]);
+      };
+    })();""")
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.goto(f"{BASE}/index.html", wait_until="domcontentloaded", timeout=15000)
+    wait_for_condition(lambda: page.evaluate("() => (window.__dgUnreg || []).length") >= 1, timeout_ms=4000)
+    page.wait_for_timeout(200)
+    got = page.evaluate("() => (window.__dgUnreg || []).map(s => new URL(s).pathname)")
+    record("sw", "the old address's service worker (/dg-campaign/) is removed, nothing else", got == ["/dg-campaign/"], str(got))
+    page.close()
+    return errs
+
 def test_agent_hub_handout_notes(p):
     """agent-hub.html: an Agent's private notes on a Handout, synced via
     the backend (list_handout_notes / save_handout_note) so they survive
@@ -14558,6 +14583,7 @@ def main():
 
         safe(test_agent_hub_handouts, browser, area="hub")
         safe(test_agent_hub_evidence_two_agents, browser, area="hub")
+        safe(test_old_address_worker_removed, browser, area="sw")
 
         safe(test_agent_hub_handout_notes, browser, area="hub")
 
