@@ -1212,7 +1212,7 @@
     mode: function () { return st.mode; }, setMode: setMode, on: function () { return st.on; }, current: function () { return st.name; },
     icon: I, photo: photo, plain: plain, sw: sw, btn: btn, lab: lab, initials: initials, agentsByDex: agentsByDex, opOf: opOf, operations: operations,
     npcNote: npcNote, npcSheet: npcSheet, agentNoteSheet: agentNoteSheet, folderNpcs: folderNpcs, parseNpc: parseNpc, npcDir: npcDir,
-    ensureOpFolder: ensureOpFolder, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
+    ensureOpFolder: ensureOpFolder, createOperation: createOperation, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
     enable: function () { A.keep('dg_acm_desktop', false); check(); }
   };
   // After the other phone screens (acell-mobile-*.js) have registered.

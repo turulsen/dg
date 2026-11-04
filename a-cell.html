@@ -993,6 +993,13 @@
   .cell-chs{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:8px 0; font-size:12px; }
   .cell-chs > span{ letter-spacing:.14em; text-transform:uppercase; font-size:10.5px; color:var(--ink-2); margin-right:4px; }
   .cell-chs small{ flex-basis:100%; color:var(--ink-3); font-size:11px; }
+  .cell-ops{ margin:10px 0 8px; border-top:1px dashed var(--rule); padding-top:8px; }
+  .cell-ops-hd{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  .cell-ops-hd > span{ letter-spacing:.14em; text-transform:uppercase; font-size:10.5px; color:var(--ink-2); }
+  .cell-op-row, .cell-op-form{ display:flex; align-items:center; gap:6px; padding:4px 0; border-bottom:1px dotted var(--rule); }
+  .cell-op-name{ flex:1; min-width:0; font-family:'Special Elite',monospace; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cell-op-in{ flex:1; min-width:0; font:14px 'Courier Prime',monospace; padding:6px 8px; border:1px solid var(--rule); border-radius:0; background:#fffdf4; }
+  .cell-op-del{ color:#8b1a1a; border-color:#8b1a1a; }
   .cell-ch{ width:34px; height:30px; border:1px solid var(--ink-2); background:transparent; font:13px 'Courier Prime',monospace; cursor:pointer; }
   .cell-ch.on{ background:var(--ink); color:#f4eed8; }
   /* The Agent File's ink and paper for the Sheet and Cells panels too:
@@ -3298,7 +3305,93 @@
     renderUnassigned();
   }
 
+  /* ── A Cell's operations (2026-11-04): listed on its card, renamed,
+     added and deleted here (Rename and Delete were only in the Evidence
+     tab's folders, and only with that Cell filtered). The list is
+     dgTapes' copy of operations/ (acell-tapes.js); a change reloads it,
+     and the Evidence tab's folders. Renaming keeps the operation's vault
+     folder (its notes' paths stay as they are). ── */
+  var opEdit = null; // { cell: cell_id, op: operation_id | '' (new) }
+  function cellOps(c) {
+    var T = window.dgTapes;
+    return T && T.operations ? T.operations().filter(function (o) { return o.cell_id === c.cell_id; }).sort(function (a, b) { return (a.created_at || 0) - (b.created_at || 0); }) : [];
+  }
+  function opsHtml(c) {
+    var ops = cellOps(c), ed = opEdit && opEdit.cell === c.cell_id ? opEdit : null;
+    function form(op) {
+      return '<div class="cell-op-form" data-op-form="' + escapeHtml(c.cell_id) + '"><input type="text" class="cell-op-in" data-op-name="' + escapeHtml(op ? op.operation_id : '') + '" value="' + escapeHtml(op ? op.name : '') + '" placeholder="Operation name" maxlength="80">' +
+        '<button type="button" class="paper-btn primary" data-op-save>' + (op ? 'Save' : 'Add') + '</button><button type="button" class="paper-btn" data-op-cancel>Cancel</button></div>';
+    }
+    return '<div class="cell-ops"><div class="cell-ops-hd"><span>Operations</span>' +
+      (ed && !ed.op ? '' : '<button type="button" class="paper-btn" data-op-new="' + escapeHtml(c.cell_id) + '">+ Operation</button>') + '</div>' +
+      ops.map(function (o) {
+        if (ed && ed.op === o.operation_id) return form(o);
+        return '<div class="cell-op-row"><span class="cell-op-name">' + escapeHtml(o.name || o.operation_id) + '</span>' +
+          '<button type="button" class="paper-btn" data-op-rename="' + escapeHtml(o.operation_id) + '" data-op-cell="' + escapeHtml(c.cell_id) + '">Rename</button>' +
+          '<button type="button" class="paper-btn cell-op-del" data-op-del="' + escapeHtml(o.operation_id) + '">Delete</button></div>';
+      }).join('') +
+      (ed && !ed.op ? form(null) : '') +
+      (!ops.length && !(ed && !ed.op) ? '<div class="cells-empty-note">No operations yet.</div>' : '') + '</div>';
+  }
+  function opsChanged(msg) {
+    var T = window.dgTapes, E = window.dgAcellEvidence;
+    return (T && T.reloadOps ? T.reloadOps() : Promise.resolve()).then(function () {
+      if (E && E.refreshFolders) E.refreshFolders();
+      opEdit = null;
+      statusEl.textContent = msg;
+      renderGroups();
+    });
+  }
+  function opAct(e) {
+    var b = e.target.closest('[data-op-new],[data-op-rename],[data-op-del],[data-op-save],[data-op-cancel]');
+    if (!b || !groupsEl.contains(b)) return;
+    var T = window.dgTapes, all = T && T.operations ? T.operations() : [];
+    if (b.hasAttribute('data-op-new')) { opEdit = { cell: b.getAttribute('data-op-new'), op: '' }; renderGroups(); focusOp(); return; }
+    if (b.hasAttribute('data-op-rename')) { opEdit = { cell: b.getAttribute('data-op-cell'), op: b.getAttribute('data-op-rename') }; renderGroups(); focusOp(); return; }
+    if (b.hasAttribute('data-op-cancel')) { opEdit = null; renderGroups(); return; }
+    if (b.hasAttribute('data-op-del')) {
+      var id = b.getAttribute('data-op-del'), o = all.filter(function (x) { return x.operation_id === id; })[0];
+      if (!o || !confirm('Delete Operation "' + o.name + '"? Evidence filed under it becomes Unfiled, not deleted; its vault notes stay.')) return;
+      b.disabled = true; statusEl.textContent = 'Deleting ' + o.name + '…';
+      window.dgAcellApi.post({ action: 'delete_operation', operation_id: id })
+        .then(function () { return opsChanged('Deleted ' + o.name + '.'); })
+        .catch(function (err) { b.disabled = false; statusEl.textContent = 'Could not delete it: ' + ((err && err.message) || err); });
+      return;
+    }
+    saveOp(b.closest('[data-op-form]'));
+  }
+  function focusOp() { var i = groupsEl.querySelector('.cell-op-in'); if (i) { i.focus(); i.select(); } }
+  function saveOp(f) {
+    if (!f || !opEdit) return;
+    var inp = f.querySelector('.cell-op-in'), name = inp.value.trim(), id = inp.getAttribute('data-op-name'), cellId = opEdit.cell;
+    if (!name) { inp.focus(); return; }
+    var T = window.dgTapes, cur = id && T ? (T.operations().filter(function (x) { return x.operation_id === id; })[0] || {}) : {};
+    if (id && name === cur.name) { opEdit = null; renderGroups(); return; }
+    Array.prototype.forEach.call(f.querySelectorAll('button, input'), function (x) { x.disabled = true; });
+    statusEl.textContent = id ? 'Renaming…' : 'Adding ' + name + '…';
+    var M = window.dgAcm;
+    var job = id ? window.dgAcellApi.post({ action: 'update_operation', operation_id: id, name: name })
+      // A new one also gets its vault folder (Sessions, NPCs, Locations), as from the phone's + Operation.
+      : M && M.createOperation ? M.createOperation(name, cellId)
+      : window.dgAcellApi.post({ action: 'create_operation', name: name, cell_id: cellId });
+    job.then(function () { return opsChanged(id ? 'Renamed to ' + name + '.' : 'Added ' + name + '.'); })
+      .catch(function (err) {
+        Array.prototype.forEach.call(f.querySelectorAll('button, input'), function (x) { x.disabled = false; });
+        statusEl.textContent = 'Could not save it: ' + ((err && err.message) || err);
+      });
+  }
+  groupsEl.addEventListener('click', opAct);
+  groupsEl.addEventListener('keydown', function (e) {
+    if (!e.target.classList || !e.target.classList.contains('cell-op-in')) return;
+    if (e.key === 'Enter') { e.preventDefault(); saveOp(e.target.closest('[data-op-form]')); }
+    else if (e.key === 'Escape') { opEdit = null; renderGroups(); }
+  });
+  // The list arrives with dgTapes; redraw then (not while a name is being typed).
+  document.addEventListener('dg-tapes', function () { if (cells.length && !opEdit) renderGroups(); });
+
   function renderGroups() {
+    // dgTapes loads once (its promise is kept); its dg-tapes event redraws.
+    if (window.dgTapes && window.dgTapes.load) window.dgTapes.load().catch(function () {});
     if (!cells.length) {
       groupsEl.innerHTML = '<div class="cells-empty-note">No Cells yet -- click "+ Create Cell" to start one.</div>';
       return;
@@ -3335,6 +3428,7 @@
           var on = (c.channels || []).indexOf(ch) !== -1;
           return '<button type="button" class="cell-ch' + (on ? ' on' : '') + '" data-cell-ch="' + i + '" data-ch="' + ch + '" aria-pressed="' + on + '">' + ch + '</button>';
         }).join('') + '<small>up to three: its players can hear different tapes on each</small></div>' +
+        opsHtml(c) +
         '<div class="cell-members">' + members + '</div>' +
         (friendlyLink
           ? '<p class="cell-add-note">Friendly table link (players pick from this Cell\'s Friendlies, rolls land in its feed): ' +
@@ -4827,6 +4921,8 @@
     // opts: { cell_id, operation_id } -- where the new item goes (the phone's
     // quick Add evidence: the session's Cell and operation).
     newItem: function (opts) { showForm(null, opts); },
+    // The Cells tab renamed, added or deleted an operation: the folders again.
+    refreshFolders: function () { fetchAll(true); },
     release: function (id, on) {
       var h = evidenceItems.filter(function (x) { return x.evidence_id === id; })[0];
       if (!h) return Promise.reject(new Error('That evidence is gone.'));

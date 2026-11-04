@@ -5455,6 +5455,43 @@ def test_acell_vault_new_link(p):
     record("acell-vault-link", "no JS errors (new link, phone)", not errs, str(errs))
     page.close()
 
+def test_acell_cell_operations(p):
+    """2026-11-04: a Cell's operations on its card in the Cells tab --
+    renamed, added and deleted there (Rename was only in the Evidence
+    tab's folders, so the Handler couldn't find it)."""
+    page, errs = open_acell_shell(p)
+    page.evaluate("() => window.dgAcellTab('cells')")
+    card = ".cell-card:has(.cell-op-name:text('Pale Lantern'))"
+    wait_for_condition(lambda: page.locator(card).count() == 1, timeout_ms=6000)
+    record("acell-cells", "the Cell's card lists its operations", page.locator(card + " .cell-op-row").count() == 1, page.inner_text(".cell-ops") if page.locator(".cell-ops").count() else "")
+    page.click(card + " [data-op-rename=op_pl]")
+    page.fill(".cell-op-in", "Pale Lantern Redux")
+    page.press(".cell-op-in", "Enter")
+    wait_for_condition(lambda: (fs_doc(page, "operations/op_pl") or {}).get("name") == "Pale Lantern Redux", timeout_ms=5000)
+    wait_for_condition(lambda: "Pale Lantern Redux" in page.inner_text("#cells-groups"), timeout_ms=4000)
+    op = fs_doc(page, "operations/op_pl") or {}
+    record("acell-cells", "Rename saves the new name (the vault folder stays)", op.get("name") == "Pale Lantern Redux" and op.get("vault_folder") == "Pale Lantern" and "Pale Lantern Redux" in page.inner_text("#cells-groups"), str(op))
+    card = ".cell-card:has(.cell-op-name:text('Pale Lantern Redux'))"
+    page.click(card + " [data-op-new]")
+    page.fill(".cell-op-in", "Grey Harbour")
+    page.click(".cell-op-form [data-op-save]")
+    def made():
+        docs = page.evaluate("() => Object.keys(window.__dgFirestoreDocs).filter(k => /^operations\/[^/]+$/.test(k)).map(k => window.__dgFirestoreDocs[k])")
+        return [d for d in docs if d.get("name") == "Grey Harbour"]
+    wait_for_condition(lambda: bool(made()), timeout_ms=5000)
+    wait_for_condition(lambda: "Grey Harbour" in page.inner_text("#cells-groups"), timeout_ms=5000)
+    g = made()
+    record("acell-cells", "+ Operation adds one to that Cell, and it shows on the card",
+           bool(g) and g[0].get("cell_id") == "cell_osiris" and "Grey Harbour" in page.inner_text("#cells-groups"), str(g))
+    gid = g[0].get("operation_id") if g else ""
+    page.once("dialog", lambda d: d.accept())
+    page.click(".cell-op-row:has(.cell-op-name:text('Grey Harbour')) [data-op-del]")
+    wait_for_condition(lambda: fs_doc(page, "operations/" + gid) is None, timeout_ms=5000)
+    wait_for_condition(lambda: "Grey Harbour" not in page.inner_text("#cells-groups"), timeout_ms=4000)
+    record("acell-cells", "Delete removes it (after a confirm)", fs_doc(page, "operations/" + gid) is None and "Grey Harbour" not in page.inner_text("#cells-groups"), "")
+    record("acell-cells", "no JS errors (operations on the Cell card)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14626,6 +14663,7 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_cell_operations, browser, area="acell-cells")
         safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")
