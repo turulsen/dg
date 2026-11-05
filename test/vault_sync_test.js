@@ -62,5 +62,11 @@ check('a note sent to the phone carries its folder and its .md file name apart',
 x = r([{ path: 'Top.md', content: 'new', synced: null }], []);
 check('…a note at the top of the vault has no folder', x.write[0].name === 'Top.md' && x.write[0].folder === '', x);
 
+// 2026-11-05: a reorganised vault -- the old paths' text arrives at new ones: moved, not missing.
+x = r([{ path: 'Pale Lantern/A.md', content: 'a', synced: 'a' }, { path: 'Pale Lantern/B.md', content: 'b', synced: 'b' }, { path: 'Gone.md', content: 'g', synced: 'g' }],
+  [{ path: 'Impossible/Pale Lantern/A.md', text: 'a' }, { path: 'Impossible/Pale Lantern/B.md', text: 'b' }]);
+check('notes moved to another folder are removes the mass-delete guard can tell apart (movedAway)',
+  x.removes.length === 3 && x.movedAway.length === 2 && x.movedAway.indexOf('Gone.md') < 0 && up(x, 'Impossible/Pale Lantern/A.md'), x);
+
 console.log(JSON.stringify(out));
 

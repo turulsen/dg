@@ -527,7 +527,10 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     // more likely the Shortcut couldn't read the folder than a mass delete.
     const syncedCount = notes.filter((n) => n.synced != null).length;
     let held = 0;
-    if (out.removes.length && (clean.length === 0 || (out.removes.length > 10 && out.removes.length > syncedCount / 2))) {
+    // Notes moved to another folder aren't missing: only the rest count (2026-11-05,
+    // a reorganised vault had every old path held, so A-Cell never followed it).
+    const missing = out.removes.length - (out.movedAway || []).length;
+    if (out.removes.length && (clean.length === 0 || (missing > 10 && missing > syncedCount / 2))) {
       held = out.removes.length; out.removes = []; out.stats.removed = 0;
     }
     const now = Date.now();

@@ -71,6 +71,7 @@ function reconcile(notes, files) {
   var taken = {}; Object.keys(byPath).forEach(function (p) { taken[p] = true; });
   var seen = {}, upserts = [], write = [], removes = [];
   var stats = { created: 0, updated: 0, sent: 0, conflicts: 0, removed: 0, same: 0, duplicates: 0 };
+  var moved = {};
 
   (files || []).forEach(function (f) {
     var text = String(f.text == null ? '' : f.text).replace(/\r\n/g, '\n');
@@ -124,7 +125,8 @@ function reconcile(notes, files) {
   Object.keys(byPath).forEach(function (path) {
     if (seen[path]) return;
     var note = byPath[path], content = note.content == null ? '' : note.content;
-    if (phoneHas[norm(content)]) { removes.push(path); stats.removed += 1; return; }
+    // Moved (or renamed) on the phone: the same text arrived at another path.
+    if (phoneHas[norm(content)]) { removes.push(path); stats.removed += 1; stats.moved_away = (stats.moved_away || 0) + 1; moved[path] = true; return; }
     if (note.synced == null || !eq(content, note.synced)) {
       upserts.push({ path: path, content: content, synced: note.synced == null ? null : note.synced, pending: content });
       write.push(forPhone(path, content));
@@ -134,7 +136,10 @@ function reconcile(notes, files) {
       stats.removed += 1;
     }
   });
-  return { upserts: upserts, removes: removes, write: write, stats: stats };
+  // `movedAway`: removes whose text is still on the phone elsewhere -- a
+  // reorganised vault, not notes gone missing (the mass-delete guard in
+  // index.js leaves these out of its count).
+  return { upserts: upserts, removes: removes, movedAway: removes.filter(function (p) { return moved[p]; }), write: write, stats: stats };
 }
 
 // Firestore document id for a note path: no slashes allowed in an id.
