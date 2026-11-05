@@ -55,4 +55,12 @@ x = r([{ path: 'a.md', content: 'Tur\u00e9 edit', synced: 'old', pending: 'Tur\u
 check('the phone saved it with decomposed accents / CRLF / a trailing newline: still agreed, not sent again', !x.write.length && x.stats.same === 1, x);
 x = r([{ path: 'S/Lover - 27-01.md', content: '# test\nx', synced: '# old', pending: '# test\nx' }, { path: 'S/Lover - 27-01-26.md', content: '# test\nx', synced: '# test\nx' }], [{ path: 'S/Lover - 27-01-26.md', text: '# test\nx' }]);
 check('a leftover copy under an old path, with text the phone already has: removed, not sent again', !x.write.length && x.removes[0] === 'S/Lover - 27-01.md', x);
+// 2026-11-05: the folder and file name apart, so the Shortcut saves .md (not .txt).
+x = r([{ path: 'DG/Impossible/SN- Op - pt.2.md', content: 'new', synced: null }], []);
+check('a note sent to the phone carries its folder and its .md file name apart',
+  x.write[0].name === 'SN- Op - pt.2.md' && x.write[0].folder === 'DG/Impossible' && x.write[0].path === 'DG/Impossible/SN- Op - pt.2.md', x);
+x = r([{ path: 'Top.md', content: 'new', synced: null }], []);
+check('…a note at the top of the vault has no folder', x.write[0].name === 'Top.md' && x.write[0].folder === '', x);
+
 console.log(JSON.stringify(out));
+

@@ -738,10 +738,12 @@
         '<li><b>Dictionary</b>: <i>key</i> = your sync key (above), <i>files</i> = Repeat Results (as an Array).</li>' +
         '<li><b>Get Contents of URL</b>: the address above, Method <b>POST</b>, Request Body <b>File</b> = Dictionary.</li>' +
         '<li><b>Get Dictionary Value</b> <i>write</i>, then <b>Repeat with Each</b>:' +
-        '<ol><li><b>Get Dictionary Value</b> <i>text</i> → <b>Set Name</b> to the item\'s <i>path</i>.</li>' +
-        '<li><b>Save File</b> to your vault folder, Subpath = the item\'s <i>path</i>, <b>Ask Where to Save</b> off, <b>Overwrite If File Exists</b> on.</li></ol>End Repeat.</li>' +
+        '<ol><li><b>Get Dictionary Value</b> <i>text</i> from Repeat Item.</li>' +
+        '<li><b>Set Name</b> of that text to the Repeat Item\'s <i>name</i> (it ends in .md). Tap the arrow on Set Name and turn <b>Don\'t Include File Extension</b> on: without it the phone saves the note as <i>.txt</i>, which Obsidian doesn\'t read.</li>' +
+        '<li><b>Save File</b> (the renamed text) to your vault folder, Subpath = the Repeat Item\'s <i>folder</i>, <b>Ask Where to Save</b> off, <b>Overwrite If File Exists</b> on.</li></ol>End Repeat.</li>' +
         '<li>Optional: Automation → <b>App</b> → Obsidian <b>is closed</b> → Run <b>Sync DG vault</b>, Run Immediately.</li>' +
         '</ol>' +
+        '<p class="vn-small"><b>Notes arriving as .txt?</b> That\'s step 7: set the name on its own with Don\'t Include File Extension on, and save to the <i>folder</i>. The next sync sends those notes again as .md; then delete the .txt copies.</p>' +
         '<p class="vn-small">Notes changed on both sides are kept twice ("Name (A-Cell).md") rather than one overwriting the other. A note deleted on the phone goes from A-Cell too, unless you changed it here since.</p>' +
         '<h4>Vault activity</h4><p class="vn-small">Every note A-Cell made, changed or deleted, newest first. Tap one to open it.</p><div class="vn-act"><div class="vn-empty">Loading…</div></div>' +
         '<h4>Without the Shortcut</h4>' +

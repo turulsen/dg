@@ -5677,6 +5677,17 @@ def test_acell_players_own_file(p):
     old = page.evaluate("() => (dgVault.get('Players/Ilse Varga.md') || {}).content || ''")
     record("acell-players", "a new note goes into your file under Handler notes, not into Players/",
            "- 2026-11-01 · Trusts nobody with the log\n- 2026-11-05 · Saw the King" in c2 and "Saw the King" not in old, c2)
+    # The Handler keeps their own Agent files in Players/ too: those count; A-Cell's copy for the Agent doesn't.
+    page.evaluate("""() => Promise.all([dgVault.save('Players/Agent MILK. Mara Kessler.md', '---\\ncell: "[[Impossible]]"\\n---\\n# Mara\\n'),
+      dgVault.save('Players/Mara Kessler.md', '---\\nplayer: \\nagent code: MARA-KS01\\n---\\n# Mara Kessler\\n\\n## Handler notes\\n\\n- old line\\n')])""")
+    c3 = page.evaluate("() => dgAcPlayers.candidates(dgAc.agent('MARA-KS01'))")
+    record("acell-players", "a note of yours in Players/ is suggested; A-Cell's own Players/<name>.md is not",
+           c3 and c3[0] == "Players/Agent MILK. Mara Kessler.md" and "Players/Mara Kessler.md" not in c3, str(c3))
+    page.evaluate("() => dgAcPlayers.linkFile(dgAc.agent('MARA-KS01'), 'Players/Agent MILK. Mara Kessler.md')")
+    page.wait_for_timeout(400)
+    record("acell-players", "…and once linked it is the player file, with A-Cell's lines merged in",
+           page.evaluate("() => dgAc.playerPath(dgAc.agent('MARA-KS01'))") == "Players/Agent MILK. Mara Kessler.md"
+           and "- old line" in page.evaluate("() => dgVault.get('Players/Agent MILK. Mara Kessler.md').content"), "")
     record("acell-players", "no JS errors (own player file)", not errs, str(errs))
     page.close()
 

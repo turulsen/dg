@@ -50,6 +50,14 @@ function conflictPath(p, taken) {
   return out;
 }
 
+// What the Shortcut saves: the path, and its folder and file name apart --
+// the phone saves text it's handed as .txt unless the name (with .md) is
+// set on its own (2026-11-05: notes from A-Cell arrived as "Name.txt",
+// which Obsidian doesn't read and the Shortcut never sends back).
+function forPhone(path, text) {
+  var i = path.lastIndexOf('/');
+  return { path: path, text: text, name: i >= 0 ? path.slice(i + 1) : path, folder: i >= 0 ? path.slice(0, i) : '' };
+}
 // notes: [{ path, content, synced }]; files: [{ path, text }]
 // Returns { upserts: [{ path, content, synced }], removes: [path], write: [{ path, text }], stats }
 function reconcile(notes, files) {
@@ -96,14 +104,14 @@ function reconcile(notes, files) {
       stats.updated += 1;
     } else if (mine && !theirs) {
       upserts.push({ path: path, content: content, synced: synced, pending: content });
-      write.push({ path: path, text: content });
+      write.push(forPhone(path, content));
       stats.sent += 1;
     } else {
       var cp = conflictPath(path, taken);
       taken[cp] = true;
       upserts.push({ path: path, content: text, synced: text, pending: null });
       upserts.push({ path: cp, content: content, synced: null, pending: content });
-      write.push({ path: cp, text: content });
+      write.push(forPhone(cp, content));
       stats.conflicts += 1;
     }
   });
@@ -119,7 +127,7 @@ function reconcile(notes, files) {
     if (phoneHas[norm(content)]) { removes.push(path); stats.removed += 1; return; }
     if (note.synced == null || !eq(content, note.synced)) {
       upserts.push({ path: path, content: content, synced: note.synced == null ? null : note.synced, pending: content });
-      write.push({ path: path, text: content });
+      write.push(forPhone(path, content));
       stats.sent += 1;
     } else {
       removes.push(path);

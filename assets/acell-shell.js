@@ -91,29 +91,33 @@
   }
   // The Agent's file in the vault: Handler notes, sheet changes, quick notes.
   // An Agent's player file: the Handler's own note on them (one with
-  // "agent code: <code>" in its properties, outside Players/), else the
-  // one A-Cell keeps, Players/<name>.md. Takes the Agent, or a name.
+  // "agent code: <code>" in its properties -- in Players/ too, the
+  // Handler keeps theirs there), else the one A-Cell keeps,
+  // Players/<name>.md. Takes the Agent, or a name.
   function playerPath(a) {
     var name = typeof a === 'string' ? a : (a && a.name), code = a && typeof a === 'object' ? a.code : '';
-    return (code && linkedFile(code)) || defaultPlayerPath(name);
+    return (code && linkedFile(code, name)) || defaultPlayerPath(name);
   }
   function defaultPlayerPath(name) {
     return 'Players/' + String(name || 'Agent').replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim() + '.md';
   }
   var linkMemo = null;
   document.addEventListener('dg-vault', function () { linkMemo = null; });
-  function linkedFile(code) {
+  // The notes carrying this agent code, not A-Cell's own copy (Players/<name>.md).
+  function linkedFile(code, name) {
     var V = window.dgVault;
     if (!V) return '';
     if (!linkMemo) {
       linkMemo = {};
       V.notes().forEach(function (n) {
-        if (/^Players\//i.test(n.path)) return;
         var fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(n.content || ''), m = fm && /^agent[ _]?code:\s*["']?([A-Za-z0-9-]+)/mi.exec(fm[1]);
-        if (m && !linkMemo[m[1].toUpperCase()]) linkMemo[m[1].toUpperCase()] = n.path;
+        if (m) (linkMemo[m[1].toUpperCase()] = linkMemo[m[1].toUpperCase()] || []).push(n.path);
       });
     }
-    return linkMemo[String(code).toUpperCase()] || '';
+    var own = name ? defaultPlayerPath(name) : '';
+    // A-Cell's template carries the code too: the Handler's note wins, the template only by name.
+    var list = (linkMemo[String(code).toUpperCase()] || []).filter(function (p) { return p !== own && !/^Players\/.*\(A-Cell( \d+)?\)\.md$/i.test(p); });
+    return list.sort(function (x, y) { return x.length - y.length; })[0] || '';
   }
 
   /* ── Evidence: released, and who hasn't opened it yet ── */

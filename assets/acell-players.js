@@ -80,7 +80,8 @@
     var want = nameWords(a.name);
     if (!want.length) return [];
     return V().notes().filter(function (n) {
-      if (/^Players\//i.test(n.path)) return false;
+      // Not A-Cell's own copy (nor a "(A-Cell)" copy the sync kept); the Handler's notes in Players/ count.
+      if (n.path === A.defaultPlayerPath(a.name) || /\(A-Cell( \d+)?\)\.md$/i.test(n.path)) return false;
       var have = nameWords(V().title(n.path));
       return want.every(function (w) { return have.indexOf(w) >= 0; });
     }).map(function (n) {
@@ -115,7 +116,7 @@
   function linkBar(a) {
     var el = side.querySelector('.ac-pf-link');
     if (!el || !V().notes().length) return;
-    var linked = A.linkedFile(a.code), old = A.defaultPlayerPath(a.name), hasOld = !!V().get(old);
+    var linked = A.linkedFile(a.code, a.name), old = A.defaultPlayerPath(a.name), hasOld = !!V().get(old);
     if (linked) {
       el.innerHTML = '<span class="ac-pf-path">' + esc(linked.replace(/\.md$/i, '')) + '</span><button type="button" class="ac-lnk" data-pf="pick">Change…</button>' +
         (hasOld && linked !== old ? '<span class="ac-pf-old">A-Cell\'s old copy, ' + esc(old.replace(/\.md$/i, '')) + ', is merged in here: delete it in Obsidian · <button type="button" class="ac-lnk" data-pf="merge">merge again</button></span>' : '');
