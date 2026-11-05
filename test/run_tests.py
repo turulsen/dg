@@ -4611,8 +4611,8 @@ def test_acell_mobile_shell(p):
     ops = [w for w in fs_writes(page, "operations/") if (w.get("data") or {}).get("name") == "Hollow Hill"]
     vault = [((w.get("data") or {}).get("path")) for w in fs_writes(page, "vault/")]
     record("acell-mobile", "Add Operation makes the operation (in the Cell)…", bool(ops) and ops[0]["data"].get("cell_id") == "cell_osiris", str(ops[:1])[:200])
-    record("acell-mobile", "…and its vault folder: an overview, Sessions, NPCs, Locations",
-           all(x in vault for x in ["Hollow Hill/Hollow Hill.md", "Hollow Hill/Sessions/Sessions.md", "Hollow Hill/NPCs/NPCs.md", "Hollow Hill/Locations/Locations.md"]), str(vault))
+    record("acell-mobile", "…and its vault folder with its Index note (the Handler's layout, 2026-11-05)",
+           "Hollow Hill/Index - Hollow Hill.md" in vault, str(vault))
     page.click("#acm-tabs [data-acm-go='@more']")
     more = page.inner_text(".acm-more")
     record("acell-mobile", "More: the modes and every other section", all(x.upper() in more.upper() for x in ["Prep", "Play", "Debrief", "Music", "Notes", "Sheet", "Cells", "ID creator", "Computer layout"]), more[:300])
@@ -4635,7 +4635,7 @@ def test_acell_mobile_backfill(p):
     page, errs = open_phone(p, docs=docs)
     wait_for_condition(lambda: (fs_doc(page, "operations/op_hh") or {}).get("vault_folder") == "Quiet Ward", timeout_ms=6000)
     vault = [((w.get("data") or {}).get("path")) for w in fs_writes(page, "vault/")]
-    record("acell-mobile", "an old operation gets its vault folder, once", (fs_doc(page, "operations/op_hh") or {}).get("vault_folder") == "Quiet Ward" and "Quiet Ward/Quiet Ward.md" in vault, str(vault))
+    record("acell-mobile", "an old operation gets its vault folder, once", (fs_doc(page, "operations/op_hh") or {}).get("vault_folder") == "Quiet Ward" and "Quiet Ward/Index - Quiet Ward.md" in vault, str(vault))
     record("acell-mobile", "an operation that has one is left alone (moved files stay moved)", not any(str(v).startswith("Pale Lantern/Pale Lantern") for v in vault), str(vault))
     record("acell-mobile", "no JS errors (backfill)", not errs, str(errs))
     page.close()
