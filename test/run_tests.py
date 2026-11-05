@@ -5617,6 +5617,23 @@ def test_acell_vault_layout(p):
     opts = page.eval_on_selector_all("form.ac-form select[name=phase] option", "els => els.map(e => [e.textContent, e.selected])")
     record("acell-layout", "the session form has a Phase select with the operation's phases, the session's chosen",
            [o[0] for o in opts][1:] == ["Dorchester House", "INDIA MOON"] and opts[1][1] is True, str(opts))
+    # Make NPC on a note keeps its properties (it replaced them before).
+    mk = page.evaluate("""() => dgAcm.layout.asNpc('---\\ncell: "[[Impossible]]"\\ntags:\\n  - location\\n---\\n# Gail', { dex: 10, hp: 10, wp: 10, san: 0 })""")
+    record("acell-layout", "Make NPC adds the numbers and the npc tag, keeping the note's own properties",
+           'cell: "[[Impossible]]"' in mk and "tags:\n  - location\n  - npc" in mk and "dex: 10" in mk and mk.endswith("# Gail"), mk)
+    # Vault activity: every write, with why; kept in vault_meta/activity; listed in the vault settings.
+    acts = page.evaluate("() => dgVault.activity()")
+    def has(path, what, why):
+        return any(x.get("path") == path and x.get("what") == what and why in (x.get("why") or "") for x in acts)
+    record("acell-layout", "vault activity: the session note made, the Index changed, the NPC made and changed, each with why",
+           has(sn, "created", "session note for Dorchester by Night") and has(IDX, "changed", "added SN- A Volume of Secret Faces - pt.2 to sessions")
+           and has(npc, "created", "NPC: DEX 12") and has(npc, "changed", "HP 7"), str(acts[:8]))
+    wait_for_condition(lambda: len(((fs_doc(page, "vault_meta/activity") or {}).get("items") or [])) >= 5, timeout_ms=6000)
+    record("acell-layout", "…kept in vault_meta/activity", len(((fs_doc(page, "vault_meta/activity") or {}).get("items") or [])) >= 5, "")
+    page.keyboard.press("Escape")
+    page.evaluate("() => { document.querySelectorAll('.vn-modal').forEach(m => m.remove()); dgVault.settings(); }")
+    wait_for_condition(lambda: page.locator(".vn-actrow").count() >= 5, timeout_ms=5000)
+    record("acell-layout", "…and listed in the Notes vault settings, newest first", page.locator(".vn-actrow").count() >= 5 and "pt.2" in page.inner_text(".vn-act"), page.inner_text(".vn-act")[:300])
     record("acell-layout", "no JS errors (vault layout)", not errs, str(errs))
     page.close()
 

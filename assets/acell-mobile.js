@@ -527,6 +527,20 @@
     });
     return fmText(props) + body;
   }
+  // A note made an NPC: its numbers and the npc tag added, its other properties kept.
+  function asNpc(md, npc) {
+    var out = setFm(md, [['dex', npc.dex], ['hp', npc.hp], ['wp', npc.wp], ['san', npc.san]]), fm = fmOf(out), tg = prop(fm, 'tags');
+    if (tg && vals(tg).some(function (v) { return v.toLowerCase() === 'npc'; })) return out;
+    var props = fm.props.map(function (x) {
+      if (x !== tg) return x;
+      var items = x.items.slice();
+      if (!items.length && x.value) x.value.replace(/^\[|\]$/g, '').split(',').forEach(function (v) { if (v.trim()) items.push(v.trim()); });
+      items.push('npc');
+      return mkProp(x.key, '', items);
+    });
+    if (!tg) props.push(mkProp('tags', '', ['npc']));
+    return fmText(props) + fm.body;
+  }
   // The next session note: "SN- <Operation> - pt.N" in the operation's folder.
   function sessionNotePath(s) {
     var op = s && opById(s.operation_id), idx = opIndex(op);
@@ -541,7 +555,7 @@
     var path = sessionNotePath(s), op = opById(s.operation_id), idx = opIndex(op);
     return V().load().catch(function () {}).then(function () {
       if (V().get(path)) return path;
-      return V().save(path, idx ? withFm(md, op, 'session', s.date || today()) : md).then(function () { return listInIndex(op, path); }).then(function () { return path; });
+      return V().save(path, idx ? withFm(md, op, 'session', s.date || today()) : md, { why: 'session note for ' + (s.name || 'a session') }).then(function () { return listInIndex(op, path); }).then(function () { return path; });
     });
   }
   function listInIndex(op, path) {
@@ -559,7 +573,7 @@
       return mkProp(x.key, '', items);
     });
     if (!p) props.push(mkProp('sessions', '', [link]));
-    return V().save(idx.path, fmText(props) + fm.body);
+    return V().save(idx.path, fmText(props) + fm.body, { why: 'added ' + baseOf(path) + ' to sessions:' });
   }
   // A [[link]] to a note not written yet: where it goes, and its text.
   function forLink(name, from) {
@@ -586,11 +600,11 @@
     var props = [];
     if (c) props.push(mkProp('cell', '"[[' + (cd ? cd.split('/').pop() : (c.name || c.cell_id)) + ']]"'));
     props.push(mkProp('operation', '', [op.name]), mkProp('index', '', ['"' + link + '"']), mkProp('phases', ''), mkProp('sessions', ''), mkProp('dat', today()), mkProp('tags', '', ['index']));
-    return (V().get(path) ? Promise.resolve() : V().save(path, fmText(props) + '\n# ' + op.name + '\n\n')).then(function () {
+    return (V().get(path) ? Promise.resolve() : V().save(path, fmText(props) + '\n# ' + op.name + '\n\n', { why: 'Index for the new operation ' + op.name })).then(function () {
       if (!cd) return null;
       var ci = V().notes().filter(function (n) { return dirOfPath(n.path) === cd && folderKey(baseOf(n.path)) === 'cellindex'; })[0];
       if (!ci || (ci.content || '').indexOf(link) >= 0) return null;
-      return V().save(ci.path, String(ci.content || '').replace(/\s*$/, '') + '\n- ' + link + '\n');
+      return V().save(ci.path, String(ci.content || '').replace(/\s*$/, '') + '\n- ' + link + '\n', { why: 'linked ' + op.name + '\'s Index' });
     }).then(function () { return dir; });
   }
 
@@ -627,12 +641,13 @@
       var cur = V().get(path), op = s && opById(s.operation_id);
       var nums = [['dex', n.dex || ''], ['hp', n.hp == null ? '' : n.hp], ['wp', n.wp == null ? '' : n.wp], ['san', n.san == null ? '' : n.san]];
       // In the Handler's layout: the operation's properties, tagged npc.
-      if (!cur) return V().save(path, opIndex(op) ? baseFm(op, 'npc', today(), nums) + '# ' + n.name + '\n\n' + (n.note || '') + '\n' : npcMd(n));
+      var why = 'NPC: DEX ' + (n.dex || '—') + ' · HP ' + (n.hp == null ? '—' : n.hp) + ' · WP ' + (n.wp == null ? '—' : n.wp) + ' · SAN ' + (n.san == null ? '—' : n.san);
+      if (!cur) return V().save(path, opIndex(op) ? baseFm(op, 'npc', today(), nums) + '# ' + n.name + '\n\n' + (n.note || '') + '\n' : npcMd(n), { why: why });
       // Its numbers change; the rest of its properties stay as they are.
-      if (fmOf(cur.content)) return V().save(path, setFm(cur.content, nums));
+      if (fmOf(cur.content)) return V().save(path, setFm(cur.content, nums), { why: why });
       var md = cur.content || '', fm = /^---\n[\s\S]*?\n---\n?/.exec(md);
       var rest = fm ? md.slice(fm[0].length) : md;
-      return V().save(path, npcMd({ name: n.name, dex: n.dex, hp: n.hp, wp: n.wp, san: n.san }).replace(/# [^\n]*\n\n\n$/, '') + (fm ? rest : '\n' + md));
+      return V().save(path, npcMd({ name: n.name, dex: n.dex, hp: n.hp, wp: n.wp, san: n.san }).replace(/# [^\n]*\n\n\n$/, '') + (fm ? rest : '\n' + md), { why: why });
     }).then(function () { return path; });
   }
   // The operation's NPCs (notes with an npc header) not already in the session.
@@ -1553,7 +1568,7 @@
     ensureOpFolder: ensureOpFolder, createOperation: createOperation, sameNamed: sameNamed, vaultFolders: vaultFolders, folderOf: folderOf,
     followVault: followVault, setOpFolder: setOpFolder, loadOpDocs: loadOpDocs, phaseOpts: phaseOpts,
     layout: { opIndex: opIndex, cellDir: cellDir, phases: phases, phaseOf: phaseOf, typeDir: typeDir, sessionNotePath: sessionNotePath,
-      makeSessionNote: makeSessionNote, forLink: forLink, baseFm: baseFm, fmOf: fmOf, withFm: withFm }, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
+      makeSessionNote: makeSessionNote, forLink: forLink, baseFm: baseFm, fmOf: fmOf, withFm: withFm, setFm: setFm, asNpc: asNpc }, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
     enable: function () { A.keep('dg_acm_desktop', false); check(); }
   };
   // After the other phone screens (acell-mobile-*.js) have registered.

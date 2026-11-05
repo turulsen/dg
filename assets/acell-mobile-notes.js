@@ -295,7 +295,8 @@
     var npc = p && p.name ? p : { name: title(path), dex: 10, hp: 10, wp: 10, san: 0 };
     npc.path = path;
     var md = n.content || '';
-    var save = p ? Promise.resolve() : V().save(path, '---\ntype: npc\ndex: ' + npc.dex + '\nhp: ' + npc.hp + '\nwp: ' + npc.wp + '\nsan: ' + npc.san + '\n---\n' + md.replace(/^---\n[\s\S]*?\n---\n?/, ''));
+    // Its own properties stay (2026-11-05: they were replaced by the npc header).
+    var save = p ? Promise.resolve() : V().save(path, C.layout.asNpc(md, npc), { why: 'made an NPC: DEX ' + npc.dex + ' · HP ' + npc.hp + ' · WP ' + npc.wp + ' · SAN ' + npc.san });
     save.then(function () { C.toast(npc.name + ' is an NPC: add them to a session from here or from Session prep.'); C.refresh(); });
   }
   X['vmake-npc'] = function (b) { makeNpc(b.getAttribute('data-path')); };
