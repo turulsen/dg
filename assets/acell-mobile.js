@@ -237,21 +237,155 @@
     });
   }
   function folderOf(opId) { var d = opDocs[opId]; return d && d.vault_folder ? d.vault_folder : ''; }
+  /* ── Folders already in the vault (2026-11-05) ──
+     An operation's folder is the vault's own when one has its name, in
+     any folder and whatever its case, punctuation or leading number
+     ("Operations/01 Pale Lantern"): A-Cell made a second, empty-ish
+     "Pale Lantern" beside the Handler's before. Only missing notes are
+     written there, never over one that exists. */
+  function folderKey(s) { return String(s || '').normalize('NFC').toLowerCase().replace(/^\d+[\s.\-_]*(?=\D)/, '').replace(/[\s_.,:;'"!?()\[\]{}&+-]+/g, ''); }
+  function vaultFolders() {
+    var out = {};
+    (V() ? V().notes() : []).forEach(function (n) {
+      var sg = String(n.path).split('/');
+      for (var i = 1; i < sg.length; i++) { var d = sg.slice(0, i).join('/'); out[d] = (out[d] || 0) + 1; }
+    });
+    return out;
+  }
+  // Folders named like `name`, most notes first, then the shallowest.
+  function sameNamed(name, except) {
+    var k = folderKey(name), all = vaultFolders();
+    if (!k) return [];
+    return Object.keys(all).filter(function (d) { return d !== except && folderKey(d.split('/').pop()) === k; })
+      .sort(function (a, b) { return all[b] - all[a] || a.split('/').length - b.split('/').length; })
+      .map(function (d) { return { dir: d, count: all[d] }; });
+  }
   function ensureOpFolder(op) {
     if (!op || folderOf(op.operation_id)) return Promise.resolve(folderOf(op && op.operation_id));
-    var base = fileName(op.name), c = A.cell(op.cell_id);
-    var files = [
-      [base + '/' + base + '.md', '# ' + op.name + '\n\nOperation' + (c ? ' of Cell ' + (c.name || c.cell_id) : '') + '.\n\n- [[Sessions]]\n- [[NPCs]]\n- [[Locations]]\n'],
-      [base + '/Sessions/Sessions.md', '# Sessions\n\nThe sessions of ' + op.name + '.\n'],
-      [base + '/NPCs/NPCs.md', '# NPCs\n\nThe people of ' + op.name + '. Each NPC is a note here, with DEX, HP, WP and SAN at the top.\n'],
-      [base + '/Locations/Locations.md', '# Locations\n\nThe places of ' + op.name + '.\n']
-    ];
+    var c = A.cell(op.cell_id), base = '';
     return V().load().catch(function () {}).then(function () {
+      // The vault's own folder of that name: used as it is, nothing written into it.
+      var mine = sameNamed(op.name)[0];
+      base = mine ? mine.dir : fileName(op.name);
+      var files = mine ? [] : [
+        [base + '/' + base + '.md', '# ' + op.name + '\n\nOperation' + (c ? ' of Cell ' + (c.name || c.cell_id) : '') + '.\n\n- [[Sessions]]\n- [[NPCs]]\n- [[Locations]]\n'],
+        [base + '/Sessions/Sessions.md', '# Sessions\n\nThe sessions of ' + op.name + '.\n'],
+        [base + '/NPCs/NPCs.md', '# NPCs\n\nThe people of ' + op.name + '. Each NPC is a note here, with DEX, HP, WP and SAN at the top.\n'],
+        [base + '/Locations/Locations.md', '# Locations\n\nThe places of ' + op.name + '.\n']
+      ];
+      // Never over a note that exists.
       return files.reduce(function (p, f) { return p.then(function () { return V().get(f[0]) ? null : V().save(f[0], f[1]); }); }, Promise.resolve());
-    }).then(function () {
-      return window.dgAcellApi.handler().then(function (f) { return f.firestore().collection('operations').doc(op.operation_id).set({ vault_folder: base }, { merge: true }); });
-    }).then(function () { opDocs[op.operation_id] = Object.assign(opDocs[op.operation_id] || {}, { vault_folder: base }); return base; });
+    }).then(function () { return setFolderDoc(op.operation_id, base); }).then(function () { return base; });
   }
+  function setFolderDoc(opId, dir) {
+    return window.dgAcellApi.handler().then(function (f) { return f.firestore().collection('operations').doc(opId).set({ vault_folder: dir }, { merge: true }); })
+      .then(function () { opDocs[opId] = Object.assign(opDocs[opId] || {}, { vault_folder: dir }); });
+  }
+
+  /* ── Following the vault (2026-11-05) ──
+     Folders are renamed and merged in Obsidian, not here; after the sync
+     A-Cell follows. An operation whose folder has no notes left gets the
+     folder that now holds the same notes (matched by their place inside
+     it: Sessions/Session 4.md, NPCs/Ruth.md...), and every session note,
+     NPC and debrief path that's gone points to where that note is now
+     (inside the new folder, or the one note of that name in the vault). */
+  function refsOf(s) {
+    var out = [];
+    if (s.note_path) out.push(s.note_path);
+    S().notesOf(s).forEach(function (n) { if (n.kind === 'vault') out.push(n.path); });
+    s.npcs.forEach(function (n) { if (n.path) out.push(n.path); });
+    if (s.debrief_path) out.push(s.debrief_path);
+    return out;
+  }
+  function relTo(dir, p) { return p.indexOf(dir + '/') === 0 ? p.slice(dir.length + 1) : ''; }
+  // Where `dir`'s notes went: the folder holding most of them at the same places inside.
+  function movedTo(dir, opId) {
+    // The notes every operation folder has count for little; the
+    // operation's own (its overview, its sessions' notes, NPCs) decide.
+    var rels = {}, base = dir.split('/').pop();
+    ['Sessions/Sessions.md', 'NPCs/NPCs.md', 'Locations/Locations.md'].forEach(function (r) { rels[r] = 1; });
+    rels[base + '.md'] = 3;
+    (S() ? S().list() : []).forEach(function (s) { if (s.operation_id === opId) refsOf(s).forEach(function (p) { var r = relTo(dir, p); if (r) rels[r] = 3; }); });
+    var others = {};
+    Object.keys(opDocs).forEach(function (id) { if (id !== opId && opDocs[id].vault_folder) others[opDocs[id].vault_folder] = true; });
+    var score = {}, own = {};
+    (V() ? V().notes() : []).forEach(function (n) {
+      var p = String(n.path);
+      Object.keys(rels).forEach(function (r) {
+        if (p.length > r.length + 1 && p.slice(-(r.length + 1)) === '/' + r) {
+          var g = p.slice(0, -(r.length + 1));
+          if (g === dir || others[g]) return;
+          score[g] = (score[g] || 0) + rels[r];
+          if (rels[r] > 1) own[g] = true;
+        }
+      });
+    });
+    // Named like the old folder or the operation counts as its own too.
+    var opName = (opDocs[opId] || {}).name || '';
+    Object.keys(score).forEach(function (g) { var k = folderKey(g.split('/').pop()); if (k && (k === folderKey(base) || k === folderKey(opName))) { own[g] = true; score[g] += 2; } });
+    var best = Object.keys(score).filter(function (g) { return own[g]; }).sort(function (a, b) { return score[b] - score[a] || a.split('/').length - b.split('/').length; });
+    // A tie is a guess: leave it for the Handler to pick (Cells → Folder…).
+    if (!best.length || (best[1] && score[best[1]] === score[best[0]])) return '';
+    return best[0];
+  }
+  function byBase() {
+    var m = {};
+    (V() ? V().notes() : []).forEach(function (n) { var b = String(n.path).split('/').pop().toLowerCase(); (m[b] = m[b] || []).push(n.path); });
+    return m;
+  }
+  // Session paths that are gone, pointed to the note's new place.
+  function repoint(maps) {
+    var have = {}, names = byBase(), jobs = [];
+    (V() ? V().notes() : []).forEach(function (n) { have[n.path] = true; });
+    function fix(p) {
+      if (!p || have[p]) return p;
+      for (var i = 0; i < maps.length; i++) { var r = relTo(maps[i][0], p); if (r && have[maps[i][1] + '/' + r]) return maps[i][1] + '/' + r; }
+      var same = names[p.split('/').pop().toLowerCase()] || [];
+      return same.length === 1 ? same[0] : p;
+    }
+    (S() ? S().list() : []).forEach(function (s) {
+      var patch = {}, changed = false;
+      var np = fix(s.note_path); if (np !== s.note_path) { patch.note_path = np; changed = true; }
+      var dp = fix(s.debrief_path); if (dp !== s.debrief_path) { patch.debrief_path = dp; changed = true; }
+      var notes = S().notesOf(s).map(function (n) { if (n.kind !== 'vault') return n; var q = fix(n.path); if (q !== n.path) changed = true; return q === n.path ? n : { kind: 'vault', path: q }; });
+      var npcs = s.npcs.map(function (n) { var q = n.path ? fix(n.path) : n.path; if (q !== n.path) changed = true; return q === n.path ? n : Object.assign({}, n, { path: q }); });
+      if (!changed) return;
+      patch.notes = notes; patch.npcs = npcs;
+      jobs.push(S().update(s.id, patch));
+    });
+    return Promise.all(jobs).then(function () { return jobs.length; });
+  }
+  var following = false;
+  function followVault() {
+    if (following || !V() || !V().notes().length) return Promise.resolve(0);
+    following = true;
+    var counts = vaultFolders(), maps = [];
+    return loadOpDocs().then(function () {
+      var jobs = [];
+      Object.keys(opDocs).forEach(function (id) {
+        var dir = opDocs[id].vault_folder;
+        if (!dir || counts[dir]) return;
+        var to = movedTo(dir, id);
+        if (!to) return;
+        maps.push([dir, to]);
+        jobs.push(setFolderDoc(id, to));
+      });
+      return Promise.all(jobs);
+    }).then(function () { return repoint(maps); }).then(function (n) {
+      if (maps.length && T() && T().reloadOps) T().reloadOps();
+      if (maps.length || n) document.dispatchEvent(new CustomEvent('dg-acell-followed', { detail: { folders: maps, sessions: n } }));
+      return maps.length + n;
+    }).then(function (n) { following = false; return n; }, function (e) { following = false; console.error('a-cell: following the vault', e); return 0; });
+  }
+  // The Handler picks an operation's folder (Cells tab): its sessions follow.
+  function setOpFolder(opId, dir) {
+    var from = folderOf(opId);
+    return setFolderDoc(opId, dir).then(function () { return repoint(from && from !== dir ? [[from, dir]] : []); })
+      .then(function (n) { if (T() && T().reloadOps) T().reloadOps(); return n; });
+  }
+  var followT = 0;
+  document.addEventListener('dg-vault', function () { if (!started) return; clearTimeout(followT); followT = setTimeout(followVault, 1500); });
+
   // Every operation that doesn't have its folder yet (old ones too).
   var backfilled = false;
   function backfillOps() {
@@ -1202,7 +1336,8 @@
     if (started) return;
     started = true;
     var D = T();
-    Promise.all([D ? D.load().catch(function () {}) : null, V() ? V().load().catch(function () {}) : null]).then(function () { backfillOps(); refresh(); });
+    Promise.all([D ? D.load().catch(function () {}) : null, V() ? V().load().catch(function () {}) : null, S() ? S().load().catch(function () {}) : null])
+      .then(function () { return followVault(); }).then(function () { backfillOps(); refresh(); });
   }
   window.addEventListener('dg-acell-handler-ready', start);
   if (sessionStorage.getItem('dg_acell_pw')) setTimeout(start, 0);
@@ -1212,7 +1347,8 @@
     mode: function () { return st.mode; }, setMode: setMode, on: function () { return st.on; }, current: function () { return st.name; },
     icon: I, photo: photo, plain: plain, sw: sw, btn: btn, lab: lab, initials: initials, agentsByDex: agentsByDex, opOf: opOf, operations: operations,
     npcNote: npcNote, npcSheet: npcSheet, agentNoteSheet: agentNoteSheet, folderNpcs: folderNpcs, parseNpc: parseNpc, npcDir: npcDir,
-    ensureOpFolder: ensureOpFolder, createOperation: createOperation, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
+    ensureOpFolder: ensureOpFolder, createOperation: createOperation, sameNamed: sameNamed, vaultFolders: vaultFolders, folderOf: folderOf,
+    followVault: followVault, setOpFolder: setOpFolder, loadOpDocs: loadOpDocs, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
     enable: function () { A.keep('dg_acm_desktop', false); check(); }
   };
   // After the other phone screens (acell-mobile-*.js) have registered.

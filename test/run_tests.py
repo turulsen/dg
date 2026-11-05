@@ -5492,6 +5492,60 @@ def test_acell_cell_operations(p):
     record("acell-cells", "no JS errors (operations on the Cell card)", not errs, str(errs))
     page.close()
 
+def test_acell_operation_folders(p):
+    """2026-11-05: operation folders and the Handler's own vault. Folders
+    are renamed and merged in Obsidian; A-Cell follows (the operation's
+    folder, its sessions' note paths). A new operation takes a folder of
+    its name already in the vault, wherever it is, and writes nothing into
+    it. Folder… on the Cell card picks one by hand; a same-named folder
+    elsewhere is pointed out."""
+    page, errs = open_acell_shell(p)
+    page.evaluate("() => dgVault.load()")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Pale Lantern/Session 4.md')"), timeout_ms=5000)
+    # Renamed in Obsidian (Pale Lantern -> Operations/Pale Lantern Redux), as the sync would bring it.
+    page.evaluate("""() => { var c = dgVault.get('Pale Lantern/Session 4.md').content;
+      return dgVault.save('Operations/Pale Lantern Redux/Session 4.md', c).then(() => dgVault.remove('Pale Lantern/Session 4.md')); }""")
+    wait_for_condition(lambda: (fs_doc(page, "operations/op_pl") or {}).get("vault_folder") == "Operations/Pale Lantern Redux", timeout_ms=8000)
+    wait_for_condition(lambda: (_sess(page) or {}).get("note_path") == "Operations/Pale Lantern Redux/Session 4.md", timeout_ms=5000)
+    s = _sess(page) or {}
+    record("acell-ops", "a folder renamed in Obsidian is followed: the operation's folder and its session's note",
+           (fs_doc(page, "operations/op_pl") or {}).get("vault_folder") == "Operations/Pale Lantern Redux" and s.get("note_path") == "Operations/Pale Lantern Redux/Session 4.md"
+           and any(n.get("path") == "Operations/Pale Lantern Redux/Session 4.md" for n in (s.get("notes") or [])), str([fs_doc(page, "operations/op_pl"), s.get("note_path"), s.get("notes")]))
+    # A folder of that name already in the vault, deeper and numbered.
+    page.evaluate("() => dgVault.save('Campaign/02 Grey Harbour/Harbour master.md', '# Harbour master\\n\\nMine. Keep it.')")
+    before = len(fs_writes(page, "vault/"))
+    page.evaluate("() => dgAcm.createOperation('Grey Harbour', 'cell_osiris')")
+    def made():
+        docs = page.evaluate("() => Object.keys(window.__dgFirestoreDocs).filter(k => /^operations\\/[^/]+$/.test(k)).map(k => window.__dgFirestoreDocs[k])")
+        return [d for d in docs if d.get("name") == "Grey Harbour" and d.get("vault_folder")]
+    wait_for_condition(lambda: bool(made()), timeout_ms=6000)
+    g = made()
+    new_paths = [((w.get("data") or {}).get("path")) for w in fs_writes(page, "vault/")[before:]]
+    record("acell-ops", "a new operation takes the vault's own folder of its name (any depth, case, number) and writes nothing into it",
+           bool(g) and g[0].get("vault_folder") == "Campaign/02 Grey Harbour" and not new_paths
+           and page.evaluate("() => dgVault.get('Campaign/02 Grey Harbour/Harbour master.md').content") == "# Harbour master\n\nMine. Keep it.", str([g, new_paths]))
+    # The Cell card: the folder line, a same-named one elsewhere, and Folder… to pick one.
+    page.evaluate("() => dgVault.save('Old/Pale Lantern Redux/Loose end.md', 'x')")
+    page.evaluate("() => window.dgAcellTab('cells')")
+    wait_for_condition(lambda: page.locator("#cells-groups").count() and "Old/Pale Lantern Redux" in page.inner_text("#cells-groups") and "Operations/Pale Lantern Redux" in page.inner_text("#cells-groups"), timeout_ms=6000)
+    txt = page.inner_text("#cells-groups")
+    record("acell-ops", "the Cell card shows each operation's vault folder, and a same-named folder elsewhere",
+           "Operations/Pale Lantern Redux" in txt and "Old/Pale Lantern Redux" in txt, txt[:400])
+    page.click("[data-op-folder=op_pl]")
+    page.select_option(".cell-op-sel", "Old/Pale Lantern Redux")
+    page.click("[data-op-pickok]")
+    wait_for_condition(lambda: (fs_doc(page, "operations/op_pl") or {}).get("vault_folder") == "Old/Pale Lantern Redux", timeout_ms=5000)
+    record("acell-ops", "Folder… points the operation to the folder picked (nothing moved)",
+           (fs_doc(page, "operations/op_pl") or {}).get("vault_folder") == "Old/Pale Lantern Redux" and page.evaluate("() => !!dgVault.get('Operations/Pale Lantern Redux/Session 4.md')"), "")
+    # An emptied folder isn't matched to some other folder on the notes every operation folder has.
+    page.evaluate("""() => { window.__dgFirestoreDocs['operations/op_x'] = { operation_id: 'op_x', name: 'Ghost Op', cell_id: 'cell_osiris', created_at: 5, vault_folder: 'Ghost Op' };
+      return dgTapes.reloadOps().then(() => dgVault.save('Spare/Sessions/Sessions.md', '# Sessions')).then(() => dgAcm.followVault()); }""")
+    page.wait_for_timeout(300)
+    record("acell-ops", "an emptied folder isn't guessed from notes every folder has (Sessions/Sessions.md)",
+           (fs_doc(page, "operations/op_x") or {}).get("vault_folder") == "Ghost Op", str(fs_doc(page, "operations/op_x")))
+    record("acell-ops", "no JS errors (operation folders)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14664,6 +14718,7 @@ def main():
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
         safe(test_acell_cell_operations, browser, area="acell-cells")
+        safe(test_acell_operation_folders, browser, area="acell-cells")
         safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")
