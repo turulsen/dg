@@ -4397,6 +4397,14 @@ def test_acell_play_desk(p):
     record("acell-play", "tapping a ⚡ cue in the notes fires that effect",
            any(any("whisper" in s.get("id", "") for s in (w.get("data") or {}).get("stingers") or []) for w in fs_writes(page, "radio/")), "")
 
+    # 2026-11-05: a session change while a quick note is typed (another device, an NPC) kept wiping it.
+    page.fill(".pd-pad .pd-in", "half a thought")
+    page.focus(".pd-pad .pd-in")
+    page.evaluate("() => dgSessions.update('sess_4', { away: [] })")
+    page.wait_for_timeout(400)
+    record("acell-play", "a quick note being typed survives a redraw of the desk",
+           page.input_value(".pd-pad .pd-in") == "half a thought" and page.evaluate("() => document.activeElement && document.activeElement.classList.contains('pd-in')"), page.input_value(".pd-pad .pd-in"))
+    page.fill(".pd-pad .pd-in", "")
     page.fill(".pd-pad .pd-in", "Reyes found the boat key")
     page.press(".pd-pad .pd-in", "Enter")
     page.click(".pd-ag[data-code=MARA-KS01] [data-pd=jot]")
@@ -5635,6 +5643,41 @@ def test_acell_vault_layout(p):
     wait_for_condition(lambda: page.locator(".vn-actrow").count() >= 5, timeout_ms=5000)
     record("acell-layout", "…and listed in the Notes vault settings, newest first", page.locator(".vn-actrow").count() >= 5 and "pt.2" in page.inner_text(".vn-act"), page.inner_text(".vn-act")[:300])
     record("acell-layout", "no JS errors (vault layout)", not errs, str(errs))
+    page.close()
+
+def test_acell_players_own_file(p):
+    """2026-11-05: the Handler's own note on an Agent ("Ilse Varga - Agent
+    Kite.md") becomes their player file: suggested by its name, confirmed
+    with Use it (it gets "agent code:" in its properties, the rest kept),
+    what A-Cell kept in Players/<name>.md merged in under the same
+    headings, and every later note goes there."""
+    page, errs = open_acell_shell(p)
+    MINE = "DG/Impossible/Agents/Ilse Varga - Agent Kite.md"
+    page.evaluate("""(m) => dgVault.load().then(() => Promise.all([
+      dgVault.save(m, '---\\ncell: "[[Impossible]]"\\ntags:\\n  - agent\\n---\\n# Ilse Varga\\n\\nBackstory: a lighthouse keeper\\'s daughter.\\n\\n## Handler notes\\n\\n- Afraid of deep water\\n'),
+      dgVault.save('Players/Ilse Varga.md', '---\\nagent code: ILSE-VR03\\n---\\n# Ilse Varga\\n\\n## Handler notes\\n\\n- Afraid of deep water\\n- 2026-11-01 · Trusts nobody with the log\\n\\n## Sheet changes\\n\\n- 2026-11-01 · SAN 25 → 22 (the keeper)\\n\\n## Quick notes from play\\n\\n'),
+      dgVault.save('DG/Other/Ilse Varga - old draft.md', '# draft')]))""", MINE)
+    page.click("[data-pb=players] .ac-row[data-code=ILSE-VR03] [data-ac=open-agent]")
+    wait_for_condition(lambda: page.locator("#ac-pfile [data-pf=use]").count() == 1, timeout_ms=6000)
+    record("acell-players", "your own note on the Agent is suggested by its name (the shortest match, not Players/)",
+           page.get_attribute("#ac-pfile [data-pf=use]", "data-path") == MINE, page.inner_text("#ac-pfile .ac-pf-link"))
+    page.click("#ac-pfile [data-pf=use]")
+    wait_for_condition(lambda: "agent code: ILSE-VR03" in page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE), timeout_ms=5000)
+    page.wait_for_timeout(400)
+    c = page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE)
+    record("acell-players", "Use it: the note gets the agent code, keeps its properties and text",
+           'cell: "[[Impossible]]"' in c and "  - agent" in c and "agent code: ILSE-VR03" in c and "Backstory: a lighthouse keeper's daughter." in c, c)
+    record("acell-players", "…and A-Cell's Players/ copy is merged in under the same headings, lines it had skipped",
+           c.count("- Afraid of deep water") == 1 and "- 2026-11-01 · Trusts nobody with the log" in c and "## Sheet changes" in c and "SAN 25 → 22" in c, c)
+    path = page.evaluate("() => dgAc.playerPath(dgAc.agent('ILSE-VR03'))")
+    record("acell-players", "from then on it is the player file", path == MINE and MINE.replace(".md", "") in page.inner_text("#ac-pfile .ac-pf-link"), str(path))
+    page.evaluate("() => dgAcPlayers.ensureFile('ILSE-VR03').then(p => dgAcPlayers.append(p, 'Handler notes', ['- 2026-11-05 · Saw the King']))")
+    wait_for_condition(lambda: "Saw the King" in page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE), timeout_ms=4000)
+    c2 = page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE)
+    old = page.evaluate("() => (dgVault.get('Players/Ilse Varga.md') || {}).content || ''")
+    record("acell-players", "a new note goes into your file under Handler notes, not into Players/",
+           "- 2026-11-01 · Trusts nobody with the log\n- 2026-11-05 · Saw the King" in c2 and "Saw the King" not in old, c2)
+    record("acell-players", "no JS errors (own player file)", not errs, str(errs))
     page.close()
 
 def test_acell_console(p):
@@ -14811,6 +14854,7 @@ def main():
         safe(test_acell_cell_operations, browser, area="acell-cells")
         safe(test_acell_operation_folders, browser, area="acell-cells")
         safe(test_acell_vault_layout, browser, area="acell-cells")
+        safe(test_acell_players_own_file, browser, area="acell-players")
         safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")

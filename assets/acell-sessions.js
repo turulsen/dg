@@ -86,8 +86,13 @@
             s.forEach(function (doc) {
               var mine = byId[doc.id];
               var d = norm(doc.id, doc.data());
-              // A write of ours still on its way wins over an older copy.
-              if (!mine || !mine._pending || d.updated_at >= mine.updated_at) byId[doc.id] = d;
+              // A write of ours still on its way wins over an older copy -- and
+              // so does one just made: a copy from before it can still arrive
+              // after it lands (2026-11-05: a quick note jotted right after
+              // another lost the first). Older than ten seconds, it's another
+              // device's edit (its clock may be behind) and it's taken.
+              var fresh = mine && (mine._pending || Date.now() - mine.updated_at < 10000);
+              if (!mine || !fresh || d.updated_at >= mine.updated_at) byId[doc.id] = d;
             });
             emit();
           }, function () { /* keep what was read */ });

@@ -47,7 +47,7 @@
       var code = typeof arg === 'string' ? arg : arg && arg.code, tab = (arg && arg.tab) || 'file';
       var a = code && A.agent(code);
       if (!a) return { bar: { title: 'Agent', back: true }, html: '<div class="acm-fold"><p class="acm-none">Loading the Agent…</p></div>' };
-      var path = A.playerPath(a.name), note = V() && V().get(path), md = note ? note.content || '' : '';
+      var path = A.playerPath(a), note = V() && V().get(path), md = note ? note.content || '' : '';
       var body = '';
       if (tab === 'file') {
         body = note ? lab('Handler notes') + list(fileSection(md, 'Handler notes'), 'No notes yet.') + lab('Quick notes from play') + list(fileSection(md, 'Quick notes from play'), 'None yet.') +

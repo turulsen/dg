@@ -90,8 +90,30 @@
       ' · ' + v('SAN', a.san, null, a.san != null && a.bp != null && a.san - a.bp <= 3);
   }
   // The Agent's file in the vault: Handler notes, sheet changes, quick notes.
-  function playerPath(name) {
+  // An Agent's player file: the Handler's own note on them (one with
+  // "agent code: <code>" in its properties, outside Players/), else the
+  // one A-Cell keeps, Players/<name>.md. Takes the Agent, or a name.
+  function playerPath(a) {
+    var name = typeof a === 'string' ? a : (a && a.name), code = a && typeof a === 'object' ? a.code : '';
+    return (code && linkedFile(code)) || defaultPlayerPath(name);
+  }
+  function defaultPlayerPath(name) {
     return 'Players/' + String(name || 'Agent').replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim() + '.md';
+  }
+  var linkMemo = null;
+  document.addEventListener('dg-vault', function () { linkMemo = null; });
+  function linkedFile(code) {
+    var V = window.dgVault;
+    if (!V) return '';
+    if (!linkMemo) {
+      linkMemo = {};
+      V.notes().forEach(function (n) {
+        if (/^Players\//i.test(n.path)) return;
+        var fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(n.content || ''), m = fm && /^agent[ _]?code:\s*["']?([A-Za-z0-9-]+)/mi.exec(fm[1]);
+        if (m && !linkMemo[m[1].toUpperCase()]) linkMemo[m[1].toUpperCase()] = n.path;
+      });
+    }
+    return linkMemo[String(code).toUpperCase()] || '';
   }
 
   /* ── Evidence: released, and who hasn't opened it yet ── */
@@ -315,7 +337,7 @@
     var V = window.dgVault;
     el.innerHTML = ms.map(function (a) {
       var away = s.away.indexOf(a.code) >= 0;
-      var file = V && V.get(playerPath(a.name));
+      var file = V && V.get(playerPath(a));
       return '<div class="ac-row' + (away ? ' away' : '') + '" data-code="' + esc(a.code) + '">' +
         '<span class="ac-t">' + esc(a.name) + '<small>' + esc([a.profession, a.player].filter(Boolean).join(' · ')) + (away ? ' · away tonight' : '') + '</small></span>' +
         '<span class="ac-vit">' + vitalsHtml(a) + '</span>' +
@@ -569,7 +591,7 @@
   window.dgAc = {
     esc: esc, ask: ask, modal: modal, store: store, keep: keep,
     agent: agent, members: members, cell: cell, cells: cells, vitalsHtml: vitalsHtml, profLabel: profLabel,
-    session: session, playerPath: playerPath, editSession: editSession, chooser: chooser,
+    session: session, playerPath: playerPath, defaultPlayerPath: defaultPlayerPath, linkedFile: linkedFile, editSession: editSession, chooser: chooser,
     evidenceState: evidenceState, loadSeen: loadSeen, preview: preview, previewing: previewing, soundUrl: soundUrl, trackById: trackById,
     setMode: setMode, openNote: openNoteTab
   };

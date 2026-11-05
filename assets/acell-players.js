@@ -31,9 +31,9 @@
   }
   function ensureFile(code) {
     var a = A.agent(code) || { code: code, name: code };
-    var path = A.playerPath(a.name);
     return V().load().catch(function () {}).then(function () {
-      return V().get(path) ? path : V().save(path, template(a));
+      var path = A.playerPath(a);
+      return V().get(path) ? path : V().save(path, template(a), { why: 'player file for ' + a.name });
     });
   }
   // Adds lines ("- …") at the end of a ## section, making it if it's missing.
@@ -48,7 +48,7 @@
       while (end > r.from + 1 && !all[end - 1].trim()) end--;
       all = all.slice(0, end).concat(lines, all.slice(end).length ? [''] : [], all.slice(end));
     }
-    return V().save(path, all.join('\n').replace(/\n{3,}/g, '\n\n') + '\n');
+    return V().save(path, all.join('\n').replace(/\n{3,}/g, '\n\n') + '\n', { why: section + ': ' + lines.length + ' line' + (lines.length === 1 ? '' : 's') });
   }
   // "2026-11-01 · Session 4 —" for a log line.
   function stamp(s) {
@@ -65,16 +65,87 @@
   layout.classList.add('ac-players');
   var cur = { code: '', path: '', ed: null };
 
+  /* ── The Handler's own Agent notes (2026-11-05) ──
+     A note of theirs on this Agent ("André Demore - Agent Mastery.md")
+     is suggested by its name; once confirmed it gets "agent code: <code>"
+     in its properties and becomes the player file (A.playerPath finds it
+     by that, wherever it moves). What A-Cell kept in Players/<name>.md
+     is merged in under the same headings, lines it has already skipped;
+     Players/ itself is the Handler's to delete in Obsidian. */
+  function plain(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+  function nameWords(name) {
+    return plain(String(name || '').replace(/["“”'‘’][^"“”'‘’]*["“”'‘’]/g, ' ')).split(/[^a-z0-9]+/).filter(function (w) { return w.length > 1; });
+  }
+  function candidates(a) {
+    var want = nameWords(a.name);
+    if (!want.length) return [];
+    return V().notes().filter(function (n) {
+      if (/^Players\//i.test(n.path)) return false;
+      var have = nameWords(V().title(n.path));
+      return want.every(function (w) { return have.indexOf(w) >= 0; });
+    }).map(function (n) {
+      // An Agent's note says so: "Agent" in its name, or an agent tag / agent code.
+      var tl = nameWords(V().title(n.path)), fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(n.content || '');
+      var score = (tl.indexOf('agent') >= 0 ? 2 : 0) + (fm && /(^|\n)\s*(-\s*|tags:\s*\[?[^\n]*)\bagent\b|agent[ _]?code:/i.test(fm[1]) ? 2 : 0);
+      return { path: n.path, score: score, len: V().title(n.path).length };
+    }).sort(function (x, y) { return y.score - x.score || x.len - y.len; }).map(function (x) { return x.path; });
+  }
+  function linkFile(a, path) {
+    var L = window.dgAcm && window.dgAcm.layout, n = V().get(path);
+    if (!n || !L) return Promise.reject(new Error('That note is gone.'));
+    return V().save(path, L.setFm(n.content || '', [['agent code', a.code]]), { why: 'linked as ' + a.name + '\'s player file' })
+      .then(function () { return mergeInto(a, path); });
+  }
+  function mergeInto(a, path) {
+    var old = A.defaultPlayerPath(a.name), src = V().get(old);
+    if (!src || old === path) return Promise.resolve(0);
+    var md = src.content || '', added = 0;
+    return SECTIONS.reduce(function (p, sec) {
+      return p.then(function () {
+        var r = V().sectionRange(md, sec);
+        if (!r) return null;
+        var have = {};
+        ((V().get(path) || {}).content || '').split('\n').forEach(function (l) { if (l.trim()) have[l.trim()] = true; });
+        var lines = md.split('\n').slice(r.from + 1, r.to).filter(function (l) { return l.trim() && !have[l.trim()]; });
+        added += lines.length;
+        return lines.length ? append(path, sec, lines) : null;
+      });
+    }, Promise.resolve()).then(function () { return added; });
+  }
+  function linkBar(a) {
+    var el = side.querySelector('.ac-pf-link');
+    if (!el || !V().notes().length) return;
+    var linked = A.linkedFile(a.code), old = A.defaultPlayerPath(a.name), hasOld = !!V().get(old);
+    if (linked) {
+      el.innerHTML = '<span class="ac-pf-path">' + esc(linked.replace(/\.md$/i, '')) + '</span><button type="button" class="ac-lnk" data-pf="pick">Change…</button>' +
+        (hasOld && linked !== old ? '<span class="ac-pf-old">A-Cell\'s old copy, ' + esc(old.replace(/\.md$/i, '')) + ', is merged in here: delete it in Obsidian · <button type="button" class="ac-lnk" data-pf="merge">merge again</button></span>' : '');
+      return;
+    }
+    var c = candidates(a)[0];
+    el.innerHTML = c ? '<span class="ac-pf-ask">Is this your note on ' + esc(a.name) + '? <b>' + esc(c.replace(/\.md$/i, '')) + '</b></span>' +
+        '<button type="button" class="ac-btn p" data-pf="use" data-path="' + esc(c) + '">Use it</button><button type="button" class="ac-lnk" data-pf="pick">Pick another…</button>'
+      : '<span class="ac-pf-path">' + esc(old.replace(/\.md$/i, '')) + '</span><button type="button" class="ac-lnk" data-pf="pick">Use one of your notes…</button>';
+  }
+  function useFile(a, path) {
+    var st = side.querySelector('.ac-pf-link');
+    if (st) st.innerHTML = '<span class="ac-pf-ask">Linking…</span>';
+    linkFile(a, path).then(function (n) {
+      show(a.code);
+      var el = side.querySelector('.ac-pf-link');
+      if (el && n) el.insertAdjacentHTML('beforeend', '<span class="ac-pf-old">' + n + ' line' + (n === 1 ? '' : 's') + ' merged in from A-Cell\'s copy. Delete ' + esc(A.defaultPlayerPath(a.name)) + ' in Obsidian when you\'re happy.</span>');
+    }, function (err) { if (st) st.innerHTML = '<span class="ac-pf-ask">' + esc((err && err.message) || err) + '</span>'; });
+  }
+
   function show(code) {
     var a = A.agent(code) || { code: code, name: code };
-    var path = A.playerPath(a.name);
+    var path = A.playerPath(a);
     if (cur.code !== code || cur.path !== path) {
       if (cur.ed) { cur.ed.destroy(); cur.ed = null; }
       cur.code = code; cur.path = path;
       side.innerHTML = '<div class="ac-pf-hd"><span class="ac-t">' + esc(a.name) + '<small>player file</small></span>' +
-        '<button type="button" class="ac-btn p" data-pf="edit">✎ Edit sheet</button></div><div class="ac-pf-body"><div class="ac-none">Loading…</div></div>';
+        '<button type="button" class="ac-btn p" data-pf="edit">✎ Edit sheet</button></div><div class="ac-pf-link"></div><div class="ac-pf-body"><div class="ac-none">Loading…</div></div>';
     }
-    V().load().then(function () { drawBody(); }, function (err) {
+    V().load().then(function () { var p2 = A.playerPath(a); if (p2 !== cur.path) { cur.code = ''; show(code); return; } linkBar(a); drawBody(); }, function (err) {
       side.querySelector('.ac-pf-body').innerHTML = '<div class="ac-none">Could not load the vault: ' + esc((err && err.message) || err) + '</div>';
     });
   }
@@ -96,8 +167,12 @@
     var b = e.target.closest('[data-pf]');
     if (!b) return;
     var a = b.getAttribute('data-pf');
+    var ag = A.agent(cur.code) || { code: cur.code, name: cur.code };
     if (a === 'start') ensureFile(cur.code).then(drawBody);
     else if (a === 'edit') editSheet(cur.code);
+    else if (a === 'use') useFile(ag, b.getAttribute('data-path'));
+    else if (a === 'pick') V().picker({ title: 'Your note on ' + ag.name, onPick: function (p) { useFile(ag, p); } });
+    else if (a === 'merge') mergeInto(ag, A.playerPath(ag)).then(function (n) { show(ag.code); var el = side.querySelector('.ac-pf-link'); if (el) el.insertAdjacentHTML('beforeend', '<span class="ac-pf-old">' + (n ? n + ' line' + (n === 1 ? '' : 's') + ' merged in.' : 'Nothing new to merge.') + ' Delete ' + esc(A.defaultPlayerPath(ag.name)) + ' in Obsidian.</span>'); });
   });
   document.addEventListener('dg-acell-agent', function (e) { show(e.detail.code); });
   document.addEventListener('dg-vault', function () { if (cur.code && !cur.ed) drawBody(); });
@@ -213,5 +288,6 @@
     return w;
   }
 
-  window.dgAcPlayers = { ensureFile: ensureFile, append: append, editSheet: editSheet, stamp: stamp, tellPlayer: tellPlayer, SECTIONS: SECTIONS };
+  window.dgAcPlayers = { ensureFile: ensureFile, append: append, editSheet: editSheet, stamp: stamp, tellPlayer: tellPlayer, SECTIONS: SECTIONS,
+    candidates: candidates, linkFile: linkFile, mergeInto: mergeInto };
 })();

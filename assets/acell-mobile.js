@@ -890,7 +890,7 @@
     }).join('') + '</div><form class="acm-form"><textarea name="t" rows="3" required placeholder="What you noticed…"></textarea>' +
       '<p class="acm-note" data-to></p><button class="acm-btn k w">Save</button></form>', { hold: true, cls: 'acm-kb' });
     var f = w.querySelector('form');
-    function to() { var a = A.agent(pick); f.querySelector('[data-to]').textContent = a ? 'Goes to ' + A.playerPath(a.name) + ' · Handler notes' : ''; }
+    function to() { var a = A.agent(pick); f.querySelector('[data-to]').textContent = a ? 'Goes to ' + A.playerPath(a) + ' · Handler notes' : ''; }
     to();
     setTimeout(function () { f.t.focus(); }, 60);
     w.addEventListener('click', function (e) {
