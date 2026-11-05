@@ -222,13 +222,19 @@
       '<label>Operation (its tapes play across its sessions)<select name="op" class="vn-search"><option value="">— none —</option>' + ((window.dgTapes && window.dgTapes.operations()) || []).map(function (o) {
         return '<option value="' + esc(o.operation_id) + '" data-cell="' + esc(o.cell_id) + '"' + (base && base.operation_id === o.operation_id ? ' selected' : '') + '>' + esc(o.name) + '</option>';
       }).join('') + '</select></label>' +
+      // The operation's phases, folders under its own (2026-11-05): its new NPCs, places and investigation notes go there.
+      '<label data-phasewrap hidden>Phase (its NPCs, locations and investigation notes go there)<select name="phase" class="vn-search" data-was="' + esc(s ? s.phase || '' : '') + '"></select></label>' +
       '<div class="vn-new" style="justify-content:flex-end">' + (s ? '<button type="button" class="vn-btn ac-del" data-del>Delete session</button><span class="ac-sp"></span>' : '') +
       '<button type="button" class="vn-btn" data-vclose>Cancel</button><button type="submit" class="vn-btn p">' + (s ? 'Save' : 'Create') + '</button></div></form>');
     var f = w.querySelector('form');
     setTimeout(function () { f.name.focus(); }, 0);
+    function phases() { if (window.dgAcm && window.dgAcm.phaseOpts) window.dgAcm.phaseOpts(f); }
+    phases();
+    f.op.addEventListener('change', phases);
+    if (window.dgVault) window.dgVault.load().then(phases, function () {});
     f.addEventListener('submit', function (e) {
       e.preventDefault();
-      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value };
+      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value, phase: f.phase.value };
       w.remove();
       if (s) S().update(s.id, fields); else S().create(fields);
     });
@@ -377,7 +383,7 @@
     load.catch(function () { return []; }).then(function (html) {
       window.dgVault.picker({
         title: 'Notes for ' + s.name,
-        newPath: 'Sessions/' + s.name.replace(/[\\/:*?"<>|]+/g, ' ').trim(),
+        newPath: window.dgAcm && window.dgAcm.layout ? window.dgAcm.layout.sessionNotePath(s).replace(/\.md$/i, '') : 'Sessions/' + s.name.replace(/[\\/:*?"<>|]+/g, ' ').trim(),
         onPick: function (path) { S().addNote(s.id, { kind: 'vault', path: path }); },
         html: (html || []).map(function (n) { return { id: n.id, title: n.title || n.id }; }),
         onPickHtml: function (id) {
@@ -391,6 +397,11 @@
   function newNote(s) {
     var V = window.dgVault, path = V.cleanPath('Sessions/' + s.name.replace(/[\\/:*?"<>|]+/g, ' ').trim());
     var tpl = '# ' + s.name + '\n\n## Scene 1\n\n- [ ] \n\n## Scene 2\n\n- [ ] \n\n## NPCs\n\n';
+    // The Handler's layout: "SN- <Operation> - pt.N" with the operation's properties.
+    if (window.dgAcm && window.dgAcm.layout) {
+      window.dgAcm.layout.makeSessionNote(s, tpl).then(function (p) { S().addNote(s.id, { kind: 'vault', path: p }); });
+      return;
+    }
     V.load().catch(function () {}).then(function () {
       return V.get(path) ? path : V.save(path, tpl);
     }).then(function () { S().addNote(s.id, { kind: 'vault', path: path }); });

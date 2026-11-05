@@ -5546,6 +5546,80 @@ def test_acell_operation_folders(p):
     record("acell-ops", "no JS errors (operation folders)", not errs, str(errs))
     page.close()
 
+def test_acell_vault_layout(p):
+    """2026-11-05, the Handler's vault layout: Cell folder (Cell-Index.md)
+    > operation folder (Index - <Operation>.md, whose properties every
+    note repeats; session notes "SN- <Operation> - pt.N") > phase folders
+    (NPCs/, Locations/, Investigation/). Operations are found by their
+    Index note; notes A-Cell makes go where they belong, with the Index's
+    properties, `dat` and a type tag; a new session note is listed in the
+    Index; a new operation gets its folder and Index in the Cell's."""
+    page, errs = open_acell_shell(p)
+    OPD = "DG/Impossible/A Volume of Secret Faces"
+    IDX = OPD + "/Index - A Volume of Secret faces.md"
+    page.evaluate("""(a) => { const [OPD, IDX] = a;
+      window.__dgFirestoreDocs['operations/op_v'] = { operation_id: 'op_v', name: 'A Volume of Secret Faces', cell_id: 'cell_osiris', created_at: 9 };
+      const fm = '---\\ncell: "[[Impossible]]"\\noperation: A Volume of Secret Faces\\nindex:\\n  - "[[Index - A Volume of Secret faces]]"\\nphases:\\n  - "[[SN- A Volume of Secret Faces pt.1#Prologue|The Long years]]"\\nsessions:\\n  - "[[SN- A Volume of Secret Faces pt.1]]"\\ndat: 2026-05-31\\n---\\n';
+      return dgVault.load().then(() => Promise.all([
+        dgVault.save('DG/Impossible/Cell-Index.md', '# Impossible\\n\\n- [[Index - A Volume of Secret faces]]\\n'),
+        dgVault.save('DG/Osiris/Cell-Index.md', '# Osiris\\n\\n- [[Mara Kessler]]\\n'),
+        dgVault.save(IDX, fm),
+        dgVault.save(OPD + '/SN- A Volume of Secret Faces pt.1.md', fm + '# Prologue\\n'),
+        dgVault.save(OPD + '/Dorchester House/Locations/Lobby.md', '# Lobby'),
+        dgVault.save(OPD + '/INDIA MOON/NPCs/Exeter.md', '# Exeter')
+      ])).then(() => dgTapes.reloadOps()).then(() => dgAcm.loadOpDocs()).then(() => dgAcm.followVault()); }""", [OPD, IDX])
+    wait_for_condition(lambda: (fs_doc(page, "operations/op_v") or {}).get("vault_folder") == OPD, timeout_ms=6000)
+    record("acell-layout", "an operation is found by its Index note (the operation: property), wherever it is",
+           (fs_doc(page, "operations/op_v") or {}).get("vault_folder") == OPD, str(fs_doc(page, "operations/op_v")))
+    ph = page.evaluate("() => dgAcm.layout.phases(dgTapes.operations().find(o => o.operation_id === 'op_v'))")
+    record("acell-layout", "its phases are the folders under it", ph == [OPD + "/Dorchester House", OPD + "/INDIA MOON"], str(ph))
+    page.evaluate("(d) => dgSessions.create({ name: 'Dorchester by Night', date: '2026-11-07', cell_id: 'cell_osiris', operation_id: 'op_v', phase: d })", OPD + "/Dorchester House")
+    wait_for_condition(lambda: page.evaluate("() => !!dgSessions.list().find(s => s.name === 'Dorchester by Night' && s.phase)"), timeout_ms=4000)
+    sn = page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); return dgAcm.layout.makeSessionNote(s, '# Dorchester by Night\\n\\n## Starter Scene\\n').then(p => dgSessions.addNote(s.id, { kind: 'vault', path: p }).then(() => p)); }")
+    wait_for_condition(lambda: "pt.2" in page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", IDX), timeout_ms=4000)
+    note = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", sn or "")
+    idx = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", IDX)
+    record("acell-layout", "a new session note: 'SN- <Operation> - pt.N' (the next N) in the operation's folder",
+           sn == OPD + "/SN- A Volume of Secret Faces - pt.2.md", str(sn))
+    record("acell-layout", "…with the Index's properties, its date as dat, and the session tag",
+           'cell: "[[Impossible]]"' in note and "operation: A Volume of Secret Faces" in note and '  - "[[SN- A Volume of Secret Faces pt.1]]"' in note
+           and "dat: 2026-11-07" in note and "tags:\n  - session" in note and "## Starter Scene" in note, note[:500])
+    record("acell-layout", "…and the Index lists it under sessions (nothing else changed in it)",
+           '  - "[[SN- A Volume of Secret Faces pt.1]]"\n  - "[[SN- A Volume of Secret Faces - pt.2]]"' in idx and "dat: 2026-05-31" in idx, idx)
+    npc = page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); return dgAcm.npcNote({ name: 'Dr. Maximo Friend', dex: 12, hp: 10, wp: 14, san: 30 }, s); }")
+    nc = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", npc or "")
+    record("acell-layout", "an NPC goes in the session's phase folder (NPCs/), with the properties, the npc tag and its numbers",
+           npc == OPD + "/Dorchester House/NPCs/Dr. Maximo Friend.md" and "operation: A Volume of Secret Faces" in nc and "tags:\n  - npc" in nc and "dex: 12" in nc and "# Dr. Maximo Friend" in nc, str(npc) + " | " + nc[:400])
+    page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); return dgAcm.npcNote({ name: 'Dr. Maximo Friend', dex: 12, hp: 7, wp: 14, san: 30, path: '" + (npc or "") + "' }, s); }")
+    nc2 = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", npc or "")
+    record("acell-layout", "an NPC's numbers change in place; its other properties stay",
+           "hp: 7" in nc2 and "hp: 10" not in nc2 and "operation: A Volume of Secret Faces" in nc2 and "tags:\n  - npc" in nc2, nc2[:400])
+    lk = page.evaluate("(p) => dgAcm.layout.forLink('Mr. Wilde', p)", sn or "")
+    record("acell-layout", "a [[link]] to a new note from the session note: in that session's phase, with the properties",
+           bool(lk) and lk.get("path") == OPD + "/Dorchester House/Mr. Wilde.md" and "operation: A Volume of Secret Faces" in lk.get("content", "") and "# Mr. Wilde" in lk.get("content", ""), str(lk))
+    # A new operation: its folder and Index in the Cell's folder, listed in the Cell-Index.
+    page.evaluate("() => dgAcm.createOperation('The Night Floors', 'cell_osiris')")
+    NF = "DG/Osiris/The Night Floors"
+    wait_for_condition(lambda: page.evaluate("(p) => !!dgVault.get(p)", NF + "/Index - The Night Floors.md"), timeout_ms=6000)
+    ni = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", NF + "/Index - The Night Floors.md")
+    ci = page.evaluate("() => (dgVault.get('DG/Osiris/Cell-Index.md') || {}).content || ''")
+    def nf_op():
+        docs = page.evaluate("() => Object.keys(window.__dgFirestoreDocs).filter(k => /^operations\\/[^/]+$/.test(k)).map(k => window.__dgFirestoreDocs[k])")
+        return [d for d in docs if d.get("name") == "The Night Floors"]
+    wait_for_condition(lambda: bool(nf_op()) and nf_op()[0].get("vault_folder") == NF, timeout_ms=5000)
+    record("acell-layout", "a new operation: its folder beside the Cell-Index, its Index note (operation, index, sessions), listed in the Cell-Index",
+           "operation:\n  - The Night Floors" in ni and '  - "[[Index - The Night Floors]]"' in ni and "sessions:" in ni and "[[Index - The Night Floors]]" in ci
+           and bool(nf_op()) and nf_op()[0].get("vault_folder") == NF, ni + " | " + ci)
+    # The session form's Phase select.
+    page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); dgSessions.setCurrent(s.id); }")
+    page.evaluate("() => window.dgAc.editSession(dgSessions.list().find(s => s.name === 'Dorchester by Night'))")
+    wait_for_condition(lambda: page.locator("form.ac-form select[name=phase] option").count() == 3, timeout_ms=4000)
+    opts = page.eval_on_selector_all("form.ac-form select[name=phase] option", "els => els.map(e => [e.textContent, e.selected])")
+    record("acell-layout", "the session form has a Phase select with the operation's phases, the session's chosen",
+           [o[0] for o in opts][1:] == ["Dorchester House", "INDIA MOON"] and opts[1][1] is True, str(opts))
+    record("acell-layout", "no JS errors (vault layout)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14719,6 +14793,7 @@ def main():
         safe(test_acell_console, browser, area="acell-console")
         safe(test_acell_cell_operations, browser, area="acell-cells")
         safe(test_acell_operation_folders, browser, area="acell-cells")
+        safe(test_acell_vault_layout, browser, area="acell-cells")
         safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")

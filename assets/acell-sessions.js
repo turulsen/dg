@@ -38,6 +38,9 @@
     return {
       id: id, name: d.name || 'Untitled session', cell_id: d.cell_id || '', operation_id: d.operation_id || '', date: d.date || '',
       note_path: d.note_path || '', html_note: d.html_note || null,
+      // The operation's phase this session plays in: a folder in the vault
+      // (its NPCs/, Locations/, Investigation/ take the notes made in it).
+      phase: d.phase || '',
       evidence: Array.isArray(d.evidence) ? d.evidence : [], tracks: Array.isArray(d.tracks) ? d.tracks : [],
       pads: Array.isArray(d.pads) ? d.pads : [], npcs: Array.isArray(d.npcs) ? d.npcs : [], away: Array.isArray(d.away) ? d.away : [],
       quick_notes: Array.isArray(d.quick_notes) ? d.quick_notes : [], start: d.start || null, started_at: d.started_at || 0,

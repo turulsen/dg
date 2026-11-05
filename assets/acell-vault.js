@@ -403,7 +403,10 @@
         var target = lk.getAttribute('data-vlink'), to = resolveLink(target, path);
         if (get(to)) { opts.onLink(to); return; }
         var made = newLinkPath(target, path), name = made.split('/').pop().replace(/\.md$/i, '');
-        save(made, '# ' + name + '\n\n').then(function (p) { opts.onLink(p, { created: true }); }, function () { /* not saved: stay */ });
+        // The Handler's layout: the operation's folder (the phase it's in) and its properties.
+        var lay = window.dgAcm && window.dgAcm.layout && name.indexOf('/') < 0 && String(target).split('#')[0].indexOf('/') < 0 ? window.dgAcm.layout.forLink(name, path) : null;
+        if (lay && !get(lay.path)) made = lay.path;
+        save(made, lay && made === lay.path ? lay.content : '# ' + name + '\n\n').then(function (p) { opts.onLink(p, { created: true }); }, function () { /* not saved: stay */ });
         return;
       }
       var cue = e.target.closest('[data-cue]');

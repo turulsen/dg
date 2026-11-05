@@ -223,9 +223,11 @@
   function fileName(t) { return String(t || '').replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled'; }
 
   /* ── An operation's vault folder ──
-     <Operation>/<Operation>.md (overview), Sessions/, NPCs/, Locations/
-     (each with its own folder note). Made once per operation; its path
-     is kept on the operation, so files moved afterwards stay moved. */
+     Its Index note's folder (the Handler's layout, below); else a folder
+     of its name already in the vault; else a new one in the Cell's folder
+     with an Index note. Older operations may still have the first layout
+     (<Operation>/Sessions, NPCs, Locations). Kept on the operation
+     (vault_folder) and followed when the vault moves it. */
   function opFolder(o) { return o && o.vault_folder ? o.vault_folder : ''; }
   var opDocs = {};
   // The operations as the tapes store already read them (no second read).
@@ -262,19 +264,16 @@
   }
   function ensureOpFolder(op) {
     if (!op || folderOf(op.operation_id)) return Promise.resolve(folderOf(op && op.operation_id));
-    var c = A.cell(op.cell_id), base = '';
+    var base = '';
     return V().load().catch(function () {}).then(function () {
+      // Its Index note, wherever it is: that's its folder.
+      var idx = opIndex(op);
+      if (idx) { base = idx.dir; return null; }
       // The vault's own folder of that name: used as it is, nothing written into it.
       var mine = sameNamed(op.name)[0];
-      base = mine ? mine.dir : fileName(op.name);
-      var files = mine ? [] : [
-        [base + '/' + base + '.md', '# ' + op.name + '\n\nOperation' + (c ? ' of Cell ' + (c.name || c.cell_id) : '') + '.\n\n- [[Sessions]]\n- [[NPCs]]\n- [[Locations]]\n'],
-        [base + '/Sessions/Sessions.md', '# Sessions\n\nThe sessions of ' + op.name + '.\n'],
-        [base + '/NPCs/NPCs.md', '# NPCs\n\nThe people of ' + op.name + '. Each NPC is a note here, with DEX, HP, WP and SAN at the top.\n'],
-        [base + '/Locations/Locations.md', '# Locations\n\nThe places of ' + op.name + '.\n']
-      ];
-      // Never over a note that exists.
-      return files.reduce(function (p, f) { return p.then(function () { return V().get(f[0]) ? null : V().save(f[0], f[1]); }); }, Promise.resolve());
+      if (mine) { base = mine.dir; return null; }
+      // Neither: a new operation folder in the Cell's, with its Index note.
+      return makeOpIndex(op).then(function (d) { base = d; });
     }).then(function () { return setFolderDoc(op.operation_id, base); }).then(function () { return base; });
   }
   function setFolderDoc(opId, dir) {
@@ -364,6 +363,10 @@
       var jobs = [];
       Object.keys(opDocs).forEach(function (id) {
         var dir = opDocs[id].vault_folder;
+        // The operation's Index note decides, wherever it has gone.
+        var idx = opIndex(Object.assign({ operation_id: id }, opDocs[id]));
+        if (idx && dir && idx.dir !== dir) { maps.push([dir, idx.dir]); jobs.push(setFolderDoc(id, idx.dir)); return; }
+        if (idx && !dir) { jobs.push(setFolderDoc(id, idx.dir)); return; }
         if (!dir || counts[dir]) return;
         var to = movedTo(dir, id);
         if (!to) return;
@@ -406,8 +409,204 @@
       });
     });
   }
+  /* ── The vault's layout (2026-11-05, the Handler's own) ──
+     Cell folder (Cell-Index.md: the players, the operations' indexes) ›
+     operation folder (Index - <Operation>.md, whose properties every note
+     of the operation repeats; its session notes "SN- <Operation> - pt.N")
+     › a folder per phase (NPCs/, Locations/, Investigation/).
+     An operation is found by its Index note (its `operation:` property,
+     or the note's name), not by folder names. A note A-Cell makes gets
+     the Index's properties, `dat` (the day; a session note's: its date)
+     and a tag for its type. An operation without an Index note keeps the
+     older layout (<Operation>/Sessions, NPCs, Locations). */
+  var TYPE_DIR = { npc: 'NPCs', location: 'Locations', investigation: 'Investigation' };
+  var NOT_PHASE = { npcs: 1, locations: 1, investigation: 1, sessions: 1, attachments: 1, assets: 1, images: 1 };
+  function dirOfPath(p) { p = String(p || ''); return p.indexOf('/') >= 0 ? p.slice(0, p.lastIndexOf('/')) : ''; }
+  function baseOf(p) { return String(p || '').split('/').pop().replace(/\.md$/i, ''); }
+  // Front matter as Obsidian writes it: each key with its own lines kept.
+  function fmOf(md) {
+    var m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(md || '');
+    if (!m) return null;
+    var props = [], cur = null;
+    m[1].split(/\r?\n/).forEach(function (l) {
+      var kv = /^([A-Za-z0-9_\-]+):(.*)$/.exec(l);
+      if (kv) { cur = { key: kv[1], value: kv[2].trim(), items: [], raw: [l] }; props.push(cur); return; }
+      if (!cur) return;
+      cur.raw.push(l);
+      var it = /^\s*-\s*(.*)$/.exec(l);
+      if (it) cur.items.push(it[1].trim());
+    });
+    return { props: props, body: String(md).slice(m[0].length) };
+  }
+  function fmText(props) { return '---\n' + props.map(function (p) { return p.raw.join('\n'); }).join('\n') + '\n---\n'; }
+  function prop(fm, k) { return fm ? fm.props.filter(function (x) { return x.key.toLowerCase() === k; })[0] || null : null; }
+  function unq(v) { return String(v || '').replace(/^["']|["']$/g, '').replace(/^\[\[|\]\]$/g, '').split('|')[0].split('#')[0].trim(); }
+  function vals(p) { return p ? (p.items.length ? p.items : (p.value ? [p.value] : [])).map(unq).filter(Boolean) : []; }
+  function mkProp(key, value, items) {
+    var raw = [key + ':' + (value != null && value !== '' ? ' ' + value : '')];
+    (items || []).forEach(function (i) { raw.push('  - ' + i); });
+    return { key: key, value: value || '', items: (items || []).slice(), raw: raw };
+  }
+  function today() { return new Date().toISOString().slice(0, 10); }
+  function opById(id) { return (operations() || []).filter(function (o) { return o.operation_id === id; })[0] || (opDocs[id] ? Object.assign({ operation_id: id }, opDocs[id]) : null); }
+  // The operation's Index note: { path, dir, fm }, or null.
+  function opIndex(op) {
+    if (!op || !V()) return null;
+    var k = folderKey(op.name), best = null;
+    if (!k) return null;
+    V().notes().forEach(function (n) {
+      var b = baseOf(n.path);
+      if (!/^index\s*-/i.test(b)) return;
+      var fm = fmOf(n.content);
+      var hit = vals(prop(fm, 'operation')).some(function (x) { return folderKey(x) === k; }) || folderKey(b.replace(/^index\s*-\s*/i, '')) === k;
+      if (hit && (!best || n.path.length < best.path.length)) best = { path: n.path, dir: dirOfPath(n.path), fm: fm };
+    });
+    return best;
+  }
+  // The Cell's folder: where its Cell-Index.md sits.
+  function cellDir(cell) {
+    if (!cell || !V()) return '';
+    var k = folderKey(cell.name), hit = '';
+    V().notes().forEach(function (n) {
+      if (folderKey(baseOf(n.path)) !== 'cellindex') return;
+      var d = dirOfPath(n.path), fm = fmOf(n.content);
+      if (folderKey(d.split('/').pop()) === k || vals(prop(fm, 'cell')).some(function (x) { return folderKey(x) === k; })) { if (!hit || d.length < hit.length) hit = d; }
+    });
+    return hit;
+  }
+  // An operation's phases: the folders right under its folder (not NPCs/, Locations/...).
+  function phases(op) {
+    var idx = opIndex(op);
+    if (!idx) return [];
+    var all = vaultFolders();
+    return Object.keys(all).filter(function (d) { return dirOfPath(d) === idx.dir && d !== idx.dir && !NOT_PHASE[d.split('/').pop().toLowerCase()]; })
+      .sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); });
+  }
+  function phaseOf(s) {
+    var op = s && opById(s.operation_id);
+    var ph = phases(op);
+    if (s && s.phase && ph.indexOf(s.phase) >= 0) return s.phase;
+    return ph.length === 1 ? ph[0] : '';
+  }
+  // Where a note of this type goes for this session.
+  function typeDir(s, type) {
+    var op = s && opById(s.operation_id), idx = opIndex(op);
+    if (!idx) { var f = folderOf(s && s.operation_id); return (f ? f + '/' : '') + (TYPE_DIR[type] || ''); }
+    return (phaseOf(s) || idx.dir) + (TYPE_DIR[type] ? '/' + TYPE_DIR[type] : '');
+  }
+  // The operation's properties for a new note, its `dat` and type tag, and any extra keys.
+  function baseFm(op, type, date, extra) {
+    var idx = opIndex(op), props = [];
+    if (idx && idx.fm) idx.fm.props.forEach(function (p) { if (!/^(dat|date|tags|tag|type|dex|hp|wp|san)$/i.test(p.key)) props.push(p); });
+    else if (op) {
+      var c = A.cell(op.cell_id);
+      if (c) props.push(mkProp('cell', '"[[' + (c.name || c.cell_id) + ']]"'));
+      props.push(mkProp('operation', op.name));
+    }
+    props.push(mkProp('dat', date || today()));
+    if (type) props.push(mkProp('tags', '', [type]));
+    (extra || []).forEach(function (kv) { props.push(mkProp(kv[0], kv[1])); });
+    return fmText(props);
+  }
+  // A note's text with the operation's properties: its own front matter (a
+  // template's) keeps what it adds; the base ones come first.
+  function withFm(md, op, type, date) {
+    var own = fmOf(md), base = fmOf(baseFm(op, type, date));
+    if (!own) return fmText(base.props) + String(md || '');
+    var have = {};
+    base.props.forEach(function (p) { have[p.key.toLowerCase()] = true; });
+    return fmText(base.props.concat(own.props.filter(function (p) { return !have[p.key.toLowerCase()]; }))) + own.body;
+  }
+  // Keys set in a note's front matter, the rest of it untouched.
+  function setFm(md, kvs) {
+    var fm = fmOf(md);
+    var props = fm ? fm.props.slice() : [], body = fm ? fm.body : String(md || '');
+    kvs.forEach(function (kv) {
+      var i = props.findIndex(function (p) { return p.key.toLowerCase() === kv[0]; }), np = mkProp(kv[0], kv[1]);
+      if (i >= 0) props[i] = np; else props.push(np);
+    });
+    return fmText(props) + body;
+  }
+  // The next session note: "SN- <Operation> - pt.N" in the operation's folder.
+  function sessionNotePath(s) {
+    var op = s && opById(s.operation_id), idx = opIndex(op);
+    if (!idx) return V().cleanPath(sessionsDir(s) + '/' + fileName(s.name));
+    var n = 0;
+    V().notes().forEach(function (x) { if (dirOfPath(x.path) === idx.dir) { var m = /\bpt\.?\s*(\d+)\s*$/i.exec(baseOf(x.path)); if (m) n = Math.max(n, +m[1]); } });
+    vals(prop(idx.fm, 'sessions')).forEach(function (v) { var m = /\bpt\.?\s*(\d+)\s*$/i.exec(v); if (m) n = Math.max(n, +m[1]); });
+    return V().cleanPath(idx.dir + '/SN- ' + fileName(op.name) + ' - pt.' + (n + 1));
+  }
+  // A new session note: the Index's properties, and the Index lists it.
+  function makeSessionNote(s, md) {
+    var path = sessionNotePath(s), op = opById(s.operation_id), idx = opIndex(op);
+    return V().load().catch(function () {}).then(function () {
+      if (V().get(path)) return path;
+      return V().save(path, idx ? withFm(md, op, 'session', s.date || today()) : md).then(function () { return listInIndex(op, path); }).then(function () { return path; });
+    });
+  }
+  function listInIndex(op, path) {
+    var idx = opIndex(op);
+    if (!idx) return Promise.resolve();
+    var cur = (V().get(idx.path) || {}).content || '', fm = fmOf(cur), link = '"[[' + baseOf(path) + ']]"';
+    if (!fm) return Promise.resolve();
+    var p = prop(fm, 'sessions');
+    if (p && vals(p).some(function (v) { return v.toLowerCase() === baseOf(path).toLowerCase(); })) return Promise.resolve();
+    var props = fm.props.map(function (x) {
+      if (x !== p) return x;
+      // "sessions:" with an empty value then the list; an inline value becomes the first item.
+      var items = x.items.slice(); if (!items.length && x.value) items.push(x.value);
+      items.push(link);
+      return mkProp(x.key, '', items);
+    });
+    if (!p) props.push(mkProp('sessions', '', [link]));
+    return V().save(idx.path, fmText(props) + fm.body);
+  }
+  // A [[link]] to a note not written yet: where it goes, and its text.
+  function forLink(name, from) {
+    var op = null, idx = null;
+    (operations() || []).forEach(function (o) {
+      var i = opIndex(o);
+      if (i && from && from.indexOf(i.dir + '/') === 0 && (!idx || i.dir.length > idx.dir.length)) { op = o; idx = i; }
+    });
+    if (!idx) return null;
+    var rest = from.slice(idx.dir.length + 1), ph = rest.indexOf('/') >= 0 ? idx.dir + '/' + rest.split('/')[0] : '';
+    if (ph && NOT_PHASE[ph.split('/').pop().toLowerCase()]) ph = '';
+    if (!ph) {
+      // From a session note: that session's phase.
+      var s = (S() ? S().list() : []).filter(function (x) { return x.operation_id === op.operation_id && (x.note_path === from || S().notesOf(x).some(function (n) { return n.path === from; })); })[0];
+      ph = s ? phaseOf(s) : '';
+    }
+    var path = V().cleanPath((ph || idx.dir) + '/' + fileName(name));
+    return { path: path, content: baseFm(op, '', today()) + '# ' + name + '\n\n' };
+  }
+  // A new operation: its folder in the Cell's (beside Cell-Index.md), its Index note, listed in the Cell-Index.
+  function makeOpIndex(op) {
+    var c = A.cell(op.cell_id), cd = cellDir(c), dir = (cd ? cd + '/' : '') + fileName(op.name);
+    var path = V().cleanPath(dir + '/Index - ' + fileName(op.name)), link = '[[Index - ' + fileName(op.name) + ']]';
+    var props = [];
+    if (c) props.push(mkProp('cell', '"[[' + (cd ? cd.split('/').pop() : (c.name || c.cell_id)) + ']]"'));
+    props.push(mkProp('operation', '', [op.name]), mkProp('index', '', ['"' + link + '"']), mkProp('phases', ''), mkProp('sessions', ''), mkProp('dat', today()), mkProp('tags', '', ['index']));
+    return (V().get(path) ? Promise.resolve() : V().save(path, fmText(props) + '\n# ' + op.name + '\n\n')).then(function () {
+      if (!cd) return null;
+      var ci = V().notes().filter(function (n) { return dirOfPath(n.path) === cd && folderKey(baseOf(n.path)) === 'cellindex'; })[0];
+      if (!ci || (ci.content || '').indexOf(link) >= 0) return null;
+      return V().save(ci.path, String(ci.content || '').replace(/\s*$/, '') + '\n- ' + link + '\n');
+    }).then(function () { return dir; });
+  }
+
+  // A form's Phase select, from its Operation select (hidden when the operation has none).
+  function phaseOpts(f) {
+    if (!f.phase) return;
+    var op = opById(f.op.value), ph = phases(op), wrap = f.querySelector('[data-phasewrap]'), was = f.phase.value || f.phase.getAttribute('data-was') || '';
+    var key = f.op.value + '|' + ph.join(',');
+    if (f.phase.getAttribute('data-key') !== key) {
+      f.phase.innerHTML = '<option value="">— the operation itself —</option>' + ph.map(function (d) { return '<option value="' + esc(d) + '"' + (d === was ? ' selected' : '') + '>' + esc(d.split('/').pop()) + '</option>'; }).join('');
+      f.phase.setAttribute('data-key', key);
+    }
+    if (wrap) wrap.hidden = !ph.length;
+  }
   function sessionsDir(s) { var f = folderOf(s && s.operation_id); return f ? f + '/Sessions' : 'Sessions'; }
-  function npcDir(s) { var f = folderOf(s && s.operation_id); return f ? f + '/NPCs' : 'NPCs'; }
+  function npcDir(s) { return typeDir(s, 'npc'); }
 
   /* ── NPCs: a note each, in the operation's NPCs folder ── */
   function npcMd(n) {
@@ -425,8 +624,12 @@
   function npcNote(n, s) {
     var path = n.path || V().cleanPath(npcDir(s) + '/' + fileName(n.name));
     return V().load().catch(function () {}).then(function () {
-      var cur = V().get(path);
-      if (!cur) return V().save(path, npcMd(n));
+      var cur = V().get(path), op = s && opById(s.operation_id);
+      var nums = [['dex', n.dex || ''], ['hp', n.hp == null ? '' : n.hp], ['wp', n.wp == null ? '' : n.wp], ['san', n.san == null ? '' : n.san]];
+      // In the Handler's layout: the operation's properties, tagged npc.
+      if (!cur) return V().save(path, opIndex(op) ? baseFm(op, 'npc', today(), nums) + '# ' + n.name + '\n\n' + (n.note || '') + '\n' : npcMd(n));
+      // Its numbers change; the rest of its properties stay as they are.
+      if (fmOf(cur.content)) return V().save(path, setFm(cur.content, nums));
       var md = cur.content || '', fm = /^---\n[\s\S]*?\n---\n?/.exec(md);
       var rest = fm ? md.slice(fm[0].length) : md;
       return V().save(path, npcMd({ name: n.name, dex: n.dex, hp: n.hp, wp: n.wp, san: n.san }).replace(/# [^\n]*\n\n\n$/, '') + (fm ? rest : '\n' + md));
@@ -530,6 +733,7 @@
           '<label>Date<input name="date" type="date" value="' + esc(new Date().toISOString().slice(0, 10)) + '"></label>' +
           '<div class="acm-g2"><label>Cell<select name="cell"><option value="">— none yet —</option>' + cs.map(function (c) { return '<option value="' + esc(c.cell_id) + '"' + (base && base.cell_id === c.cell_id ? ' selected' : '') + '>' + esc(c.name || c.cell_id) + '</option>'; }).join('') + '</select></label>' +
           '<label>Operation<select name="op"><option value="">— none —</option>' + ops.map(function (o) { return '<option value="' + esc(o.operation_id) + '"' + (base && base.operation_id === o.operation_id ? ' selected' : '') + '>' + esc(o.name) + '</option>'; }).join('') + '</select></label></div>' +
+          '<label data-phasewrap hidden>Phase<select name="phase"></select></label>' +
           '<p class="acm-note" data-where></p><button class="acm-btn k w">Create the session</button></form></div>',
         after: function (el) {
           var f = el.querySelector('form');
@@ -539,8 +743,9 @@
             Array.prototype.forEach.call(f.querySelectorAll('[data-how]'), function (b) { b.classList.toggle('on', b.getAttribute('data-how') === h); });
             var t = tpls[+f.tpl.value];
             f.querySelector('[data-tplscenes]').textContent = t ? 'Scenes: ' + scenesOf(t.md).join(' · ') : '';
-            var dir = sessionsDir({ operation_id: f.op.value });
-            f.querySelector('[data-where]').textContent = 'Its note: ' + dir + '/' + fileName(f.elements['name'].value || 'Session') + '.md' + (f.op.value ? ' · the operation\'s tapes come along.' : '');
+            phaseOpts(f);
+            var where = sessionNotePath({ operation_id: f.op.value, name: f.elements['name'].value || 'Session', phase: f.phase ? f.phase.value : '' });
+            f.querySelector('[data-where]').textContent = 'Its note: ' + where + (f.op.value ? ' · the operation\'s tapes come along.' : '');
           }
           f.setAttribute('data-how', how);
           f.addEventListener('click', function (e) { var b = e.target.closest('[data-how]'); if (b) { f.setAttribute('data-how', b.getAttribute('data-how')); sync(); } });
@@ -549,18 +754,17 @@
           f.addEventListener('submit', function (e) {
             e.preventDefault();
             var h = f.getAttribute('data-how'), name = f.elements['name'].value.trim() || 'Untitled session';
-            var fields = { name: name, date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value };
+            var fields = { name: name, date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value, phase: f.phase ? f.phase.value : '' };
             var src = h === 'copy' ? S().get(f.from.value) : null;
             if (src) ['evidence', 'npcs', 'pads', 'tracks'].forEach(function (k) { fields[k] = JSON.parse(JSON.stringify(src[k] || [])); });
             f.querySelector('button.k').disabled = true;
             var op = operations().filter(function (o) { return o.operation_id === f.op.value; })[0];
             (op ? ensureOpFolder(op).catch(function () {}) : Promise.resolve()).then(function () {
-              var path = V().cleanPath(sessionsDir(fields) + '/' + fileName(name));
               var md;
               if (h === 'blank') md = '# ' + name + '\n\n## Scene 1\n\n';
               else if (h === 'template') md = (tpls[+f.tpl.value] || BUILTIN[0]).md.replace(/\{\{session\}\}/g, name);
               else md = (((src && src.note_path && V().get(src.note_path)) || {}).content || '# ' + name + '\n').replace(/^# .*$/m, '# ' + name);
-              return V().load().catch(function () {}).then(function () { return V().get(path) ? null : V().save(path, md); }).then(function () {
+              return makeSessionNote(fields, md).then(function (path) {
                 fields.note_path = path;
                 return S().create(fields);
               });
@@ -1193,9 +1397,8 @@
         return;
       }
       case 'new-note': {
-        var path = V().cleanPath(sessionsDir(s) + '/' + fileName(s.name));
-        V().load().catch(function () {}).then(function () { return V().get(path) ? null : V().save(path, '# ' + s.name + '\n\n## Scene 1\n\n'); })
-          .then(function () { return S().addNote(s.id, { kind: 'vault', path: path }); }).then(function () { go('desk', { seg: 'notes' }, { replace: true }); });
+        makeSessionNote(s, '# ' + s.name + '\n\n## Scene 1\n\n')
+          .then(function (path) { return S().addNote(s.id, { kind: 'vault', path: path }); }).then(function () { go('desk', { seg: 'notes' }, { replace: true }); });
         return;
       }
       case 'pick-note': case 'note-add': noteSheet(s); return;
@@ -1348,7 +1551,9 @@
     icon: I, photo: photo, plain: plain, sw: sw, btn: btn, lab: lab, initials: initials, agentsByDex: agentsByDex, opOf: opOf, operations: operations,
     npcNote: npcNote, npcSheet: npcSheet, agentNoteSheet: agentNoteSheet, folderNpcs: folderNpcs, parseNpc: parseNpc, npcDir: npcDir,
     ensureOpFolder: ensureOpFolder, createOperation: createOperation, sameNamed: sameNamed, vaultFolders: vaultFolders, folderOf: folderOf,
-    followVault: followVault, setOpFolder: setOpFolder, loadOpDocs: loadOpDocs, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
+    followVault: followVault, setOpFolder: setOpFolder, loadOpDocs: loadOpDocs, phaseOpts: phaseOpts,
+    layout: { opIndex: opIndex, cellDir: cellDir, phases: phases, phaseOf: phaseOf, typeDir: typeDir, sessionNotePath: sessionNotePath,
+      makeSessionNote: makeSessionNote, forLink: forLink, baseFm: baseFm, fmOf: fmOf, withFm: withFm }, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
     enable: function () { A.keep('dg_acm_desktop', false); check(); }
   };
   // After the other phone screens (acell-mobile-*.js) have registered.
