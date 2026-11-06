@@ -68,5 +68,15 @@ x = r([{ path: 'Pale Lantern/A.md', content: 'a', synced: 'a' }, { path: 'Pale L
 check('notes moved to another folder are removes the mass-delete guard can tell apart (movedAway)',
   x.removes.length === 3 && x.movedAway.length === 2 && x.movedAway.indexOf('Gone.md') < 0 && up(x, 'Impossible/Pale Lantern/A.md'), x);
 
+// 2026-11-05: moved on the phone after A-Cell changed it (before the change reached the phone).
+x = r([{ path: 'Players/Ilse.md', content: 'old\n- added in A-Cell', synced: 'old', pending: 'old\n- added in A-Cell' }],
+  [{ path: 'Impossible/Agents/Ilse.md', text: 'old' }]);
+check('moved on the phone, changed in A-Cell: A-Cell\'s version goes to the new path, the old path is dropped (not recreated)',
+  x.write.length === 1 && x.write[0].path === 'Impossible/Agents/Ilse.md' && x.write[0].text === 'old\n- added in A-Cell' && x.write[0].folder === 'Impossible/Agents'
+  && up(x, 'Impossible/Agents/Ilse.md').content === 'old\n- added in A-Cell' && up(x, 'Impossible/Agents/Ilse.md').synced === 'old'
+  && x.removes.indexOf('Players/Ilse.md') >= 0 && x.movedAway.indexOf('Players/Ilse.md') >= 0 && !up(x, 'Players/Ilse.md'), x);
+x = r([{ path: 'Players/New.md', content: 'made in A-Cell', synced: null }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('…a note made in A-Cell and never synced still goes to the phone where it is', x.write.length === 1 && x.write[0].path === 'Players/New.md', x);
+
 console.log(JSON.stringify(out));
 
