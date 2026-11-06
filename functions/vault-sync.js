@@ -122,8 +122,15 @@ function reconcile(notes, files) {
   // Texts the phone has: a note missing from the phone whose text is one of
   // them is a leftover copy under an old path (a name iOS cut short), not
   // an A-Cell edit waiting to go out.
-  var phoneHas = {};
-  (files || []).forEach(function (f) { phoneHas[norm(f.text)] = true; });
+  var phoneHas = {}, phoneDirs = {}, phoneByName = {};
+  (files || []).forEach(function (f) {
+    phoneHas[norm(f.text)] = true;
+    var p = cleanPath(f.path);
+    if (!p) return;
+    var sg = p.split('/');
+    for (var i = 1; i < sg.length; i++) phoneDirs[sg.slice(0, i).join('/')] = true;
+    (phoneByName[sg[sg.length - 1].toLowerCase()] = phoneByName[sg[sg.length - 1].toLowerCase()] || []).push(p);
+  });
   Object.keys(byPath).forEach(function (path) {
     if (seen[path]) return;
     var note = byPath[path], content = note.content == null ? '' : note.content;
@@ -142,6 +149,26 @@ function reconcile(notes, files) {
       removes.push(path); moved[path] = true;
       stats.removed += 1; stats.moved_away = (stats.moved_away || 0) + 1; stats.moved_edited = (stats.moved_edited || 0) + 1;
       stats.created -= 1; stats.sent += 1;
+      return;
+    }
+    // Its folder is gone from the phone (moved or deleted there): never
+    // recreate it (2026-11-05: a reorganised vault had its old folders
+    // brought back). A note of that name elsewhere gets A-Cell's version
+    // beside it, "Name (A-Cell).md"; otherwise it's held here, listed.
+    var dir = path.indexOf('/') >= 0 ? path.slice(0, path.lastIndexOf('/')) : '';
+    if (note.synced != null && !eq(content, note.synced) && dir && !phoneDirs[dir]) {
+      var same = phoneByName[baseName(path).toLowerCase()] || [];
+      if (same.length === 1) {
+        var cp2 = conflictPath(same[0], taken);
+        taken[cp2] = true;
+        upserts.push({ path: cp2, content: content, synced: null, pending: content });
+        write.push(forPhone(cp2, content));
+        removes.push(path); moved[path] = true;
+        stats.removed += 1; stats.moved_away = (stats.moved_away || 0) + 1; stats.conflicts += 1; stats.sent += 1;
+      } else {
+        stats.held_orphans = (stats.held_orphans || 0) + 1;
+        (stats.held_paths = stats.held_paths || []).length < 20 && stats.held_paths.push(path);
+      }
       return;
     }
     if (note.synced == null || !eq(content, note.synced)) {

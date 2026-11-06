@@ -721,6 +721,8 @@
         '<p class="vn-lead">Your Obsidian notes live in iCloud; A-Cell keeps a private copy (only you, as Handler, can read it). An Apple Shortcut on your phone keeps the two in step: it sends your vault folder here and saves back what you changed in A-Cell.</p>' +
         '<div class="vn-row"><span>Last sync</span><b>' + (last ? new Date(last.at).toLocaleString() + ' · ' + last.files + ' notes · ' + (last.created + last.updated) + ' in, ' + last.sent + ' out' + (last.conflicts ? ', ' + last.conflicts + ' kept twice' : '') : 'never') + '</b></div>' +
         '<div class="vn-row"><span>Notes in A-Cell</span><b>' + notes().length + '</b></div>' +
+        // Changed here, but their folder is gone from the phone: kept, not sent (the sync won't recreate a folder).
+        (last && last.held_orphans ? '<div class="vn-row"><span>Held</span><b>' + last.held_orphans + ' changed in A-Cell, their folder gone from your phone: ' + esc((last.held_paths || []).join(' · ')) + '</b></div>' : '') +
         '<h4>1 · Sync key</h4>' +
         (cfg.key ? '<div class="vn-key"><code class="vn-keyv">' + esc(cfg.key) + '</code><button type="button" class="vn-btn" data-vcopy>Copy</button><button type="button" class="vn-btn" data-vrekey>New key</button></div>'
           : '<div class="vn-key"><button type="button" class="vn-btn p" data-vrekey>Make a sync key</button></div>') +

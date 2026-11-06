@@ -78,5 +78,17 @@ check('moved on the phone, changed in A-Cell: A-Cell\'s version goes to the new 
 x = r([{ path: 'Players/New.md', content: 'made in A-Cell', synced: null }], [{ path: 'Impossible/Other.md', text: 'x' }]);
 check('…a note made in A-Cell and never synced still goes to the phone where it is', x.write.length === 1 && x.write[0].path === 'Players/New.md', x);
 
+// 2026-11-05: a folder gone from the phone is never recreated.
+x = r([{ path: 'Old Op/Ilse.md', content: 'old\n- A-Cell line', synced: 'old' }],
+  [{ path: 'Impossible/Agents/Ilse.md', text: 'old, edited on the phone' }]);
+check('changed in A-Cell, its folder gone from the phone, a note of that name elsewhere: A-Cell\'s version beside it as (A-Cell), the old folder not recreated',
+  x.write.length === 1 && x.write[0].path === 'Impossible/Agents/Ilse (A-Cell).md' && x.write[0].text === 'old\n- A-Cell line' && x.removes.indexOf('Old Op/Ilse.md') >= 0
+  && !x.write.some(function (w) { return w.path.indexOf('Old Op/') === 0; }), x);
+x = r([{ path: 'Old Op/Lost.md', content: 'v2', synced: 'v1' }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('…no note of that name: held in A-Cell (kept, not sent, listed)',
+  !x.write.length && x.removes.indexOf('Old Op/Lost.md') < 0 && x.stats.held_orphans === 1 && x.stats.held_paths[0] === 'Old Op/Lost.md', x);
+x = r([{ path: 'New Op/SN- Op - pt.1.md', content: 'made in A-Cell', synced: null }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('…a note A-Cell made in a new folder still goes to the phone (the folder is made)', x.write.length === 1 && x.write[0].folder === 'New Op', x);
+
 console.log(JSON.stringify(out));
 
