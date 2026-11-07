@@ -90,5 +90,12 @@ check('…no note of that name: held in A-Cell (kept, not sent, listed)',
 x = r([{ path: 'New Op/SN- Op - pt.1.md', content: 'made in A-Cell', synced: null }], [{ path: 'Impossible/Other.md', text: 'x' }]);
 check('…a note A-Cell made in a new folder still goes to the phone (the folder is made)', x.write.length === 1 && x.write[0].folder === 'New Op', x);
 
+// 2026-11-07: a note A-Cell made, already sent, its folder still not on the phone: held, not sent again.
+x = r([{ path: 'Old Op/NPCs/Ruth.md', content: 'made in A-Cell', synced: null, pending: 'made in A-Cell' }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('a note A-Cell already sent once whose folder never appeared on the phone: held, its folder not recreated',
+  !x.write.length && x.stats.held_orphans === 1 && x.removes.indexOf('Old Op/NPCs/Ruth.md') < 0, x);
+x = r([{ path: 'Old Op/NPCs/Ruth.md', content: 'made in A-Cell', synced: null, pending: null }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('…the first time (never sent yet) it still goes out', x.write.length === 1 && x.write[0].path === 'Old Op/NPCs/Ruth.md', x);
+
 console.log(JSON.stringify(out));
 

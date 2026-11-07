@@ -156,9 +156,13 @@ function reconcile(notes, files) {
     // brought back). A note of that name elsewhere gets A-Cell's version
     // beside it, "Name (A-Cell).md"; otherwise it's held here, listed.
     var dir = path.indexOf('/') >= 0 ? path.slice(0, path.lastIndexOf('/')) : '';
-    if (note.synced != null && !eq(content, note.synced) && dir && !phoneDirs[dir]) {
+    // Also a note A-Cell made and already sent, which never came back
+    // (2026-11-07: notes that only ever reached the phone as .txt kept
+    // recreating their old folders on every sync): sent once, not again.
+    var sentBefore = note.synced == null && note.pending != null;
+    if ((note.synced != null || sentBefore) && !eq(content, note.synced) && dir && !phoneDirs[dir]) {
       var same = phoneByName[baseName(path).toLowerCase()] || [];
-      if (same.length === 1) {
+      if (same.length === 1 && note.synced != null) {
         var cp2 = conflictPath(same[0], taken);
         taken[cp2] = true;
         upserts.push({ path: cp2, content: content, synced: null, pending: content });
