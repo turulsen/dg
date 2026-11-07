@@ -50,10 +50,16 @@
       var path = A.playerPath(a), note = V() && V().get(path), md = note ? note.content || '' : '';
       var body = '';
       if (tab === 'file') {
-        body = note ? lab('Handler notes') + list(fileSection(md, 'Handler notes'), 'No notes yet.') + lab('Quick notes from play') + list(fileSection(md, 'Quick notes from play'), 'None yet.') +
+        // Which note is their file: the Handler's own (linked), or a suggestion (2026-11-07, as on the computer).
+        var PL = window.dgAcPlayers, linked = A.linkedFile && A.linkedFile(a.code, a.name), sug = !linked && PL && PL.candidates && V() && V().notes().length ? PL.candidates(a)[0] : '';
+        body = (linked ? '<p class="acm-note">Their file: ' + esc(linked.replace(/\.md$/i, '')) + '</p>'
+          : sug ? '<div class="acm-card acm-sug"><p class="acm-note">Is this your note on ' + esc(a.name) + '?</p><b>' + esc(sug.replace(/\.md$/i, '')) + '</b>' +
+            '<div class="acm-g2">' + btn('Use it', 'pf-use', 'k', 'data-code="' + esc(code) + '" data-path="' + esc(sug) + '"') + btn('Pick another', 'pf-pick', '', 'data-code="' + esc(code) + '"') + '</div></div>'
+          : (PL ? btn('Use one of your notes as their file', 'pf-pick', 'w', 'data-code="' + esc(code) + '"') : '')) +
+          (note ? lab('Handler notes') + list(fileSection(md, 'Handler notes'), 'No notes yet.') + lab('Quick notes from play') + list(fileSection(md, 'Quick notes from play'), 'None yet.') +
           '<form class="acm-form acm-inline" data-form="anote"><input name="t" placeholder="Add a note on ' + esc(a.name.split(' ')[0]) + '…" autocomplete="off"><button class="acm-btn k s">Add</button></form>' +
           btn('Open the whole file', 'open-file', 'w', 'data-path="' + esc(path) + '"')
-          : '<p class="acm-none">No player file yet. It keeps your notes on this Agent, the changes you make to their sheet, and the quick notes from play, in your vault.</p>' + btn('Start the player file', 'start-file', 'k w', 'data-code="' + esc(code) + '"');
+          : '<p class="acm-none">No player file yet. It keeps your notes on this Agent, the changes you make to their sheet, and the quick notes from play, in your vault.</p>' + btn('Start the player file', 'start-file', 'k w', 'data-code="' + esc(code) + '"'));
       } else if (tab === 'bonds') {
         var bonds = ((a.state && a.state.bonds) || []).filter(Boolean);
         body = bonds.length ? '<div class="acm-card">' + bonds.map(function (b) {
@@ -114,6 +120,15 @@
   X['as-player'] = function (b) { P().editSheet(b.getAttribute('data-code'), { view: true, asPlayer: true }); };
   X['edit-sheet'] = function (b) { P().editSheet(b.getAttribute('data-code')); };
   X['start-file'] = function (b) { P().ensureFile(b.getAttribute('data-code')).then(function () { C.refresh(); }); };
+  // Link the Handler's own note as the Agent's file; A-Cell's Players/ copy is merged in.
+  function pfUse(code, path) {
+    var a = A.agent(code);
+    if (!a || !window.dgAcPlayers) return;
+    window.dgAcPlayers.linkFile(a, path).then(function (n) { C.toast('Their file is now ' + V().title(path) + (n ? ' · ' + n + ' line' + (n === 1 ? '' : 's') + ' merged in' : '') + '.'); C.refresh(); },
+      function (err) { C.toast((err && err.message) || String(err)); });
+  }
+  X['pf-use'] = function (b) { pfUse(b.getAttribute('data-code'), b.getAttribute('data-path')); };
+  X['pf-pick'] = function (b) { var code = b.getAttribute('data-code'), a = A.agent(code); V().picker({ title: 'Your note on ' + (a ? a.name : 'this Agent'), onPick: function (p) { pfUse(code, p); } }); };
   X['open-file'] = function (b) { var p = b.getAttribute('data-path'); C.go('vault'); setTimeout(function () { A.openNote(p); }, 0); };
 
   window.dgAcmAgents = {};

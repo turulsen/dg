@@ -5691,6 +5691,28 @@ def test_acell_players_own_file(p):
     record("acell-players", "no JS errors (own player file)", not errs, str(errs))
     page.close()
 
+def test_acell_mobile_own_file(p):
+    """2026-11-07: on the phone too, an Agent's screen suggests the
+    Handler's own note as their file; Use it links it (A-Cell's copy
+    merged in) and the screen says which note it is."""
+    page, errs = open_phone(p)
+    MINE = "Impossible/Agents/Ilse Varga - Agent Kite.md"
+    page.evaluate("""(m) => dgVault.load().then(() => Promise.all([
+      dgVault.save(m, '---\\ncell: "[[Impossible]]"\\n---\\n# Ilse Varga\\n'),
+      dgVault.save('Players/Ilse Varga.md', '---\\nagent code: ILSE-VR03\\n---\\n# Ilse Varga\\n\\n## Handler notes\\n\\n- Trusts nobody with the log\\n')]))""", MINE)
+    page.evaluate("() => dgAcm.go('agent', 'ILSE-VR03')")
+    wait_for_condition(lambda: page.locator("[data-acm=pf-use]").count() == 1, timeout_ms=6000)
+    record("acell-mobile-agents", "the Agent screen suggests your own note as their file",
+           page.get_attribute("[data-acm=pf-use]", "data-path") == MINE, page.inner_text("#acm-view")[:300])
+    page.click("[data-acm=pf-use]")
+    wait_for_condition(lambda: "agent code: ILSE-VR03" in page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE), timeout_ms=5000)
+    wait_for_condition(lambda: "Their file: " + MINE.replace(".md", "") in page.inner_text("#acm-view"), timeout_ms=4000)
+    c = page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE)
+    record("acell-mobile-agents", "Use it links it, merges A-Cell's copy, and the screen names the file",
+           "- Trusts nobody with the log" in c and 'cell: "[[Impossible]]"' in c and "Their file: " + MINE.replace(".md", "") in page.inner_text("#acm-view"), c)
+    record("acell-mobile-agents", "no JS errors (own file on the phone)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14866,6 +14888,7 @@ def main():
         safe(test_acell_operation_folders, browser, area="acell-cells")
         safe(test_acell_vault_layout, browser, area="acell-cells")
         safe(test_acell_players_own_file, browser, area="acell-players")
+        safe(test_acell_mobile_own_file, browser, area="acell-mobile-agents")
         safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")
