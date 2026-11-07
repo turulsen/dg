@@ -739,13 +739,16 @@
         '<li><b>Dictionary</b>: <i>path</i> = Updated Text, <i>text</i> = Text.</li></ol>End Repeat.</li>' +
         '<li><b>Dictionary</b>: <i>key</i> = your sync key (above), <i>files</i> = Repeat Results (as an Array).</li>' +
         '<li><b>Get Contents of URL</b>: the address above, Method <b>POST</b>, Request Body <b>File</b> = Dictionary.</li>' +
-        '<li><b>Get Dictionary Value</b> <i>write</i>, then <b>Repeat with Each</b>:' +
-        '<ol><li><b>Get Dictionary Value</b> <i>text</i> from Repeat Item.</li>' +
-        '<li><b>Set Name</b> of that text to the Repeat Item\'s <i>name</i> (it ends in .md). Tap the arrow on Set Name and turn <b>Don\'t Include File Extension</b> on: without it the phone saves the note as <i>.txt</i>, which Obsidian doesn\'t read.</li>' +
-        '<li><b>Save File</b> (the renamed text) to your vault folder, Subpath = the Repeat Item\'s <i>folder</i>, <b>Ask Where to Save</b> off, <b>Overwrite If File Exists</b> on.</li></ol>End Repeat.</li>' +
+        '<li><b>Get Dictionary Value</b> <i>write</i>, then <b>Repeat with Each</b>. Inside it, in this order:' +
+        '<ol><li><b>Get Dictionary Value</b>: <i>text</i> in Repeat Item.</li>' +
+        '<li><b>Text</b>: the Dictionary Value above (without this step the phone saves the note as .txt).</li>' +
+        '<li><b>Get Dictionary Value</b>: <i>name</i> in Repeat Item → <b>Set Variable</b> <i>Name</i>.</li>' +
+        '<li><b>Get Dictionary Value</b>: <i>path</i> in Repeat Item → <b>Set Variable</b> <i>Path</i>.</li>' +
+        '<li><b>Set Name</b> of <i>Text</i> to <i>Name</i>, <b>Don\'t Include File Extension</b> on.</li>' +
+        '<li><b>Save File</b>: Renamed Item to your vault folder, Subpath = <i>Path</i> (the whole path, file name included: on a phone Subpath is the file, not a folder), <b>Ask Where to Save</b> off, <b>Overwrite If File Exists</b> on.</li></ol>End Repeat.</li>' +
         '<li>Optional: Automation → <b>App</b> → Obsidian <b>is closed</b> → Run <b>Sync DG vault</b>, Run Immediately.</li>' +
         '</ol>' +
-        '<p class="vn-small"><b>Notes arriving as .txt?</b> That\'s step 7: set the name on its own with Don\'t Include File Extension on, and save to the <i>folder</i>. The next sync sends those notes again as .md; then delete the .txt copies.</p>' +
+        '<p class="vn-small"><b>Notes arriving as .txt?</b> That\'s step 7: the note needs the <b>Text</b> step before Set Name, and Save File\'s Subpath is the whole <i>path</i>. The next sync sends those notes again as .md; then delete the .txt copies.</p>' +
         '<p class="vn-small">Notes changed on both sides are kept twice ("Name (A-Cell).md") rather than one overwriting the other. A note deleted on the phone goes from A-Cell too, unless you changed it here since.</p>' +
         '<h4>Vault activity</h4><p class="vn-small">Every note A-Cell made, changed or deleted, newest first. Tap one to open it.</p><div class="vn-act"><div class="vn-empty">Loading…</div></div>' +
         '<h4>Without the Shortcut</h4>' +
