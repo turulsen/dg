@@ -171,7 +171,7 @@ function reconcile(notes, files) {
         stats.removed += 1; stats.moved_away = (stats.moved_away || 0) + 1; stats.conflicts += 1; stats.sent += 1;
       } else {
         stats.held_orphans = (stats.held_orphans || 0) + 1;
-        (stats.held_paths = stats.held_paths || []).length < 20 && stats.held_paths.push(path);
+        (stats.held_paths = stats.held_paths || []).length < 200 && stats.held_paths.push(path);
       }
       return;
     }

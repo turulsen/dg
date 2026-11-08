@@ -5783,6 +5783,37 @@ def test_acell_play_evidence_viewer(p):
     record("acell-play", "no JS errors (evidence viewer)", not errs, str(errs))
     page.close()
 
+def test_acell_vault_held_move(p):
+    """2026-11-08: notes the sync holds (their folder gone from the phone)
+    are listed in the Notes vault settings, each with Move to... (into a
+    folder that exists; beside a same-named note as "(A-Cell)", never over
+    it) and Delete."""
+    page, errs = open_acell_shell(p)
+    page.evaluate("""() => { window.__dgFirestoreDocs['vault_meta/config'] = { key: 'k'.repeat(32), last_sync: { at: Date.now(), files: 3, created: 0, updated: 0, sent: 0, conflicts: 0,
+        held_orphans: 2, held_paths: ['Old Op/NPCs/Sheriff Dunn.md', 'Players/Charles D. Martinez.md'] } };
+      return dgVault.load().then(() => Promise.all([
+        dgVault.save('Old Op/NPCs/Sheriff Dunn.md', '# Sheriff Dunn\\n\\nKeeps the keys.\\n'),
+        dgVault.save('Players/Charles D. Martinez.md', '# Charles\\n'),
+        dgVault.save('Impossible/Night Floors/Phase A/NPCs/Ruth.md', '# Ruth\\n')])); }""")
+    page.evaluate("() => dgVault.settings()")
+    wait_for_condition(lambda: page.locator(".vn-hrow").count() == 2, timeout_ms=5000)
+    record("acell-vault", "held notes are listed in the vault settings, each with Move to... and Delete",
+           page.locator(".vn-hrow [data-vhmove]").count() == 2 and page.locator(".vn-hrow [data-vhdel]").count() == 2, page.inner_text(".vn-held"))
+    page.click(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhmove]")
+    page.select_option(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhdir]", "Impossible/Night Floors/Phase A/NPCs")
+    page.click(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhok]")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Impossible/Night Floors/Phase A/NPCs/Sheriff Dunn.md')"), timeout_ms=5000)
+    page.wait_for_timeout(300)
+    record("acell-vault", "Move to... puts the note into the folder picked (its text kept), the old path gone, off the list",
+           page.evaluate("() => (dgVault.get('Impossible/Night Floors/Phase A/NPCs/Sheriff Dunn.md') || {}).content") == "# Sheriff Dunn\n\nKeeps the keys.\n"
+           and page.evaluate("() => !dgVault.get('Old Op/NPCs/Sheriff Dunn.md')") and page.locator(".vn-hrow").count() == 1, "")
+    page.click(".vn-hrow[data-vheld='Players/Charles D. Martinez.md'] [data-vhdel]")
+    if page.locator("[data-yes]").count(): page.click("[data-yes]")
+    wait_for_condition(lambda: page.evaluate("() => !dgVault.get('Players/Charles D. Martinez.md')"), timeout_ms=5000)
+    record("acell-vault", "Delete removes a held note from A-Cell", page.evaluate("() => !dgVault.get('Players/Charles D. Martinez.md')"), "")
+    record("acell-vault", "no JS errors (held notes)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14961,6 +14992,7 @@ def main():
         safe(test_acell_mobile_own_file, browser, area="acell-mobile-agents")
         safe(test_acell_play_notes_nav, browser, area="acell-play")
         safe(test_acell_play_evidence_viewer, browser, area="acell-play")
+        safe(test_acell_vault_held_move, browser, area="acell-vault")
         safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")
