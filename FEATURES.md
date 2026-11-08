@@ -948,7 +948,10 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   WP/SAN, which later change in place); a `[[link]]` note in the phase
   it's linked from; a new operation gets its folder beside the
   Cell-Index with an Index note, linked there. Operations without an
-  Index keep the older layout. **Following the vault**: an operation's
+  Index keep the older layout. Since v3.18.0 the Phase select ends with
+  **+ New phase…** (`makePhase`): a name, then the phase's folder with
+  its note (the operation's properties, tag `phase`), a link in the
+  Index's `phases:`, and the new phase selected. **Following the vault**: an operation's
   folder follows its Index note, or (emptied) the folder now holding its
   notes; session note, NPC and debrief paths that are gone point to the
   note's new place; a new operation uses a same-named folder instead of
@@ -971,7 +974,10 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   it gets the change at its new path; notes moved elsewhere don't trip
   the mass-delete guard (`movedAway`); a folder gone from the phone is
   never recreated (A-Cell's version beside a same-named note as
-  "(A-Cell)", or held and listed as Held).
+  "(A-Cell)", or held and listed as Held). Since v3.18.0 the Notes
+  vault settings list the held notes (up to 200) with **Move to…** (into
+  a folder the vault has, beside a same-named note as "(A-Cell)") and
+  **Delete**.
 - **Tapes** (`assets/acell-tapes.js`, Firestore `tapes/{id}`): a
   cassette per operation or Cell with its tracks (library tracks and
   links), the loops under them and its effect pads. Putting one in a
@@ -1021,7 +1027,7 @@ Tests: `test_acell_mobile_*`, `test_acell_tape_steps_once`,
 `test_acell_operation_folders`, `test_acell_vault_layout`,
 `test_acell_players_own_file`, `test_acell_mobile_own_file`,
 `test_vault_sync_rules`, `test_acell_play_notes_nav`,
-`test_acell_play_evidence_viewer`.
+`test_acell_play_evidence_viewer`, `test_acell_vault_held_move`.
 
 ## 7. Table Radio (shared music widget)
 

@@ -7332,3 +7332,19 @@ so following a thread meant leaving Play and finding the way back. The
 note now opens in the notebook, with Back / Forward and a Notes menu.
 The evidence box gained a viewer on the same request. No fixes shipped
 in this release.
+
+## New phases and held notes (v3.18.0, PR #99)
+
+Two requests, no fixes shipped.
+- **+ New phase…** in the session form's Phase select: making a phase
+  no longer needs a trip to Obsidian.
+- **Move to… / Delete** for held vault notes: notes the sync holds
+  because their folder is gone from the phone (see v3.16.0) no longer
+  have to be dealt with by hand. The sync's held list grew from 20 to
+  200.
+
+**Noticed, not fixed:** `test_acell_mobile_typing_kept` failed in some
+runs on `main` as well as on this branch. The text typed after a pause
+landed where the cursor had been before the save. The phone keyboard
+fix from v3.14.0 may need another look. The Handler was asked whether
+they see it on their iPhone.
