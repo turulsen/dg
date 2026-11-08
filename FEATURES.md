@@ -926,6 +926,42 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   Shift+Tab indent, and Enter carries a list on; numbered lists count
   from the first item ("1. 1. 1." reads 1, 2, 3), in Evidence too. On
   a phone the screen doesn't redraw while a note has the keyboard.
+- **The Handler's vault layout** (v3.16.0, `dgAcm.layout` in
+  `assets/acell-mobile.js`): Cell folder (`Cell-Index.md`) › operation
+  folder (`Index - <Operation>.md`, found by its `operation:` property or
+  its name, wherever it is; its properties are every note's) › phase
+  folders (`NPCs/`, `Locations/`, `Investigation/`). A session has a
+  `phase` (a Phase select in the session form). A new session note is
+  `SN- <Operation> - pt.N` (the next N) with the Index's properties, its
+  date as `dat` and the `session` tag, and is added to the Index's
+  `sessions:`; a new NPC goes in the phase's `NPCs/` (tag `npc`, DEX/HP/
+  WP/SAN, which later change in place); a `[[link]]` note in the phase
+  it's linked from; a new operation gets its folder beside the
+  Cell-Index with an Index note, linked there. Operations without an
+  Index keep the older layout. **Following the vault**: an operation's
+  folder follows its Index note, or (emptied) the folder now holding its
+  notes; session note, NPC and debrief paths that are gone point to the
+  note's new place; a new operation uses a same-named folder instead of
+  making another. A-Cell never moves files: folders are renamed and
+  merged in Obsidian. **Vault activity** (`vault_meta/activity`, the
+  last 300) lists every note A-Cell made, changed or deleted, with why.
+- **Player files** (v3.16.0): the Handler's own note on an Agent is
+  suggested by name (Players tab and the phone's Agent screen); Use it
+  adds `agent code:` to its properties and makes it the player file
+  (`A.playerPath` finds it by that); A-Cell's `Players/<name>.md` is
+  merged in under the same headings.
+- **Cells tab operations** (v3.16.0): each Cell card lists its
+  operations with Rename, Delete, + Operation and Folder… (point it at
+  any vault folder), its vault folder and note count, and a same-named
+  folder elsewhere.
+- **The phone sync** (`functions/vault-sync.js`, v3.16.0): the write list
+  carries each note's `name` and `folder`; the Shortcut needs a Text step
+  before Set Name and Save File's Subpath = the whole path (on a phone
+  Subpath names the file). A note moved on the phone after A-Cell changed
+  it gets the change at its new path; notes moved elsewhere don't trip
+  the mass-delete guard (`movedAway`); a folder gone from the phone is
+  never recreated (A-Cell's version beside a same-named note as
+  "(A-Cell)", or held and listed as Held).
 - **Tapes** (`assets/acell-tapes.js`, Firestore `tapes/{id}`): a
   cassette per operation or Cell with its tracks (library tracks and
   links), the loops under them and its effect pads. Putting one in a
@@ -971,7 +1007,10 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
 Tests: `test_acell_mobile_*`, `test_acell_tape_steps_once`,
 `test_acell_session_notes_desk`, `test_acell_desk_player`,
 `test_acell_link_suggest`, `test_acell_vault_format`,
-`test_acell_hear_here`.
+`test_acell_hear_here`, `test_acell_cell_operations`,
+`test_acell_operation_folders`, `test_acell_vault_layout`,
+`test_acell_players_own_file`, `test_acell_mobile_own_file`,
+`test_vault_sync_rules`.
 
 ## 7. Table Radio (shared music widget)
 
