@@ -298,3 +298,37 @@ body.acm .acm-cxbox [data-cc=live] .cc-mini{ min-height:34px; min-width:38px; }
 .pd-grid .pd-notebook .pd-ntabs{ flex:none; }
 .pd-grid .pd-notebook .pd-nbody{ flex:1; min-height:0; display:flex; flex-direction:column; }
 .pd-grid .pd-notebook .pd-nbody > .pd-page{ flex:1; min-height:0; height:auto; overflow:auto; -webkit-overflow-scrolling:touch; }
+
+/* Moving between vault notes in Play (2026-11-08) */
+.pd-grid .pd-notebook > .pd-ob{ position:relative; }
+.pd-nnav{ flex:none; display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:6px 10px; background:#efe6c8; border-bottom:1px solid #d8cba6; }
+.pd-nnav button{ font:10.5px 'Special Elite','Courier New',monospace; letter-spacing:.08em; text-transform:uppercase; background:transparent; border:1px solid #8a7a5a; color:#2a2418; padding:5px 9px; cursor:pointer; border-radius:0; }
+.pd-nnav button:disabled{ opacity:.35; cursor:default; }
+.pd-nnav button.on{ background:#1c1608; color:#f2d98a; border-color:#1c1608; }
+.pd-crumb{ flex:1 1 160px; min-width:0; font:12px 'Courier Prime',monospace; color:#5a4e38; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pd-crumb b{ color:#2a2418; font-weight:700; }
+.pd-nmenu{ position:absolute; left:0; bottom:0; width:min(280px, 85%); z-index:6; overflow:auto; background:#e9dfbf; border-right:1px solid #a8925a; box-shadow:6px 0 16px rgba(0,0,0,.3); padding:6px 10px 14px; font:13px 'Courier Prime',monospace; }
+.pd-nmenu h4{ font:10.5px 'Special Elite',monospace; letter-spacing:.16em; text-transform:uppercase; color:#4a3f28; margin:12px 0 4px; }
+.pd-nmenu button{ display:block; width:100%; text-align:left; background:none; border:0; padding:4px 6px 4px calc(6px + var(--d, 0) * 12px); font:inherit; color:#2a2418; cursor:pointer; border-radius:0; }
+.pd-nmenu button:hover{ background:rgba(0,0,0,.06); }
+.pd-nmenu button.on{ background:#1c1608; color:#f2d98a; }
+.pd-nmenu button small{ color:#8a7a5a; font-size:10.5px; }
+.pd-nm-dir{ padding:6px 6px 2px calc(6px + var(--d, 0) * 12px); font:10.5px 'Special Elite',monospace; letter-spacing:.1em; text-transform:uppercase; color:#8a7a5a; }
+.pd-grid .pd-notebook .pd-nbody > .pd-visit{ padding-top:8px; }
+
+/* The evidence viewer (2026-11-08) */
+.pd-f .pd-fopen{ flex:1 1 auto; min-width:0; text-align:left; font:inherit; font-size:12.5px; color:#2a2418; background:none; border:0; padding:0; cursor:pointer; white-space:normal; overflow-wrap:anywhere; }
+.pd-f .pd-fopen:hover{ text-decoration:underline; }
+.pd-evmodal .vn-sheet{ width:min(780px, calc(100vw - 24px)); max-width:none; padding:0; overflow:hidden; }
+.pd-evv{ display:grid; grid-template-columns:minmax(220px, 300px) 1fr; max-height:84vh; }
+.pd-evph{ background:#2a2418; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:18px; min-height:300px; color:#d9ccaa; font:11px 'Special Elite',monospace; letter-spacing:.1em; text-transform:uppercase; }
+.pd-evph img{ max-width:100%; max-height:60vh; box-shadow:0 8px 20px rgba(0,0,0,.5); cursor:zoom-in; }
+.pd-evtx{ padding:18px 20px; overflow:auto; font-family:'Courier Prime',monospace; color:#1c1608; }
+.pd-evtx h3{ font:400 22px 'Special Elite',serif; margin:6px 0 2px; }
+.pd-evmeta{ font-size:11.5px; color:#5a4e38; margin-bottom:12px; }
+.pd-evst{ display:inline-block; font:10.5px 'Special Elite',monospace; letter-spacing:.12em; text-transform:uppercase; background:#c48a1a; color:#fff; padding:2px 7px; }
+.pd-evst.on{ background:#2c5a22; }
+.pd-evbody{ font-size:13.5px; line-height:1.5; }
+.pd-evacts{ display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+.pd-evacts .ac-btn:disabled{ opacity:.4; }
+@media (max-width:640px){ .pd-evv{ grid-template-columns:1fr; } .pd-evph{ min-height:180px; } }

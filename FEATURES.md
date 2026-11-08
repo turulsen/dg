@@ -926,6 +926,16 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   Shift+Tab indent, and Enter carries a list on; numbered lists count
   from the first item ("1. 1. 1." reads 1, 2, 3), in Evidence too. On
   a phone the screen doesn't redraw while a note has the keyboard.
+- **The Play desk's notebook and evidence viewer** (v3.17.0,
+  `assets/acell-play.js`): a `[[link]]` opens its note in the notebook
+  (`goNote`; Play stays), ‹ Back / Forward › walk `st.trail`, the crumb
+  shows it, Back to the session note returns; ☰ Notes lists the
+  session's notes, the operation's folder (its Index's folder, by
+  subfolder) and the notes visited. An Evidence box item opens in a
+  viewer (`evView`): the photo (zoom with `assets/evidence-viewer.js`,
+  now loaded by `a-cell.html`) or Open PDF, where it's filed, its text,
+  Release / Unrelease, ‹ Prev / Next › through the box, Edit (the item's
+  form; `dgAcellEvidence.edit`, `photoSrc`, `isPdf`).
 - **The Handler's vault layout** (v3.16.0, `dgAcm.layout` in
   `assets/acell-mobile.js`): Cell folder (`Cell-Index.md`) › operation
   folder (`Index - <Operation>.md`, found by its `operation:` property or
@@ -1010,7 +1020,8 @@ Tests: `test_acell_mobile_*`, `test_acell_tape_steps_once`,
 `test_acell_hear_here`, `test_acell_cell_operations`,
 `test_acell_operation_folders`, `test_acell_vault_layout`,
 `test_acell_players_own_file`, `test_acell_mobile_own_file`,
-`test_vault_sync_rules`.
+`test_vault_sync_rules`, `test_acell_play_notes_nav`,
+`test_acell_play_evidence_viewer`.
 
 ## 7. Table Radio (shared music widget)
 

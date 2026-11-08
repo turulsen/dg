@@ -7323,3 +7323,12 @@ lost to such a redraw.
 **An older copy of a session or tape could overwrite a fresh save.**
 A snapshot from before A-Cell's own save could arrive just after it.
 Within ten seconds of a save, an older copy is now ignored.
+
+## Moving between notes in Play (v3.17.0, PR #98)
+
+Not a bug: a request from play. A `[[link]]` in the Play desk's
+notebook switched A-Cell to Prep and opened the note on the Notes tab,
+so following a thread meant leaving Play and finding the way back. The
+note now opens in the notebook, with Back / Forward and a Notes menu.
+The evidence box gained a viewer on the same request. No fixes shipped
+in this release.
