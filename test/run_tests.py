@@ -5621,10 +5621,24 @@ def test_acell_vault_layout(p):
     # The session form's Phase select.
     page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); dgSessions.setCurrent(s.id); }")
     page.evaluate("() => window.dgAc.editSession(dgSessions.list().find(s => s.name === 'Dorchester by Night'))")
-    wait_for_condition(lambda: page.locator("form.ac-form select[name=phase] option").count() == 3, timeout_ms=4000)
+    wait_for_condition(lambda: page.locator("form.ac-form select[name=phase] option").count() == 4, timeout_ms=4000)
     opts = page.eval_on_selector_all("form.ac-form select[name=phase] option", "els => els.map(e => [e.textContent, e.selected])")
-    record("acell-layout", "the session form has a Phase select with the operation's phases, the session's chosen",
-           [o[0] for o in opts][1:] == ["Dorchester House", "INDIA MOON"] and opts[1][1] is True, str(opts))
+    record("acell-layout", "the session form has a Phase select with the operation's phases, the session's chosen, and + New phase…",
+           [o[0] for o in opts][1:] == ["Dorchester House", "INDIA MOON", "+ New phase…"] and opts[1][1] is True, str(opts))
+    # + New phase… in the Phase select: a folder with its note, in the Index's phases:, selected.
+    page.select_option("form.ac-form select[name=phase]", "__new")
+    page.fill("form.ac-form [data-newphase] input", "Night Shift")
+    page.click("form.ac-form [data-newphase] button")
+    wait_for_condition(lambda: page.evaluate("(p) => !!dgVault.get(p)", OPD + "/Night Shift/Night Shift.md"), timeout_ms=5000)
+    page.wait_for_timeout(300)
+    pn = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", OPD + "/Night Shift/Night Shift.md")
+    ix = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", IDX)
+    record("acell-layout", "+ New phase…: its folder and note (the operation's properties, tag phase), listed in the Index's phases:, selected",
+           "operation: A Volume of Secret Faces" in pn and "tags:\n  - phase" in pn and '  - "[[Night Shift]]"' in ix
+           and page.input_value("form.ac-form select[name=phase]") == OPD + "/Night Shift", pn[:300] + " | " + ix[:400])
+    page.click("form.ac-form button[type=submit]")
+    wait_for_condition(lambda: page.evaluate("(d) => (dgSessions.list().find(s => s.name === 'Dorchester by Night') || {}).phase === d", OPD + "/Night Shift"), timeout_ms=4000)
+    record("acell-layout", "…and the session saves with the new phase", page.evaluate("(d) => (dgSessions.list().find(s => s.name === 'Dorchester by Night') || {}).phase === d", OPD + "/Night Shift"), "")
     # Make NPC on a note keeps its properties (it replaced them before).
     mk = page.evaluate("""() => dgAcm.layout.asNpc('---\\ncell: "[[Impossible]]"\\ntags:\\n  - location\\n---\\n# Gail', { dex: 10, hp: 10, wp: 10, san: 0 })""")
     record("acell-layout", "Make NPC adds the numbers and the npc tag, keeping the note's own properties",
@@ -5781,6 +5795,37 @@ def test_acell_play_evidence_viewer(p):
     record("acell-play", "Edit opens the item's form on the Evidence tab",
            page.locator("#evidence-new-title").count() == 1 and page.input_value("#evidence-new-title") == "Tide chart" and page.locator(".pd-evmodal").count() == 0, "")
     record("acell-play", "no JS errors (evidence viewer)", not errs, str(errs))
+    page.close()
+
+def test_acell_vault_held_move(p):
+    """2026-11-08: notes the sync holds (their folder gone from the phone)
+    are listed in the Notes vault settings, each with Move to... (into a
+    folder that exists; beside a same-named note as "(A-Cell)", never over
+    it) and Delete."""
+    page, errs = open_acell_shell(p)
+    page.evaluate("""() => { window.__dgFirestoreDocs['vault_meta/config'] = { key: 'k'.repeat(32), last_sync: { at: Date.now(), files: 3, created: 0, updated: 0, sent: 0, conflicts: 0,
+        held_orphans: 2, held_paths: ['Old Op/NPCs/Sheriff Dunn.md', 'Players/Charles D. Martinez.md'] } };
+      return dgVault.load().then(() => Promise.all([
+        dgVault.save('Old Op/NPCs/Sheriff Dunn.md', '# Sheriff Dunn\\n\\nKeeps the keys.\\n'),
+        dgVault.save('Players/Charles D. Martinez.md', '# Charles\\n'),
+        dgVault.save('Impossible/Night Floors/Phase A/NPCs/Ruth.md', '# Ruth\\n')])); }""")
+    page.evaluate("() => dgVault.settings()")
+    wait_for_condition(lambda: page.locator(".vn-hrow").count() == 2, timeout_ms=5000)
+    record("acell-vault", "held notes are listed in the vault settings, each with Move to... and Delete",
+           page.locator(".vn-hrow [data-vhmove]").count() == 2 and page.locator(".vn-hrow [data-vhdel]").count() == 2, page.inner_text(".vn-held"))
+    page.click(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhmove]")
+    page.select_option(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhdir]", "Impossible/Night Floors/Phase A/NPCs")
+    page.click(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhok]")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Impossible/Night Floors/Phase A/NPCs/Sheriff Dunn.md')"), timeout_ms=5000)
+    page.wait_for_timeout(300)
+    record("acell-vault", "Move to... puts the note into the folder picked (its text kept), the old path gone, off the list",
+           page.evaluate("() => (dgVault.get('Impossible/Night Floors/Phase A/NPCs/Sheriff Dunn.md') || {}).content") == "# Sheriff Dunn\n\nKeeps the keys.\n"
+           and page.evaluate("() => !dgVault.get('Old Op/NPCs/Sheriff Dunn.md')") and page.locator(".vn-hrow").count() == 1, "")
+    page.click(".vn-hrow[data-vheld='Players/Charles D. Martinez.md'] [data-vhdel]")
+    if page.locator("[data-yes]").count(): page.click("[data-yes]")
+    wait_for_condition(lambda: page.evaluate("() => !dgVault.get('Players/Charles D. Martinez.md')"), timeout_ms=5000)
+    record("acell-vault", "Delete removes a held note from A-Cell", page.evaluate("() => !dgVault.get('Players/Charles D. Martinez.md')"), "")
+    record("acell-vault", "no JS errors (held notes)", not errs, str(errs))
     page.close()
 
 def test_acell_console(p):
@@ -14961,6 +15006,7 @@ def main():
         safe(test_acell_mobile_own_file, browser, area="acell-mobile-agents")
         safe(test_acell_play_notes_nav, browser, area="acell-play")
         safe(test_acell_play_evidence_viewer, browser, area="acell-play")
+        safe(test_acell_vault_held_move, browser, area="acell-vault")
         safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")

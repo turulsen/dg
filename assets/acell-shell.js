@@ -260,7 +260,7 @@
     if (window.dgVault) window.dgVault.load().then(phases, function () {});
     f.addEventListener('submit', function (e) {
       e.preventDefault();
-      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value, phase: f.phase.value };
+      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value, phase: f.phase.value === '__new' ? '' : f.phase.value };
       w.remove();
       if (s) S().update(s.id, fields); else S().create(fields);
     });

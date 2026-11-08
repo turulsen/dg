@@ -375,3 +375,9 @@ body.acm .acm-wx{ min-width:36px; padding:0 8px; margin-left:4px; border-color:t
 #acm-loose .acm-sheet{ left:50%; right:auto; bottom:auto; top:10vh; width:min(520px, calc(100% - 32px)); max-height:80vh; transform:translateX(-50%); padding:14px 20px 22px; box-shadow:0 18px 40px rgba(0,0,0,.55); }
 #acm-loose .acm-grab{ display:none; }
 #acm-loose .acm-toast{ left:50%; right:auto; bottom:32px; transform:translateX(-50%); width:max-content; max-width:min(440px, calc(100% - 32px)); }
+
+/* + New phase… in the session form's Phase select (2026-11-08) */
+.acm-newphase{ display:flex; gap:6px; margin-top:6px; }
+.acm-newphase[hidden]{ display:none; }
+.acm-newphase input{ flex:1; min-width:0; font:14px 'Courier Prime',monospace; padding:8px 10px; border:1px solid #cbbd94; border-radius:0; background:#fff; color:#1c1608; text-transform:none; letter-spacing:0; }
+.acm-newphase button{ font:11px 'Special Elite',monospace; letter-spacing:.1em; text-transform:uppercase; padding:0 12px; background:#1c1608; color:#f4eed8; border:0; border-radius:0; cursor:pointer; }

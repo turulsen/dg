@@ -722,7 +722,13 @@
         '<div class="vn-row"><span>Last sync</span><b>' + (last ? new Date(last.at).toLocaleString() + ' · ' + last.files + ' notes · ' + (last.created + last.updated) + ' in, ' + last.sent + ' out' + (last.conflicts ? ', ' + last.conflicts + ' kept twice' : '') : 'never') + '</b></div>' +
         '<div class="vn-row"><span>Notes in A-Cell</span><b>' + notes().length + '</b></div>' +
         // Changed here, but their folder is gone from the phone: kept, not sent (the sync won't recreate a folder).
-        (last && last.held_orphans ? '<div class="vn-row"><span>Held</span><b>' + last.held_orphans + ' changed in A-Cell, their folder gone from your phone: ' + esc((last.held_paths || []).join(' · ')) + '</b></div>' : '') +
+        (heldList(last).length ? '<h4>Held</h4><p class="vn-small">Changed in A-Cell, but their folder is gone from your phone, so the sync doesn\'t send them (it won\'t recreate a folder). Move each into a folder you have, or delete it.</p><div class="vn-held">' +
+          heldList(last).map(function (p) {
+            return '<div class="vn-hrow" data-vheld="' + esc(p) + '"><span class="vn-hp">' + esc(p.replace(/\.md$/i, '')) + '</span>' +
+              '<button type="button" class="vn-btn" data-vhmove>Move to…</button><button type="button" class="vn-btn vn-del" data-vhdel>Delete</button>' +
+              (heldPick === p ? '<div class="vn-hpick"><select class="vn-search" data-vhdir>' + folders().map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('') + '</select>' +
+                '<button type="button" class="vn-btn p" data-vhok>Move it</button><button type="button" class="vn-btn" data-vhx>Cancel</button></div>' : '') + '</div>';
+          }).join('') + '</div>' : '') +
         '<h4>1 · Sync key</h4>' +
         (cfg.key ? '<div class="vn-key"><code class="vn-keyv">' + esc(cfg.key) + '</code><button type="button" class="vn-btn" data-vcopy>Copy</button><button type="button" class="vn-btn" data-vrekey>New key</button></div>'
           : '<div class="vn-key"><button type="button" class="vn-btn p" data-vrekey>Make a sync key</button></div>') +
@@ -754,7 +760,14 @@
         '<h4>Without the Shortcut</h4>' +
         '<div class="vn-key"><label class="vn-btn">⇪ Import .md files<input type="file" accept=".md,text/markdown" multiple hidden data-vimport></label><button type="button" class="vn-btn" data-vexport>⇩ Export all as .zip</button><span class="vn-status"></span></div>';
     }
-    var cfgRef = null, cfgNow = {};
+    var cfgRef = null, cfgNow = {}, heldPick = '', heldDone = {};
+    // The held notes A-Cell still has (the last sync's list, less those moved or deleted here since).
+    function heldList(last) { return ((last && last.held_paths) || []).filter(function (p) { return !heldDone[p] && get(p); }); }
+    function folders() {
+      var out = {};
+      notes().forEach(function (n) { var sg = n.path.split('/'); for (var i = 1; i < sg.length; i++) out[sg.slice(0, i).join('/')] = true; });
+      return Object.keys(out).sort(byName);
+    }
     fb().then(function (f) {
       cfgRef = f.firestore().collection('vault_meta').doc('config');
       return Promise.all([cfgRef.get(), load()]);
@@ -776,6 +789,28 @@
     function onAct() { if (!w.isConnected) { document.removeEventListener('dg-vault-activity', onAct); return; } drawAct(); }
     document.addEventListener('dg-vault-activity', onAct);
     w.addEventListener('click', function (e) {
+      var hr = e.target.closest('[data-vheld]');
+      if (hr) {
+        var hp = hr.getAttribute('data-vheld');
+        if (e.target.closest('[data-vhmove]')) { heldPick = heldPick === hp ? '' : hp; draw(cfgNow); drawAct(); return; }
+        if (e.target.closest('[data-vhx]')) { heldPick = ''; draw(cfgNow); drawAct(); return; }
+        if (e.target.closest('[data-vhdel]')) {
+          var q = 'Delete “' + title(hp) + '” from A-Cell? It isn\'t on your phone.';
+          var go = window.dgAc && window.dgAc.ask ? window.dgAc.ask(q, 'Delete', 'Keep it') : window.dgConfirm ? window.dgConfirm(q, { ok: 'Delete', cancel: 'Keep it' }) : Promise.resolve(window.confirm(q));
+          go.then(function (yes) { if (!yes) return; remove(hp, { why: 'held note deleted' }).then(function () { heldDone[hp] = true; draw(cfgNow); drawAct(); }); });
+          return;
+        }
+        if (e.target.closest('[data-vhok]')) {
+          var dir = hr.querySelector('[data-vhdir]').value, n = get(hp);
+          if (!dir || !n) return;
+          // Into the folder picked; beside a note of that name there, "(A-Cell)" -- never over it.
+          var to = cleanPath(dir + '/' + hp.split('/').pop());
+          if (get(to)) to = to.replace(/\.md$/i, '') + ' (A-Cell).md';
+          save(to, n.content || '', { why: 'moved from ' + hp }).then(function () { return remove(hp, { why: 'moved to ' + to }); })
+            .then(function () { heldDone[hp] = true; heldPick = ''; draw(cfgNow); drawAct(); });
+          return;
+        }
+      }
       if (e.target.closest('[data-vactall]')) { actAll = true; drawAct(); return; }
       var ar = e.target.closest('[data-vact]');
       if (ar) {
