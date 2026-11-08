@@ -611,13 +611,61 @@
   // A form's Phase select, from its Operation select (hidden when the operation has none).
   function phaseOpts(f) {
     if (!f.phase) return;
-    var op = opById(f.op.value), ph = phases(op), wrap = f.querySelector('[data-phasewrap]'), was = f.phase.value || f.phase.getAttribute('data-was') || '';
+    var op = opById(f.op.value), idx = opIndex(op), ph = phases(op), wrap = f.querySelector('[data-phasewrap]'), was = f.phase.value === '__new' ? (f.phase.getAttribute('data-was') || '') : (f.phase.value || f.phase.getAttribute('data-was') || '');
     var key = f.op.value + '|' + ph.join(',');
     if (f.phase.getAttribute('data-key') !== key) {
-      f.phase.innerHTML = '<option value="">— the operation itself —</option>' + ph.map(function (d) { return '<option value="' + esc(d) + '"' + (d === was ? ' selected' : '') + '>' + esc(d.split('/').pop()) + '</option>'; }).join('');
+      f.phase.innerHTML = '<option value="">— the operation itself —</option>' + ph.map(function (d) { return '<option value="' + esc(d) + '"' + (d === was ? ' selected' : '') + '>' + esc(d.split('/').pop()) + '</option>'; }).join('') +
+        (idx ? '<option value="__new">+ New phase…</option>' : '');
       f.phase.setAttribute('data-key', key);
     }
-    if (wrap) wrap.hidden = !ph.length;
+    // In the Handler's layout the select shows even before the first phase, so one can be made.
+    if (wrap) wrap.hidden = !idx;
+    if (wrap && !wrap.querySelector('[data-newphase]')) {
+      wrap.insertAdjacentHTML('beforeend', '<span class="acm-newphase" data-newphase hidden><input type="text" placeholder="Phase name, e.g. Dorchester House" maxlength="80"><button type="button">Add</button></span>');
+      var box = wrap.querySelector('[data-newphase]'), inp = box.querySelector('input');
+      f.phase.addEventListener('change', function () {
+        if (f.phase.value === '__new') { box.hidden = false; inp.focus(); }
+        else { box.hidden = true; f.phase.setAttribute('data-was', f.phase.value); }
+      });
+      function add() {
+        var name = inp.value.trim(), o = opById(f.op.value);
+        if (!name || !o) { inp.focus(); return; }
+        box.querySelector('button').disabled = true;
+        makePhase(o, name).then(function (dir) {
+          box.hidden = true; inp.value = ''; box.querySelector('button').disabled = false;
+          f.phase.setAttribute('data-was', dir); f.phase.removeAttribute('data-key');
+          phaseOpts(f);
+          f.phase.value = dir;
+          f.phase.dispatchEvent(new Event('change', { bubbles: true }));
+        }, function (err) { box.querySelector('button').disabled = false; toast((err && err.message) || String(err)); });
+      }
+      box.querySelector('button').addEventListener('click', add);
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } if (e.key === 'Escape') { box.hidden = true; f.phase.value = f.phase.getAttribute('data-was') || ''; } });
+    }
+  }
+  // A new phase (2026-11-08): its folder under the operation's, with a note of its own
+  // (the operation's properties, tag phase), and a link in the Index's phases:.
+  function makePhase(op, name) {
+    var idx = opIndex(op);
+    if (!idx) return Promise.reject(new Error('This operation has no Index note to put the phase under.'));
+    var dir = idx.dir + '/' + fileName(name), path = V().cleanPath(dir + '/' + fileName(name));
+    var have = phases(op).filter(function (d) { return folderKey(d.split('/').pop()) === folderKey(name); })[0];
+    if (have) return Promise.resolve(have);
+    var md = baseFm(op, 'phase', today()) + '# ' + name + '\n\n## Investigation\n\n## Locations\n\n## NPCs\n';
+    return (V().get(path) ? Promise.resolve() : V().save(path, md, { why: 'new phase ' + name + ' of ' + op.name })).then(function () {
+      var cur = (V().get(idx.path) || {}).content || '', fm = fmOf(cur), link = '"[[' + baseOf(path) + ']]"';
+      if (!fm) return null;
+      var p = prop(fm, 'phases');
+      if (p && vals(p).some(function (v) { return v.toLowerCase() === baseOf(path).toLowerCase(); })) return null;
+      var props = fm.props.map(function (x) {
+        if (x !== p) return x;
+        var items = x.items.slice(); if (!items.length && x.value) items.push(x.value);
+        items.push(link);
+        return mkProp(x.key, '', items);
+      });
+      if (!p) props.push(mkProp('phases', '', [link]));
+      return V().save(idx.path, fmText(props) + fm.body, { why: 'added the phase ' + name + ' to phases:' });
+    }).then(function () { return dir; });
   }
   function sessionsDir(s) { var f = folderOf(s && s.operation_id); return f ? f + '/Sessions' : 'Sessions'; }
   function npcDir(s) { return typeDir(s, 'npc'); }
@@ -759,7 +807,7 @@
             var t = tpls[+f.tpl.value];
             f.querySelector('[data-tplscenes]').textContent = t ? 'Scenes: ' + scenesOf(t.md).join(' · ') : '';
             phaseOpts(f);
-            var where = sessionNotePath({ operation_id: f.op.value, name: f.elements['name'].value || 'Session', phase: f.phase ? f.phase.value : '' });
+            var where = sessionNotePath({ operation_id: f.op.value, name: f.elements['name'].value || 'Session', phase: f.phase && f.phase.value !== '__new' ? f.phase.value : '' });
             f.querySelector('[data-where]').textContent = 'Its note: ' + where + (f.op.value ? ' · the operation\'s tapes come along.' : '');
           }
           f.setAttribute('data-how', how);
@@ -769,7 +817,7 @@
           f.addEventListener('submit', function (e) {
             e.preventDefault();
             var h = f.getAttribute('data-how'), name = f.elements['name'].value.trim() || 'Untitled session';
-            var fields = { name: name, date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value, phase: f.phase ? f.phase.value : '' };
+            var fields = { name: name, date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value, phase: f.phase && f.phase.value !== '__new' ? f.phase.value : '' };
             var src = h === 'copy' ? S().get(f.from.value) : null;
             if (src) ['evidence', 'npcs', 'pads', 'tracks'].forEach(function (k) { fields[k] = JSON.parse(JSON.stringify(src[k] || [])); });
             f.querySelector('button.k').disabled = true;
@@ -1568,7 +1616,7 @@
     ensureOpFolder: ensureOpFolder, createOperation: createOperation, sameNamed: sameNamed, vaultFolders: vaultFolders, folderOf: folderOf,
     followVault: followVault, setOpFolder: setOpFolder, loadOpDocs: loadOpDocs, phaseOpts: phaseOpts,
     layout: { opIndex: opIndex, cellDir: cellDir, phases: phases, phaseOf: phaseOf, typeDir: typeDir, sessionNotePath: sessionNotePath,
-      makeSessionNote: makeSessionNote, forLink: forLink, baseFm: baseFm, fmOf: fmOf, withFm: withFm, setFm: setFm, asNpc: asNpc }, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
+      makeSessionNote: makeSessionNote, makePhase: makePhase, forLink: forLink, baseFm: baseFm, fmOf: fmOf, withFm: withFm, setFm: setFm, asNpc: asNpc }, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
     enable: function () { A.keep('dg_acm_desktop', false); check(); }
   };
   // After the other phone screens (acell-mobile-*.js) have registered.

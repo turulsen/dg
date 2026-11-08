@@ -5621,10 +5621,24 @@ def test_acell_vault_layout(p):
     # The session form's Phase select.
     page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); dgSessions.setCurrent(s.id); }")
     page.evaluate("() => window.dgAc.editSession(dgSessions.list().find(s => s.name === 'Dorchester by Night'))")
-    wait_for_condition(lambda: page.locator("form.ac-form select[name=phase] option").count() == 3, timeout_ms=4000)
+    wait_for_condition(lambda: page.locator("form.ac-form select[name=phase] option").count() == 4, timeout_ms=4000)
     opts = page.eval_on_selector_all("form.ac-form select[name=phase] option", "els => els.map(e => [e.textContent, e.selected])")
-    record("acell-layout", "the session form has a Phase select with the operation's phases, the session's chosen",
-           [o[0] for o in opts][1:] == ["Dorchester House", "INDIA MOON"] and opts[1][1] is True, str(opts))
+    record("acell-layout", "the session form has a Phase select with the operation's phases, the session's chosen, and + New phase…",
+           [o[0] for o in opts][1:] == ["Dorchester House", "INDIA MOON", "+ New phase…"] and opts[1][1] is True, str(opts))
+    # + New phase… in the Phase select: a folder with its note, in the Index's phases:, selected.
+    page.select_option("form.ac-form select[name=phase]", "__new")
+    page.fill("form.ac-form [data-newphase] input", "Night Shift")
+    page.click("form.ac-form [data-newphase] button")
+    wait_for_condition(lambda: page.evaluate("(p) => !!dgVault.get(p)", OPD + "/Night Shift/Night Shift.md"), timeout_ms=5000)
+    page.wait_for_timeout(300)
+    pn = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", OPD + "/Night Shift/Night Shift.md")
+    ix = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", IDX)
+    record("acell-layout", "+ New phase…: its folder and note (the operation's properties, tag phase), listed in the Index's phases:, selected",
+           "operation: A Volume of Secret Faces" in pn and "tags:\n  - phase" in pn and '  - "[[Night Shift]]"' in ix
+           and page.input_value("form.ac-form select[name=phase]") == OPD + "/Night Shift", pn[:300] + " | " + ix[:400])
+    page.click("form.ac-form button[type=submit]")
+    wait_for_condition(lambda: page.evaluate("(d) => (dgSessions.list().find(s => s.name === 'Dorchester by Night') || {}).phase === d", OPD + "/Night Shift"), timeout_ms=4000)
+    record("acell-layout", "…and the session saves with the new phase", page.evaluate("(d) => (dgSessions.list().find(s => s.name === 'Dorchester by Night') || {}).phase === d", OPD + "/Night Shift"), "")
     # Make NPC on a note keeps its properties (it replaced them before).
     mk = page.evaluate("""() => dgAcm.layout.asNpc('---\\ncell: "[[Impossible]]"\\ntags:\\n  - location\\n---\\n# Gail', { dex: 10, hp: 10, wp: 10, san: 0 })""")
     record("acell-layout", "Make NPC adds the numbers and the npc tag, keeping the note's own properties",

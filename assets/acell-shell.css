@@ -420,3 +420,9 @@ body.acm .cc-desk .cc-air{ font-size:9.5px; padding:3px 6px; white-space:nowrap;
 .ac-sheetmodal .as-photo{ width:96px; height:120px; flex:none; overflow:hidden; border:1px solid #c9bd99; background:#e9dfbf; box-shadow:0 2px 4px rgba(0,0,0,.2); }
 .ac-sheetmodal .as-photo .ac-paperpic, .ac-sheetmodal .as-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
 @media (max-width:760px){ .ac-sheetmodal .as-photo{ width:72px; height:90px; } }
+
+/* + New phase… in the session form's Phase select (2026-11-08) */
+.acm-newphase{ display:flex; gap:6px; margin-top:6px; }
+.acm-newphase[hidden]{ display:none; }
+.acm-newphase input{ flex:1; min-width:0; font:14px 'Courier Prime',monospace; padding:8px 10px; border:1px solid #cbbd94; border-radius:0; background:#fff; color:#1c1608; text-transform:none; letter-spacing:0; }
+.acm-newphase button{ font:11px 'Special Elite',monospace; letter-spacing:.1em; text-transform:uppercase; padding:0 12px; background:#1c1608; color:#f4eed8; border:0; border-radius:0; cursor:pointer; }
