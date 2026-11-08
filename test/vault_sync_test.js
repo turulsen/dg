@@ -55,4 +55,47 @@ x = r([{ path: 'a.md', content: 'Tur\u00e9 edit', synced: 'old', pending: 'Tur\u
 check('the phone saved it with decomposed accents / CRLF / a trailing newline: still agreed, not sent again', !x.write.length && x.stats.same === 1, x);
 x = r([{ path: 'S/Lover - 27-01.md', content: '# test\nx', synced: '# old', pending: '# test\nx' }, { path: 'S/Lover - 27-01-26.md', content: '# test\nx', synced: '# test\nx' }], [{ path: 'S/Lover - 27-01-26.md', text: '# test\nx' }]);
 check('a leftover copy under an old path, with text the phone already has: removed, not sent again', !x.write.length && x.removes[0] === 'S/Lover - 27-01.md', x);
+// 2026-11-05: the folder and file name apart, so the Shortcut saves .md (not .txt).
+x = r([{ path: 'DG/Impossible/SN- Op - pt.2.md', content: 'new', synced: null }], []);
+check('a note sent to the phone carries its folder and its .md file name apart',
+  x.write[0].name === 'SN- Op - pt.2.md' && x.write[0].folder === 'DG/Impossible' && x.write[0].path === 'DG/Impossible/SN- Op - pt.2.md', x);
+x = r([{ path: 'Top.md', content: 'new', synced: null }], []);
+check('…a note at the top of the vault has no folder', x.write[0].name === 'Top.md' && x.write[0].folder === '', x);
+
+// 2026-11-05: a reorganised vault -- the old paths' text arrives at new ones: moved, not missing.
+x = r([{ path: 'Pale Lantern/A.md', content: 'a', synced: 'a' }, { path: 'Pale Lantern/B.md', content: 'b', synced: 'b' }, { path: 'Gone.md', content: 'g', synced: 'g' }],
+  [{ path: 'Impossible/Pale Lantern/A.md', text: 'a' }, { path: 'Impossible/Pale Lantern/B.md', text: 'b' }]);
+check('notes moved to another folder are removes the mass-delete guard can tell apart (movedAway)',
+  x.removes.length === 3 && x.movedAway.length === 2 && x.movedAway.indexOf('Gone.md') < 0 && up(x, 'Impossible/Pale Lantern/A.md'), x);
+
+// 2026-11-05: moved on the phone after A-Cell changed it (before the change reached the phone).
+x = r([{ path: 'Players/Ilse.md', content: 'old\n- added in A-Cell', synced: 'old', pending: 'old\n- added in A-Cell' }],
+  [{ path: 'Impossible/Agents/Ilse.md', text: 'old' }]);
+check('moved on the phone, changed in A-Cell: A-Cell\'s version goes to the new path, the old path is dropped (not recreated)',
+  x.write.length === 1 && x.write[0].path === 'Impossible/Agents/Ilse.md' && x.write[0].text === 'old\n- added in A-Cell' && x.write[0].folder === 'Impossible/Agents'
+  && up(x, 'Impossible/Agents/Ilse.md').content === 'old\n- added in A-Cell' && up(x, 'Impossible/Agents/Ilse.md').synced === 'old'
+  && x.removes.indexOf('Players/Ilse.md') >= 0 && x.movedAway.indexOf('Players/Ilse.md') >= 0 && !up(x, 'Players/Ilse.md'), x);
+x = r([{ path: 'Players/New.md', content: 'made in A-Cell', synced: null }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('…a note made in A-Cell and never synced still goes to the phone where it is', x.write.length === 1 && x.write[0].path === 'Players/New.md', x);
+
+// 2026-11-05: a folder gone from the phone is never recreated.
+x = r([{ path: 'Old Op/Ilse.md', content: 'old\n- A-Cell line', synced: 'old' }],
+  [{ path: 'Impossible/Agents/Ilse.md', text: 'old, edited on the phone' }]);
+check('changed in A-Cell, its folder gone from the phone, a note of that name elsewhere: A-Cell\'s version beside it as (A-Cell), the old folder not recreated',
+  x.write.length === 1 && x.write[0].path === 'Impossible/Agents/Ilse (A-Cell).md' && x.write[0].text === 'old\n- A-Cell line' && x.removes.indexOf('Old Op/Ilse.md') >= 0
+  && !x.write.some(function (w) { return w.path.indexOf('Old Op/') === 0; }), x);
+x = r([{ path: 'Old Op/Lost.md', content: 'v2', synced: 'v1' }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('…no note of that name: held in A-Cell (kept, not sent, listed)',
+  !x.write.length && x.removes.indexOf('Old Op/Lost.md') < 0 && x.stats.held_orphans === 1 && x.stats.held_paths[0] === 'Old Op/Lost.md', x);
+x = r([{ path: 'New Op/SN- Op - pt.1.md', content: 'made in A-Cell', synced: null }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('…a note A-Cell made in a new folder still goes to the phone (the folder is made)', x.write.length === 1 && x.write[0].folder === 'New Op', x);
+
+// 2026-11-07: a note A-Cell made, already sent, its folder still not on the phone: held, not sent again.
+x = r([{ path: 'Old Op/NPCs/Ruth.md', content: 'made in A-Cell', synced: null, pending: 'made in A-Cell' }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('a note A-Cell already sent once whose folder never appeared on the phone: held, its folder not recreated',
+  !x.write.length && x.stats.held_orphans === 1 && x.removes.indexOf('Old Op/NPCs/Ruth.md') < 0, x);
+x = r([{ path: 'Old Op/NPCs/Ruth.md', content: 'made in A-Cell', synced: null, pending: null }], [{ path: 'Impossible/Other.md', text: 'x' }]);
+check('…the first time (never sent yet) it still goes out', x.write.length === 1 && x.write[0].path === 'Old Op/NPCs/Ruth.md', x);
+
 console.log(JSON.stringify(out));
+

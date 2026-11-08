@@ -90,8 +90,34 @@
       ' · ' + v('SAN', a.san, null, a.san != null && a.bp != null && a.san - a.bp <= 3);
   }
   // The Agent's file in the vault: Handler notes, sheet changes, quick notes.
-  function playerPath(name) {
+  // An Agent's player file: the Handler's own note on them (one with
+  // "agent code: <code>" in its properties -- in Players/ too, the
+  // Handler keeps theirs there), else the one A-Cell keeps,
+  // Players/<name>.md. Takes the Agent, or a name.
+  function playerPath(a) {
+    var name = typeof a === 'string' ? a : (a && a.name), code = a && typeof a === 'object' ? a.code : '';
+    return (code && linkedFile(code, name)) || defaultPlayerPath(name);
+  }
+  function defaultPlayerPath(name) {
     return 'Players/' + String(name || 'Agent').replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim() + '.md';
+  }
+  var linkMemo = null;
+  document.addEventListener('dg-vault', function () { linkMemo = null; });
+  // The notes carrying this agent code, not A-Cell's own copy (Players/<name>.md).
+  function linkedFile(code, name) {
+    var V = window.dgVault;
+    if (!V) return '';
+    if (!linkMemo) {
+      linkMemo = {};
+      V.notes().forEach(function (n) {
+        var fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(n.content || ''), m = fm && /^agent[ _]?code:\s*["']?([A-Za-z0-9-]+)/mi.exec(fm[1]);
+        if (m) (linkMemo[m[1].toUpperCase()] = linkMemo[m[1].toUpperCase()] || []).push(n.path);
+      });
+    }
+    var own = name ? defaultPlayerPath(name) : '';
+    // A-Cell's template carries the code too: the Handler's note wins, the template only by name.
+    var list = (linkMemo[String(code).toUpperCase()] || []).filter(function (p) { return p !== own && !/^Players\/.*\(A-Cell( \d+)?\)\.md$/i.test(p); });
+    return list.sort(function (x, y) { return x.length - y.length; })[0] || '';
   }
 
   /* ── Evidence: released, and who hasn't opened it yet ── */
@@ -222,13 +248,19 @@
       '<label>Operation (its tapes play across its sessions)<select name="op" class="vn-search"><option value="">— none —</option>' + ((window.dgTapes && window.dgTapes.operations()) || []).map(function (o) {
         return '<option value="' + esc(o.operation_id) + '" data-cell="' + esc(o.cell_id) + '"' + (base && base.operation_id === o.operation_id ? ' selected' : '') + '>' + esc(o.name) + '</option>';
       }).join('') + '</select></label>' +
+      // The operation's phases, folders under its own (2026-11-05): its new NPCs, places and investigation notes go there.
+      '<label data-phasewrap hidden>Phase (its NPCs, locations and investigation notes go there)<select name="phase" class="vn-search" data-was="' + esc(s ? s.phase || '' : '') + '"></select></label>' +
       '<div class="vn-new" style="justify-content:flex-end">' + (s ? '<button type="button" class="vn-btn ac-del" data-del>Delete session</button><span class="ac-sp"></span>' : '') +
       '<button type="button" class="vn-btn" data-vclose>Cancel</button><button type="submit" class="vn-btn p">' + (s ? 'Save' : 'Create') + '</button></div></form>');
     var f = w.querySelector('form');
     setTimeout(function () { f.name.focus(); }, 0);
+    function phases() { if (window.dgAcm && window.dgAcm.phaseOpts) window.dgAcm.phaseOpts(f); }
+    phases();
+    f.op.addEventListener('change', phases);
+    if (window.dgVault) window.dgVault.load().then(phases, function () {});
     f.addEventListener('submit', function (e) {
       e.preventDefault();
-      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value };
+      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value, phase: f.phase.value };
       w.remove();
       if (s) S().update(s.id, fields); else S().create(fields);
     });
@@ -309,7 +341,7 @@
     var V = window.dgVault;
     el.innerHTML = ms.map(function (a) {
       var away = s.away.indexOf(a.code) >= 0;
-      var file = V && V.get(playerPath(a.name));
+      var file = V && V.get(playerPath(a));
       return '<div class="ac-row' + (away ? ' away' : '') + '" data-code="' + esc(a.code) + '">' +
         '<span class="ac-t">' + esc(a.name) + '<small>' + esc([a.profession, a.player].filter(Boolean).join(' · ')) + (away ? ' · away tonight' : '') + '</small></span>' +
         '<span class="ac-vit">' + vitalsHtml(a) + '</span>' +
@@ -377,7 +409,7 @@
     load.catch(function () { return []; }).then(function (html) {
       window.dgVault.picker({
         title: 'Notes for ' + s.name,
-        newPath: 'Sessions/' + s.name.replace(/[\\/:*?"<>|]+/g, ' ').trim(),
+        newPath: window.dgAcm && window.dgAcm.layout ? window.dgAcm.layout.sessionNotePath(s).replace(/\.md$/i, '') : 'Sessions/' + s.name.replace(/[\\/:*?"<>|]+/g, ' ').trim(),
         onPick: function (path) { S().addNote(s.id, { kind: 'vault', path: path }); },
         html: (html || []).map(function (n) { return { id: n.id, title: n.title || n.id }; }),
         onPickHtml: function (id) {
@@ -391,6 +423,11 @@
   function newNote(s) {
     var V = window.dgVault, path = V.cleanPath('Sessions/' + s.name.replace(/[\\/:*?"<>|]+/g, ' ').trim());
     var tpl = '# ' + s.name + '\n\n## Scene 1\n\n- [ ] \n\n## Scene 2\n\n- [ ] \n\n## NPCs\n\n';
+    // The Handler's layout: "SN- <Operation> - pt.N" with the operation's properties.
+    if (window.dgAcm && window.dgAcm.layout) {
+      window.dgAcm.layout.makeSessionNote(s, tpl).then(function (p) { S().addNote(s.id, { kind: 'vault', path: p }); });
+      return;
+    }
     V.load().catch(function () {}).then(function () {
       return V.get(path) ? path : V.save(path, tpl);
     }).then(function () { S().addNote(s.id, { kind: 'vault', path: path }); });
@@ -558,7 +595,7 @@
   window.dgAc = {
     esc: esc, ask: ask, modal: modal, store: store, keep: keep,
     agent: agent, members: members, cell: cell, cells: cells, vitalsHtml: vitalsHtml, profLabel: profLabel,
-    session: session, playerPath: playerPath, editSession: editSession, chooser: chooser,
+    session: session, playerPath: playerPath, defaultPlayerPath: defaultPlayerPath, linkedFile: linkedFile, editSession: editSession, chooser: chooser,
     evidenceState: evidenceState, loadSeen: loadSeen, preview: preview, previewing: previewing, soundUrl: soundUrl, trackById: trackById,
     setMode: setMode, openNote: openNoteTab
   };

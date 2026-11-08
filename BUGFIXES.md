@@ -7253,3 +7253,73 @@ the phone's Initiative instead. The phone's sheets and toast needed
 layout, which has its own tab; drawing both had doubled the post-its.
 The disorder tag's class `d` collided with the post-it's DEX box
 (`.acm-ip .d`) and is now `dis`.
+
+## The vault layout, the phone sync and player files (v3.16.0, PR #97)
+
+Found 2026-11-04 to 11-07, while the Handler reorganised their vault
+into Cell › operation › phase folders.
+
+**Every note A-Cell sent to the phone arrived as `Name.txt`.** That
+covered player files, session notes and NPCs. Obsidian doesn't read
+`.txt`, and the Shortcut only sends `.md` back, so these notes never
+returned to A-Cell and were re-sent on every sync. Two things in the
+Shortcut's write-back loop caused it, found by testing on the
+Handler's phone:
+- Text taken from the sync's dictionary isn't treated as text, so a
+  renamed copy is saved as `.txt`. A **Text** action before Set Name
+  fixes it.
+- On a phone, Save File's Subpath names the *file*, not a folder.
+  Subpath `Players` made a file called `Players.md`. It must be the
+  whole path, file name included.
+
+The sync's write list now also carries each note's `name` and
+`folder`. The steps in A-Cell's Notes vault settings were rewritten
+to match.
+
+**A reorganised vault came back in its old folders.** Three gaps:
+1. The mass-delete guard treated moving most of the vault as "the
+   Shortcut couldn't read the folder" and held every old path. Notes
+   whose text arrives elsewhere now count as moved (`movedAway`).
+2. A note A-Cell had changed whose edit hadn't reached the phone was
+   sent back to its old path. If the text both sides last agreed on
+   arrives at a new path, A-Cell's version now goes there.
+3. Notes A-Cell made itself had never been on the phone (they only
+   arrived as `.txt`), so they recreated their folders every sync.
+
+Rule now: a folder gone from the phone is never recreated. If a note
+of the same name exists elsewhere, A-Cell's version goes beside it as
+"Name (A-Cell).md". Otherwise the note is held in A-Cell and listed
+under Held in the vault settings. Tests: `test_vault_sync_rules`.
+
+**Duplicate operation folders.** Making a folder for an operation (new,
+or old ones at start-up) used `<Operation>/` at the top of the vault.
+It ignored the Handler's own folder of that name elsewhere, e.g.
+`Operations/01 Pale Lantern`. Now:
+- an operation is found by its Index note first;
+- failing that, by a same-named folder (any depth, case, punctuation
+  or leading number), with nothing written into it;
+- only then is a new folder made.
+
+A-Cell only ever creates notes that don't exist, never over one.
+
+**Make NPC wiped a note's properties.** On an existing note it
+replaced the whole front matter with the npc header. It now adds
+DEX/HP/WP/SAN and the `npc` tag and keeps the rest.
+
+**Player files were always A-Cell's own `Players/<name>.md`.** They
+ignored the Handler's Agent files, so each Agent had two files. The
+Handler's note is now suggested by name and linked once (`agent code:`
+in its properties), and A-Cell's copy is merged in. The Handler keeps
+their own files in `Players/` too: those count; only A-Cell's copy for
+that Agent is set aside.
+
+**Quick notes typed on the Play desk vanished.** Any session change
+(another device, an NPC, the database catching up) redrew the pad
+and the Agent's jot box, wiping what was typed. The text and the
+cursor now survive the redraw. `test_acell_debrief` had been failing
+on this since the desk's Initiative change: its first quick note was
+lost to such a redraw.
+
+**An older copy of a session or tape could overwrite a fresh save.**
+A snapshot from before A-Cell's own save could arrive just after it.
+Within ten seconds of a save, an older copy is now ignored.

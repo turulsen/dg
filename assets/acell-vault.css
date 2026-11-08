@@ -95,3 +95,14 @@ h1.vn-h{font-size:24px}h2.vn-h{font-size:20px}h3.vn-h{font-size:17px}h4.vn-h,h5.
 
 /* A link to a note not written yet (2026-11-02): a tap makes it */
 .vn-link.vn-link-new{opacity:.7;border-bottom-style:dashed}
+
+/* Vault activity (2026-11-05) */
+.vn-act{display:grid;gap:0;max-height:340px;overflow:auto;border-top:1px solid #e3d9bb;margin-bottom:6px}
+.vn-actrow{display:grid;grid-template-columns:auto 70px 1fr;gap:8px;align-items:baseline;text-align:left;background:none;border:0;border-bottom:1px dashed #e3d9bb;padding:6px 2px;font:12px 'Courier Prime',monospace;color:#1c1608;cursor:pointer}
+.vn-actrow:hover{background:rgba(0,0,0,.04)}
+.vn-actrow.gone{opacity:.45;cursor:default}
+.vn-actt{color:#8a7a5a;font-size:11px;white-space:nowrap}
+.vn-actw{font:10.5px 'Special Elite',monospace;letter-spacing:.08em;text-transform:uppercase;font-weight:400}
+.vn-actw.w-created{color:#2c5a22}.vn-actw.w-changed{color:#8a5a10}.vn-actw.w-deleted{color:#8b1a1a}.vn-actw.w-edited{color:#4a3f28}
+.vn-actp{min-width:0;overflow-wrap:anywhere}.vn-actp small{display:block;color:#8a7a5a;font-size:11px}
+@media (max-width:520px){.vn-actrow{grid-template-columns:1fr auto}.vn-actp{grid-column:1 / -1}}

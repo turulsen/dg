@@ -105,20 +105,56 @@
     return Object.keys(notesByPath).sort(function (a, b) { return a.localeCompare(b); }).map(function (p) { return notesByPath[p]; });
   }
   function get(path) { return notesByPath[path] || null; }
-  function save(path, content) {
+  /* ── Vault activity (2026-11-05): every note A-Cell made, changed or
+     deleted, newest first, with why (vault_meta/activity, the last 300).
+     Edits typed into one note within ten minutes are one line. ── */
+  var act = { items: null, p: null, t: 0 };
+  function actRef(f) { return f.firestore().collection('vault_meta').doc('activity'); }
+  function loadAct() {
+    if (act.p) return act.p;
+    act.p = fb().then(function (f) { return actRef(f).get(); }).then(function (d) { act.items = (d.exists && d.data().items) || []; }, function () { act.items = []; });
+    return act.p;
+  }
+  function logAct(path, what, why) {
+    var e = { at: Date.now(), path: path, what: what, why: why || '' };
+    loadAct().then(function () {
+      var last = act.items[0];
+      if (what === 'edited' && last && last.path === path && last.what === 'edited' && e.at - last.at < 600000) { last.at = e.at; last.n = (last.n || 1) + 1; }
+      else act.items.unshift(e);
+      act.items = act.items.slice(0, 300);
+      clearTimeout(act.t);
+      act.t = setTimeout(flushAct, 1500);
+      document.dispatchEvent(new CustomEvent('dg-vault-activity'));
+    });
+  }
+  // Another device may have logged too: theirs and ours, by time.
+  function flushAct() {
+    fb().then(function (f) {
+      return actRef(f).get().then(function (d) {
+        var seen = {}, all = act.items.concat((d.exists && d.data().items) || []).filter(function (x) { var k = x.at + '|' + x.path + '|' + x.what; if (seen[k]) return false; seen[k] = true; return true; });
+        all.sort(function (a, b) { return b.at - a.at; });
+        act.items = all.slice(0, 300);
+        return actRef(f).set({ items: act.items, updated_at: Date.now() });
+      });
+    }).catch(function (e) { console.error('a-cell: vault activity', e); });
+  }
+  function activity() { return loadAct().then(function () { return act.items.slice(); }); }
+  // opts.why: what made A-Cell write it ("session note", "NPC numbers"...); typed edits have none.
+  function save(path, content, opts) {
     path = cleanPath(path);
     if (!path) return Promise.reject(new Error('A note needs a name.'));
+    var had = !!notesByPath[path], why = (opts && opts.why) || '';
     var now = Date.now();
     notesByPath[path] = Object.assign({}, notesByPath[path] || { synced: null, pending: null }, { path: path, content: content, updated_at: now, local: true });
     emit();
     return fb().then(function (f) {
       return col(f).doc(id(path)).set({ path: path, content: content, updated_at: now, updated_by: 'acell' }, { merge: true });
-    }).then(function () { return path; });
+    }).then(function () { logAct(path, had ? (why ? 'changed' : 'edited') : 'created', why); return path; });
   }
-  function remove(path) {
+  function remove(path, opts) {
     delete notesByPath[path];
     emit();
-    return fb().then(function (f) { return col(f).doc(id(path)).delete(); });
+    return fb().then(function (f) { return col(f).doc(id(path)).delete(); }).then(function () { logAct(path, 'deleted', (opts && opts.why) || ''); });
   }
 
   /* ── Markdown, the Obsidian flavour the vault uses ── */
@@ -403,7 +439,10 @@
         var target = lk.getAttribute('data-vlink'), to = resolveLink(target, path);
         if (get(to)) { opts.onLink(to); return; }
         var made = newLinkPath(target, path), name = made.split('/').pop().replace(/\.md$/i, '');
-        save(made, '# ' + name + '\n\n').then(function (p) { opts.onLink(p, { created: true }); }, function () { /* not saved: stay */ });
+        // The Handler's layout: the operation's folder (the phase it's in) and its properties.
+        var lay = window.dgAcm && window.dgAcm.layout && name.indexOf('/') < 0 && String(target).split('#')[0].indexOf('/') < 0 ? window.dgAcm.layout.forLink(name, path) : null;
+        if (lay && !get(lay.path)) made = lay.path;
+        save(made, lay && made === lay.path ? lay.content : '# ' + name + '\n\n', { why: 'note from a [[link]] in ' + title(path) }).then(function (p) { opts.onLink(p, { created: true }); }, function () { /* not saved: stay */ });
         return;
       }
       var cue = e.target.closest('[data-cue]');
@@ -669,7 +708,7 @@
     return Promise.all(list.map(function (f) {
       return f.text().then(function (text) {
         var rel = f.webkitRelativePath || f.name;
-        return save((folder ? folder.replace(/\/+$/, '') + '/' : '') + rel, text.replace(/\r\n/g, '\n'));
+        return save((folder ? folder.replace(/\/+$/, '') + '/' : '') + rel, text.replace(/\r\n/g, '\n'), { why: 'imported' });
       });
     })).then(function (r) { return r.length; });
   }
@@ -682,6 +721,8 @@
         '<p class="vn-lead">Your Obsidian notes live in iCloud; A-Cell keeps a private copy (only you, as Handler, can read it). An Apple Shortcut on your phone keeps the two in step: it sends your vault folder here and saves back what you changed in A-Cell.</p>' +
         '<div class="vn-row"><span>Last sync</span><b>' + (last ? new Date(last.at).toLocaleString() + ' · ' + last.files + ' notes · ' + (last.created + last.updated) + ' in, ' + last.sent + ' out' + (last.conflicts ? ', ' + last.conflicts + ' kept twice' : '') : 'never') + '</b></div>' +
         '<div class="vn-row"><span>Notes in A-Cell</span><b>' + notes().length + '</b></div>' +
+        // Changed here, but their folder is gone from the phone: kept, not sent (the sync won't recreate a folder).
+        (last && last.held_orphans ? '<div class="vn-row"><span>Held</span><b>' + last.held_orphans + ' changed in A-Cell, their folder gone from your phone: ' + esc((last.held_paths || []).join(' · ')) + '</b></div>' : '') +
         '<h4>1 · Sync key</h4>' +
         (cfg.key ? '<div class="vn-key"><code class="vn-keyv">' + esc(cfg.key) + '</code><button type="button" class="vn-btn" data-vcopy>Copy</button><button type="button" class="vn-btn" data-vrekey>New key</button></div>'
           : '<div class="vn-key"><button type="button" class="vn-btn p" data-vrekey>Make a sync key</button></div>') +
@@ -698,12 +739,18 @@
         '<li><b>Dictionary</b>: <i>path</i> = Updated Text, <i>text</i> = Text.</li></ol>End Repeat.</li>' +
         '<li><b>Dictionary</b>: <i>key</i> = your sync key (above), <i>files</i> = Repeat Results (as an Array).</li>' +
         '<li><b>Get Contents of URL</b>: the address above, Method <b>POST</b>, Request Body <b>File</b> = Dictionary.</li>' +
-        '<li><b>Get Dictionary Value</b> <i>write</i>, then <b>Repeat with Each</b>:' +
-        '<ol><li><b>Get Dictionary Value</b> <i>text</i> → <b>Set Name</b> to the item\'s <i>path</i>.</li>' +
-        '<li><b>Save File</b> to your vault folder, Subpath = the item\'s <i>path</i>, <b>Ask Where to Save</b> off, <b>Overwrite If File Exists</b> on.</li></ol>End Repeat.</li>' +
+        '<li><b>Get Dictionary Value</b> <i>write</i>, then <b>Repeat with Each</b>. Inside it, in this order:' +
+        '<ol><li><b>Get Dictionary Value</b>: <i>text</i> in Repeat Item.</li>' +
+        '<li><b>Text</b>: the Dictionary Value above (without this step the phone saves the note as .txt).</li>' +
+        '<li><b>Get Dictionary Value</b>: <i>name</i> in Repeat Item → <b>Set Variable</b> <i>Name</i>.</li>' +
+        '<li><b>Get Dictionary Value</b>: <i>path</i> in Repeat Item → <b>Set Variable</b> <i>Path</i>.</li>' +
+        '<li><b>Set Name</b> of <i>Text</i> to <i>Name</i>, <b>Don\'t Include File Extension</b> on.</li>' +
+        '<li><b>Save File</b>: Renamed Item to your vault folder, Subpath = <i>Path</i> (the whole path, file name included: on a phone Subpath is the file, not a folder), <b>Ask Where to Save</b> off, <b>Overwrite If File Exists</b> on.</li></ol>End Repeat.</li>' +
         '<li>Optional: Automation → <b>App</b> → Obsidian <b>is closed</b> → Run <b>Sync DG vault</b>, Run Immediately.</li>' +
         '</ol>' +
+        '<p class="vn-small"><b>Notes arriving as .txt?</b> That\'s step 7: the note needs the <b>Text</b> step before Set Name, and Save File\'s Subpath is the whole <i>path</i>. The next sync sends those notes again as .md; then delete the .txt copies.</p>' +
         '<p class="vn-small">Notes changed on both sides are kept twice ("Name (A-Cell).md") rather than one overwriting the other. A note deleted on the phone goes from A-Cell too, unless you changed it here since.</p>' +
+        '<h4>Vault activity</h4><p class="vn-small">Every note A-Cell made, changed or deleted, newest first. Tap one to open it.</p><div class="vn-act"><div class="vn-empty">Loading…</div></div>' +
         '<h4>Without the Shortcut</h4>' +
         '<div class="vn-key"><label class="vn-btn">⇪ Import .md files<input type="file" accept=".md,text/markdown" multiple hidden data-vimport></label><button type="button" class="vn-btn" data-vexport>⇩ Export all as .zip</button><span class="vn-status"></span></div>';
     }
@@ -711,9 +758,33 @@
     fb().then(function (f) {
       cfgRef = f.firestore().collection('vault_meta').doc('config');
       return Promise.all([cfgRef.get(), load()]);
-    }).then(function (r) { cfgNow = (r[0].exists && r[0].data()) || {}; draw(cfgNow); },
+    }).then(function (r) { cfgNow = (r[0].exists && r[0].data()) || {}; draw(cfgNow); drawAct(); },
       function (e) { box.innerHTML = '<div class="vn-empty">Could not open the vault settings: ' + esc((e && e.message) || e) + '</div>'; });
+    var actAll = false;
+    var WHAT = { created: 'made', changed: 'changed', edited: 'edited', deleted: 'deleted' };
+    function drawAct() {
+      var el = box.querySelector('.vn-act');
+      if (!el) return;
+      activity().then(function (items) {
+        var shown = actAll ? items : items.slice(0, 40);
+        el.innerHTML = items.length ? shown.map(function (x) {
+          return '<button type="button" class="vn-actrow' + (x.what === 'deleted' ? ' del' : '') + '" data-vact="' + esc(x.path) + '"><span class="vn-actt">' + esc(new Date(x.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</span>' +
+            '<b class="vn-actw w-' + esc(x.what) + '">' + esc(WHAT[x.what] || x.what) + (x.n > 1 ? ' ×' + x.n : '') + '</b><span class="vn-actp">' + esc(x.path.replace(/\.md$/i, '')) + (x.why ? '<small>' + esc(x.why) + '</small>' : '') + '</span></button>';
+        }).join('') + (items.length > shown.length ? '<button type="button" class="vn-btn" data-vactall>Show all ' + items.length + '</button>' : '') : '<div class="vn-empty">Nothing yet.</div>';
+      });
+    }
+    function onAct() { if (!w.isConnected) { document.removeEventListener('dg-vault-activity', onAct); return; } drawAct(); }
+    document.addEventListener('dg-vault-activity', onAct);
     w.addEventListener('click', function (e) {
+      if (e.target.closest('[data-vactall]')) { actAll = true; drawAct(); return; }
+      var ar = e.target.closest('[data-vact]');
+      if (ar) {
+        var ap = ar.getAttribute('data-vact');
+        if (!get(ap)) { ar.classList.add('gone'); return; }
+        w.remove();
+        if (window.dgAc && window.dgAc.openNote) window.dgAc.openNote(ap);
+        return;
+      }
       if (e.target.closest('[data-vrekey]')) {
         var go = cfgNow.key ? (window.dgConfirm ? window.dgConfirm('Make a new key? The Shortcut needs the new one pasted in.', { ok: 'New key', cancel: 'Keep it' }) : Promise.resolve(window.confirm('Make a new key?'))) : Promise.resolve(true);
         go.then(function (yes) {
@@ -742,7 +813,7 @@
   }
 
   window.dgVault = {
-    load: load, notes: notes, get: get, save: save, remove: remove, id: id, cleanPath: cleanPath, title: title,
+    load: load, notes: notes, get: get, save: save, remove: remove, id: id, cleanPath: cleanPath, title: title, activity: activity,
     dirOf: dirOf, folderLabel: folderLabel, byName: byName,
     render: render, headings: headings, section: section, sectionRange: sectionRange, toggleTask: toggleTask,
     editor: editor, picker: picker, settings: settings, resolveLink: resolveLink, newLinkPath: newLinkPath, modal: modal, esc: esc,

@@ -170,7 +170,7 @@
     var rot = [-0.6, 0.5, -0.3, 0.4, -0.5, 0.6, -0.2];
     var outs = A.members(s.cell_id).filter(function (a) { return s.away.indexOf(a.code) >= 0 || (a.hp != null && a.hp <= 0); });
     var up = s.npcs.map(function (n, i) { return { n: n, i: i }; }).filter(function (x) { return x.n.init === false; });
-    var hold = el.scrollTop;
+    var hold = el.scrollTop, back = keepTyping(el, '.pd-qin');
     el.innerHTML = '<div class="pd-init acm-desk"><div class="acm-g3 acm-initbar">' +
       '<button type="button" class="acm-btn cream" data-acm="next-turn">Next turn</button><button type="button" class="acm-btn dark" data-acm="new-round">New round</button><button type="button" class="acm-btn dark" data-acm="new-npc-init">+ NPC</button></div>' +
       '<div class="acm-round"><b>Round ' + ts.round + '</b><span>' + esc(now ? (now.agent ? now.agent.name : now.npc.name) + '\'s turn' : 'no one in the order') + '</span>' + (ts.round > 1 || ts.turn ? '<button type="button" data-acm="round-reset">Start over</button>' : '') + '</div>' +
@@ -184,7 +184,8 @@
       (up.length ? '<div class="acm-lab">Upcoming · not in the order yet</div><div class="acm-chips">' + up.map(function (x) { return '<button type="button" class="acm-chip c-pu" data-acm="npc-in" data-i="' + x.i + '">+ ' + esc(x.n.name) + ' · ' + (x.n.dex || '—') + '</button>'; }).join('') + '</div>' : '') + '</div>';
     el.scrollTop = hold;
     var inp = el.querySelector('.pd-qin');
-    if (inp) inp.focus();
+    if (inp && document.activeElement !== inp) inp.focus();
+    back();
   }
 
   /* ── The notebook: a tab per note the session keeps (2026-10-30), and
@@ -302,9 +303,24 @@
   }
 
   /* ── Quick notes pad ── */
+  // A quick note being typed survives a redraw (2026-11-05: any session
+  // change -- another device, an NPC, the database catching up -- redrew
+  // the box and wiped what was typed).
+  function keepTyping(el, sel) {
+    var i = el.querySelector(sel);
+    if (!i) return function () {};
+    var v = i.value, on = document.activeElement === i, a = i.selectionStart, z = i.selectionEnd, key = i.getAttribute('data-jot');
+    return function () {
+      var n = el.querySelector(sel);
+      if (!n || n.getAttribute('data-jot') !== key) return;
+      if (v) n.value = v;
+      if (on) { n.focus(); try { n.setSelectionRange(a, z); } catch (e) { /* not a text box */ } }
+    };
+  }
   function drawPad(s) {
     var el = ob('pad');
     if (!el) return;
+    var back = keepTyping(el, '.pd-in');
     var names = {};
     A.members(s.cell_id).forEach(function (a) { names[a.code] = a.name.split(' ').pop(); });
     var qs = s.quick_notes.slice(-14);
@@ -312,6 +328,7 @@
       return '<div class="pd-qn"><small>' + esc(new Date(q.at).toTimeString().slice(0, 5)) + '</small>' + (q.code ? '<b>' + esc(names[q.code] || q.code) + ':</b> ' : '') + esc(q.text) +
         '<button type="button" class="pd-qx" data-pd="rm-q" data-at="' + q.at + '" aria-label="Remove">✕</button></div>';
     }).join('') + '<input class="pd-in" data-jot="" placeholder="✎ jot a quick note… (Enter)">';
+    back();
   }
 
   /* ── Tape deck ── */

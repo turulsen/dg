@@ -4397,6 +4397,14 @@ def test_acell_play_desk(p):
     record("acell-play", "tapping a ⚡ cue in the notes fires that effect",
            any(any("whisper" in s.get("id", "") for s in (w.get("data") or {}).get("stingers") or []) for w in fs_writes(page, "radio/")), "")
 
+    # 2026-11-05: a session change while a quick note is typed (another device, an NPC) kept wiping it.
+    page.fill(".pd-pad .pd-in", "half a thought")
+    page.focus(".pd-pad .pd-in")
+    page.evaluate("() => dgSessions.update('sess_4', { away: [] })")
+    page.wait_for_timeout(400)
+    record("acell-play", "a quick note being typed survives a redraw of the desk",
+           page.input_value(".pd-pad .pd-in") == "half a thought" and page.evaluate("() => document.activeElement && document.activeElement.classList.contains('pd-in')"), page.input_value(".pd-pad .pd-in"))
+    page.fill(".pd-pad .pd-in", "")
     page.fill(".pd-pad .pd-in", "Reyes found the boat key")
     page.press(".pd-pad .pd-in", "Enter")
     page.click(".pd-ag[data-code=MARA-KS01] [data-pd=jot]")
@@ -4611,8 +4619,8 @@ def test_acell_mobile_shell(p):
     ops = [w for w in fs_writes(page, "operations/") if (w.get("data") or {}).get("name") == "Hollow Hill"]
     vault = [((w.get("data") or {}).get("path")) for w in fs_writes(page, "vault/")]
     record("acell-mobile", "Add Operation makes the operation (in the Cell)…", bool(ops) and ops[0]["data"].get("cell_id") == "cell_osiris", str(ops[:1])[:200])
-    record("acell-mobile", "…and its vault folder: an overview, Sessions, NPCs, Locations",
-           all(x in vault for x in ["Hollow Hill/Hollow Hill.md", "Hollow Hill/Sessions/Sessions.md", "Hollow Hill/NPCs/NPCs.md", "Hollow Hill/Locations/Locations.md"]), str(vault))
+    record("acell-mobile", "…and its vault folder with its Index note (the Handler's layout, 2026-11-05)",
+           "Hollow Hill/Index - Hollow Hill.md" in vault, str(vault))
     page.click("#acm-tabs [data-acm-go='@more']")
     more = page.inner_text(".acm-more")
     record("acell-mobile", "More: the modes and every other section", all(x.upper() in more.upper() for x in ["Prep", "Play", "Debrief", "Music", "Notes", "Sheet", "Cells", "ID creator", "Computer layout"]), more[:300])
@@ -4635,7 +4643,7 @@ def test_acell_mobile_backfill(p):
     page, errs = open_phone(p, docs=docs)
     wait_for_condition(lambda: (fs_doc(page, "operations/op_hh") or {}).get("vault_folder") == "Quiet Ward", timeout_ms=6000)
     vault = [((w.get("data") or {}).get("path")) for w in fs_writes(page, "vault/")]
-    record("acell-mobile", "an old operation gets its vault folder, once", (fs_doc(page, "operations/op_hh") or {}).get("vault_folder") == "Quiet Ward" and "Quiet Ward/Quiet Ward.md" in vault, str(vault))
+    record("acell-mobile", "an old operation gets its vault folder, once", (fs_doc(page, "operations/op_hh") or {}).get("vault_folder") == "Quiet Ward" and "Quiet Ward/Index - Quiet Ward.md" in vault, str(vault))
     record("acell-mobile", "an operation that has one is left alone (moved files stay moved)", not any(str(v).startswith("Pale Lantern/Pale Lantern") for v in vault), str(vault))
     record("acell-mobile", "no JS errors (backfill)", not errs, str(errs))
     page.close()
@@ -5453,6 +5461,256 @@ def test_acell_vault_new_link(p):
     page.wait_for_timeout(400)
     record("acell-vault-link", "on a phone too: the tap makes the note and opens it", "Ferryman" in page.inner_text("#acm-bar"), page.inner_text("#acm-bar")[:80])
     record("acell-vault-link", "no JS errors (new link, phone)", not errs, str(errs))
+    page.close()
+
+def test_acell_cell_operations(p):
+    """2026-11-04: a Cell's operations on its card in the Cells tab --
+    renamed, added and deleted there (Rename was only in the Evidence
+    tab's folders, so the Handler couldn't find it)."""
+    page, errs = open_acell_shell(p)
+    page.evaluate("() => window.dgAcellTab('cells')")
+    card = ".cell-card:has(.cell-op-name:text('Pale Lantern'))"
+    wait_for_condition(lambda: page.locator(card).count() == 1, timeout_ms=6000)
+    record("acell-cells", "the Cell's card lists its operations", page.locator(card + " .cell-op-row").count() == 1, page.inner_text(".cell-ops") if page.locator(".cell-ops").count() else "")
+    page.click(card + " [data-op-rename=op_pl]")
+    page.fill(".cell-op-in", "Pale Lantern Redux")
+    page.press(".cell-op-in", "Enter")
+    wait_for_condition(lambda: (fs_doc(page, "operations/op_pl") or {}).get("name") == "Pale Lantern Redux", timeout_ms=5000)
+    wait_for_condition(lambda: "Pale Lantern Redux" in page.inner_text("#cells-groups"), timeout_ms=4000)
+    op = fs_doc(page, "operations/op_pl") or {}
+    record("acell-cells", "Rename saves the new name (the vault folder stays)", op.get("name") == "Pale Lantern Redux" and op.get("vault_folder") == "Pale Lantern" and "Pale Lantern Redux" in page.inner_text("#cells-groups"), str(op))
+    card = ".cell-card:has(.cell-op-name:text('Pale Lantern Redux'))"
+    page.click(card + " [data-op-new]")
+    page.fill(".cell-op-in", "Grey Harbour")
+    page.click(".cell-op-form [data-op-save]")
+    def made():
+        docs = page.evaluate("() => Object.keys(window.__dgFirestoreDocs).filter(k => /^operations\/[^/]+$/.test(k)).map(k => window.__dgFirestoreDocs[k])")
+        return [d for d in docs if d.get("name") == "Grey Harbour"]
+    wait_for_condition(lambda: bool(made()), timeout_ms=5000)
+    wait_for_condition(lambda: "Grey Harbour" in page.inner_text("#cells-groups"), timeout_ms=5000)
+    g = made()
+    record("acell-cells", "+ Operation adds one to that Cell, and it shows on the card",
+           bool(g) and g[0].get("cell_id") == "cell_osiris" and "Grey Harbour" in page.inner_text("#cells-groups"), str(g))
+    gid = g[0].get("operation_id") if g else ""
+    page.once("dialog", lambda d: d.accept())
+    page.click(".cell-op-row:has(.cell-op-name:text('Grey Harbour')) [data-op-del]")
+    wait_for_condition(lambda: fs_doc(page, "operations/" + gid) is None, timeout_ms=5000)
+    wait_for_condition(lambda: "Grey Harbour" not in page.inner_text("#cells-groups"), timeout_ms=4000)
+    record("acell-cells", "Delete removes it (after a confirm)", fs_doc(page, "operations/" + gid) is None and "Grey Harbour" not in page.inner_text("#cells-groups"), "")
+    record("acell-cells", "no JS errors (operations on the Cell card)", not errs, str(errs))
+    page.close()
+
+def test_acell_operation_folders(p):
+    """2026-11-05: operation folders and the Handler's own vault. Folders
+    are renamed and merged in Obsidian; A-Cell follows (the operation's
+    folder, its sessions' note paths). A new operation takes a folder of
+    its name already in the vault, wherever it is, and writes nothing into
+    it. Folder… on the Cell card picks one by hand; a same-named folder
+    elsewhere is pointed out."""
+    page, errs = open_acell_shell(p)
+    page.evaluate("() => dgVault.load()")
+    wait_for_condition(lambda: page.evaluate("() => !!dgVault.get('Pale Lantern/Session 4.md')"), timeout_ms=5000)
+    # Renamed in Obsidian (Pale Lantern -> Operations/Pale Lantern Redux), as the sync would bring it.
+    page.evaluate("""() => { var c = dgVault.get('Pale Lantern/Session 4.md').content;
+      return dgVault.save('Operations/Pale Lantern Redux/Session 4.md', c).then(() => dgVault.remove('Pale Lantern/Session 4.md')); }""")
+    wait_for_condition(lambda: (fs_doc(page, "operations/op_pl") or {}).get("vault_folder") == "Operations/Pale Lantern Redux", timeout_ms=8000)
+    wait_for_condition(lambda: (_sess(page) or {}).get("note_path") == "Operations/Pale Lantern Redux/Session 4.md", timeout_ms=5000)
+    s = _sess(page) or {}
+    record("acell-ops", "a folder renamed in Obsidian is followed: the operation's folder and its session's note",
+           (fs_doc(page, "operations/op_pl") or {}).get("vault_folder") == "Operations/Pale Lantern Redux" and s.get("note_path") == "Operations/Pale Lantern Redux/Session 4.md"
+           and any(n.get("path") == "Operations/Pale Lantern Redux/Session 4.md" for n in (s.get("notes") or [])), str([fs_doc(page, "operations/op_pl"), s.get("note_path"), s.get("notes")]))
+    # A folder of that name already in the vault, deeper and numbered.
+    page.evaluate("() => dgVault.save('Campaign/02 Grey Harbour/Harbour master.md', '# Harbour master\\n\\nMine. Keep it.')")
+    before = len(fs_writes(page, "vault/"))
+    page.evaluate("() => dgAcm.createOperation('Grey Harbour', 'cell_osiris')")
+    def made():
+        docs = page.evaluate("() => Object.keys(window.__dgFirestoreDocs).filter(k => /^operations\\/[^/]+$/.test(k)).map(k => window.__dgFirestoreDocs[k])")
+        return [d for d in docs if d.get("name") == "Grey Harbour" and d.get("vault_folder")]
+    wait_for_condition(lambda: bool(made()), timeout_ms=6000)
+    g = made()
+    new_paths = [((w.get("data") or {}).get("path")) for w in fs_writes(page, "vault/")[before:]]
+    record("acell-ops", "a new operation takes the vault's own folder of its name (any depth, case, number) and writes nothing into it",
+           bool(g) and g[0].get("vault_folder") == "Campaign/02 Grey Harbour" and not new_paths
+           and page.evaluate("() => dgVault.get('Campaign/02 Grey Harbour/Harbour master.md').content") == "# Harbour master\n\nMine. Keep it.", str([g, new_paths]))
+    # The Cell card: the folder line, a same-named one elsewhere, and Folder… to pick one.
+    page.evaluate("() => dgVault.save('Old/Pale Lantern Redux/Loose end.md', 'x')")
+    page.evaluate("() => window.dgAcellTab('cells')")
+    wait_for_condition(lambda: page.locator("#cells-groups").count() and "Old/Pale Lantern Redux" in page.inner_text("#cells-groups") and "Operations/Pale Lantern Redux" in page.inner_text("#cells-groups"), timeout_ms=6000)
+    txt = page.inner_text("#cells-groups")
+    record("acell-ops", "the Cell card shows each operation's vault folder, and a same-named folder elsewhere",
+           "Operations/Pale Lantern Redux" in txt and "Old/Pale Lantern Redux" in txt, txt[:400])
+    page.click("[data-op-folder=op_pl]")
+    page.select_option(".cell-op-sel", "Old/Pale Lantern Redux")
+    page.click("[data-op-pickok]")
+    wait_for_condition(lambda: (fs_doc(page, "operations/op_pl") or {}).get("vault_folder") == "Old/Pale Lantern Redux", timeout_ms=5000)
+    record("acell-ops", "Folder… points the operation to the folder picked (nothing moved)",
+           (fs_doc(page, "operations/op_pl") or {}).get("vault_folder") == "Old/Pale Lantern Redux" and page.evaluate("() => !!dgVault.get('Operations/Pale Lantern Redux/Session 4.md')"), "")
+    # An emptied folder isn't matched to some other folder on the notes every operation folder has.
+    page.evaluate("""() => { window.__dgFirestoreDocs['operations/op_x'] = { operation_id: 'op_x', name: 'Ghost Op', cell_id: 'cell_osiris', created_at: 5, vault_folder: 'Ghost Op' };
+      return dgTapes.reloadOps().then(() => dgVault.save('Spare/Sessions/Sessions.md', '# Sessions')).then(() => dgAcm.followVault()); }""")
+    page.wait_for_timeout(300)
+    record("acell-ops", "an emptied folder isn't guessed from notes every folder has (Sessions/Sessions.md)",
+           (fs_doc(page, "operations/op_x") or {}).get("vault_folder") == "Ghost Op", str(fs_doc(page, "operations/op_x")))
+    record("acell-ops", "no JS errors (operation folders)", not errs, str(errs))
+    page.close()
+
+def test_acell_vault_layout(p):
+    """2026-11-05, the Handler's vault layout: Cell folder (Cell-Index.md)
+    > operation folder (Index - <Operation>.md, whose properties every
+    note repeats; session notes "SN- <Operation> - pt.N") > phase folders
+    (NPCs/, Locations/, Investigation/). Operations are found by their
+    Index note; notes A-Cell makes go where they belong, with the Index's
+    properties, `dat` and a type tag; a new session note is listed in the
+    Index; a new operation gets its folder and Index in the Cell's."""
+    page, errs = open_acell_shell(p)
+    OPD = "DG/Impossible/A Volume of Secret Faces"
+    IDX = OPD + "/Index - A Volume of Secret faces.md"
+    page.evaluate("""(a) => { const [OPD, IDX] = a;
+      window.__dgFirestoreDocs['operations/op_v'] = { operation_id: 'op_v', name: 'A Volume of Secret Faces', cell_id: 'cell_osiris', created_at: 9 };
+      const fm = '---\\ncell: "[[Impossible]]"\\noperation: A Volume of Secret Faces\\nindex:\\n  - "[[Index - A Volume of Secret faces]]"\\nphases:\\n  - "[[SN- A Volume of Secret Faces pt.1#Prologue|The Long years]]"\\nsessions:\\n  - "[[SN- A Volume of Secret Faces pt.1]]"\\ndat: 2026-05-31\\n---\\n';
+      return dgVault.load().then(() => Promise.all([
+        dgVault.save('DG/Impossible/Cell-Index.md', '# Impossible\\n\\n- [[Index - A Volume of Secret faces]]\\n'),
+        dgVault.save('DG/Osiris/Cell-Index.md', '# Osiris\\n\\n- [[Mara Kessler]]\\n'),
+        dgVault.save(IDX, fm),
+        dgVault.save(OPD + '/SN- A Volume of Secret Faces pt.1.md', fm + '# Prologue\\n'),
+        dgVault.save(OPD + '/Dorchester House/Locations/Lobby.md', '# Lobby'),
+        dgVault.save(OPD + '/INDIA MOON/NPCs/Exeter.md', '# Exeter')
+      ])).then(() => dgTapes.reloadOps()).then(() => dgAcm.loadOpDocs()).then(() => dgAcm.followVault()); }""", [OPD, IDX])
+    wait_for_condition(lambda: (fs_doc(page, "operations/op_v") or {}).get("vault_folder") == OPD, timeout_ms=6000)
+    record("acell-layout", "an operation is found by its Index note (the operation: property), wherever it is",
+           (fs_doc(page, "operations/op_v") or {}).get("vault_folder") == OPD, str(fs_doc(page, "operations/op_v")))
+    ph = page.evaluate("() => dgAcm.layout.phases(dgTapes.operations().find(o => o.operation_id === 'op_v'))")
+    record("acell-layout", "its phases are the folders under it", ph == [OPD + "/Dorchester House", OPD + "/INDIA MOON"], str(ph))
+    page.evaluate("(d) => dgSessions.create({ name: 'Dorchester by Night', date: '2026-11-07', cell_id: 'cell_osiris', operation_id: 'op_v', phase: d })", OPD + "/Dorchester House")
+    wait_for_condition(lambda: page.evaluate("() => !!dgSessions.list().find(s => s.name === 'Dorchester by Night' && s.phase)"), timeout_ms=4000)
+    sn = page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); return dgAcm.layout.makeSessionNote(s, '# Dorchester by Night\\n\\n## Starter Scene\\n').then(p => dgSessions.addNote(s.id, { kind: 'vault', path: p }).then(() => p)); }")
+    wait_for_condition(lambda: "pt.2" in page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", IDX), timeout_ms=4000)
+    note = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", sn or "")
+    idx = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", IDX)
+    record("acell-layout", "a new session note: 'SN- <Operation> - pt.N' (the next N) in the operation's folder",
+           sn == OPD + "/SN- A Volume of Secret Faces - pt.2.md", str(sn))
+    record("acell-layout", "…with the Index's properties, its date as dat, and the session tag",
+           'cell: "[[Impossible]]"' in note and "operation: A Volume of Secret Faces" in note and '  - "[[SN- A Volume of Secret Faces pt.1]]"' in note
+           and "dat: 2026-11-07" in note and "tags:\n  - session" in note and "## Starter Scene" in note, note[:500])
+    record("acell-layout", "…and the Index lists it under sessions (nothing else changed in it)",
+           '  - "[[SN- A Volume of Secret Faces pt.1]]"\n  - "[[SN- A Volume of Secret Faces - pt.2]]"' in idx and "dat: 2026-05-31" in idx, idx)
+    npc = page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); return dgAcm.npcNote({ name: 'Dr. Maximo Friend', dex: 12, hp: 10, wp: 14, san: 30 }, s); }")
+    nc = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", npc or "")
+    record("acell-layout", "an NPC goes in the session's phase folder (NPCs/), with the properties, the npc tag and its numbers",
+           npc == OPD + "/Dorchester House/NPCs/Dr. Maximo Friend.md" and "operation: A Volume of Secret Faces" in nc and "tags:\n  - npc" in nc and "dex: 12" in nc and "# Dr. Maximo Friend" in nc, str(npc) + " | " + nc[:400])
+    page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); return dgAcm.npcNote({ name: 'Dr. Maximo Friend', dex: 12, hp: 7, wp: 14, san: 30, path: '" + (npc or "") + "' }, s); }")
+    nc2 = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", npc or "")
+    record("acell-layout", "an NPC's numbers change in place; its other properties stay",
+           "hp: 7" in nc2 and "hp: 10" not in nc2 and "operation: A Volume of Secret Faces" in nc2 and "tags:\n  - npc" in nc2, nc2[:400])
+    lk = page.evaluate("(p) => dgAcm.layout.forLink('Mr. Wilde', p)", sn or "")
+    record("acell-layout", "a [[link]] to a new note from the session note: in that session's phase, with the properties",
+           bool(lk) and lk.get("path") == OPD + "/Dorchester House/Mr. Wilde.md" and "operation: A Volume of Secret Faces" in lk.get("content", "") and "# Mr. Wilde" in lk.get("content", ""), str(lk))
+    # A new operation: its folder and Index in the Cell's folder, listed in the Cell-Index.
+    page.evaluate("() => dgAcm.createOperation('The Night Floors', 'cell_osiris')")
+    NF = "DG/Osiris/The Night Floors"
+    wait_for_condition(lambda: page.evaluate("(p) => !!dgVault.get(p)", NF + "/Index - The Night Floors.md"), timeout_ms=6000)
+    ni = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", NF + "/Index - The Night Floors.md")
+    ci = page.evaluate("() => (dgVault.get('DG/Osiris/Cell-Index.md') || {}).content || ''")
+    def nf_op():
+        docs = page.evaluate("() => Object.keys(window.__dgFirestoreDocs).filter(k => /^operations\\/[^/]+$/.test(k)).map(k => window.__dgFirestoreDocs[k])")
+        return [d for d in docs if d.get("name") == "The Night Floors"]
+    wait_for_condition(lambda: bool(nf_op()) and nf_op()[0].get("vault_folder") == NF, timeout_ms=5000)
+    record("acell-layout", "a new operation: its folder beside the Cell-Index, its Index note (operation, index, sessions), listed in the Cell-Index",
+           "operation:\n  - The Night Floors" in ni and '  - "[[Index - The Night Floors]]"' in ni and "sessions:" in ni and "[[Index - The Night Floors]]" in ci
+           and bool(nf_op()) and nf_op()[0].get("vault_folder") == NF, ni + " | " + ci)
+    # The session form's Phase select.
+    page.evaluate("() => { const s = dgSessions.list().find(s => s.name === 'Dorchester by Night'); dgSessions.setCurrent(s.id); }")
+    page.evaluate("() => window.dgAc.editSession(dgSessions.list().find(s => s.name === 'Dorchester by Night'))")
+    wait_for_condition(lambda: page.locator("form.ac-form select[name=phase] option").count() == 3, timeout_ms=4000)
+    opts = page.eval_on_selector_all("form.ac-form select[name=phase] option", "els => els.map(e => [e.textContent, e.selected])")
+    record("acell-layout", "the session form has a Phase select with the operation's phases, the session's chosen",
+           [o[0] for o in opts][1:] == ["Dorchester House", "INDIA MOON"] and opts[1][1] is True, str(opts))
+    # Make NPC on a note keeps its properties (it replaced them before).
+    mk = page.evaluate("""() => dgAcm.layout.asNpc('---\\ncell: "[[Impossible]]"\\ntags:\\n  - location\\n---\\n# Gail', { dex: 10, hp: 10, wp: 10, san: 0 })""")
+    record("acell-layout", "Make NPC adds the numbers and the npc tag, keeping the note's own properties",
+           'cell: "[[Impossible]]"' in mk and "tags:\n  - location\n  - npc" in mk and "dex: 10" in mk and mk.endswith("# Gail"), mk)
+    # Vault activity: every write, with why; kept in vault_meta/activity; listed in the vault settings.
+    acts = page.evaluate("() => dgVault.activity()")
+    def has(path, what, why):
+        return any(x.get("path") == path and x.get("what") == what and why in (x.get("why") or "") for x in acts)
+    record("acell-layout", "vault activity: the session note made, the Index changed, the NPC made and changed, each with why",
+           has(sn, "created", "session note for Dorchester by Night") and has(IDX, "changed", "added SN- A Volume of Secret Faces - pt.2 to sessions")
+           and has(npc, "created", "NPC: DEX 12") and has(npc, "changed", "HP 7"), str(acts[:8]))
+    wait_for_condition(lambda: len(((fs_doc(page, "vault_meta/activity") or {}).get("items") or [])) >= 5, timeout_ms=6000)
+    record("acell-layout", "…kept in vault_meta/activity", len(((fs_doc(page, "vault_meta/activity") or {}).get("items") or [])) >= 5, "")
+    page.keyboard.press("Escape")
+    page.evaluate("() => { document.querySelectorAll('.vn-modal').forEach(m => m.remove()); dgVault.settings(); }")
+    wait_for_condition(lambda: page.locator(".vn-actrow").count() >= 5, timeout_ms=5000)
+    record("acell-layout", "…and listed in the Notes vault settings, newest first", page.locator(".vn-actrow").count() >= 5 and "pt.2" in page.inner_text(".vn-act"), page.inner_text(".vn-act")[:300])
+    record("acell-layout", "no JS errors (vault layout)", not errs, str(errs))
+    page.close()
+
+def test_acell_players_own_file(p):
+    """2026-11-05: the Handler's own note on an Agent ("Ilse Varga - Agent
+    Kite.md") becomes their player file: suggested by its name, confirmed
+    with Use it (it gets "agent code:" in its properties, the rest kept),
+    what A-Cell kept in Players/<name>.md merged in under the same
+    headings, and every later note goes there."""
+    page, errs = open_acell_shell(p)
+    MINE = "DG/Impossible/Agents/Ilse Varga - Agent Kite.md"
+    page.evaluate("""(m) => dgVault.load().then(() => Promise.all([
+      dgVault.save(m, '---\\ncell: "[[Impossible]]"\\ntags:\\n  - agent\\n---\\n# Ilse Varga\\n\\nBackstory: a lighthouse keeper\\'s daughter.\\n\\n## Handler notes\\n\\n- Afraid of deep water\\n'),
+      dgVault.save('Players/Ilse Varga.md', '---\\nagent code: ILSE-VR03\\n---\\n# Ilse Varga\\n\\n## Handler notes\\n\\n- Afraid of deep water\\n- 2026-11-01 · Trusts nobody with the log\\n\\n## Sheet changes\\n\\n- 2026-11-01 · SAN 25 → 22 (the keeper)\\n\\n## Quick notes from play\\n\\n'),
+      dgVault.save('DG/Other/Ilse Varga - old draft.md', '# draft')]))""", MINE)
+    page.click("[data-pb=players] .ac-row[data-code=ILSE-VR03] [data-ac=open-agent]")
+    wait_for_condition(lambda: page.locator("#ac-pfile [data-pf=use]").count() == 1, timeout_ms=6000)
+    record("acell-players", "your own note on the Agent is suggested by its name (the shortest match, not Players/)",
+           page.get_attribute("#ac-pfile [data-pf=use]", "data-path") == MINE, page.inner_text("#ac-pfile .ac-pf-link"))
+    page.click("#ac-pfile [data-pf=use]")
+    wait_for_condition(lambda: "agent code: ILSE-VR03" in page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE), timeout_ms=5000)
+    page.wait_for_timeout(400)
+    c = page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE)
+    record("acell-players", "Use it: the note gets the agent code, keeps its properties and text",
+           'cell: "[[Impossible]]"' in c and "  - agent" in c and "agent code: ILSE-VR03" in c and "Backstory: a lighthouse keeper's daughter." in c, c)
+    record("acell-players", "…and A-Cell's Players/ copy is merged in under the same headings, lines it had skipped",
+           c.count("- Afraid of deep water") == 1 and "- 2026-11-01 · Trusts nobody with the log" in c and "## Sheet changes" in c and "SAN 25 → 22" in c, c)
+    path = page.evaluate("() => dgAc.playerPath(dgAc.agent('ILSE-VR03'))")
+    record("acell-players", "from then on it is the player file", path == MINE and MINE.replace(".md", "") in page.inner_text("#ac-pfile .ac-pf-link"), str(path))
+    page.evaluate("() => dgAcPlayers.ensureFile('ILSE-VR03').then(p => dgAcPlayers.append(p, 'Handler notes', ['- 2026-11-05 · Saw the King']))")
+    wait_for_condition(lambda: "Saw the King" in page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE), timeout_ms=4000)
+    c2 = page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE)
+    old = page.evaluate("() => (dgVault.get('Players/Ilse Varga.md') || {}).content || ''")
+    record("acell-players", "a new note goes into your file under Handler notes, not into Players/",
+           "- 2026-11-01 · Trusts nobody with the log\n- 2026-11-05 · Saw the King" in c2 and "Saw the King" not in old, c2)
+    # The Handler keeps their own Agent files in Players/ too: those count; A-Cell's copy for the Agent doesn't.
+    page.evaluate("""() => Promise.all([dgVault.save('Players/Agent MILK. Mara Kessler.md', '---\\ncell: "[[Impossible]]"\\n---\\n# Mara\\n'),
+      dgVault.save('Players/Mara Kessler.md', '---\\nplayer: \\nagent code: MARA-KS01\\n---\\n# Mara Kessler\\n\\n## Handler notes\\n\\n- old line\\n')])""")
+    c3 = page.evaluate("() => dgAcPlayers.candidates(dgAc.agent('MARA-KS01'))")
+    record("acell-players", "a note of yours in Players/ is suggested; A-Cell's own Players/<name>.md is not",
+           c3 and c3[0] == "Players/Agent MILK. Mara Kessler.md" and "Players/Mara Kessler.md" not in c3, str(c3))
+    page.evaluate("() => dgAcPlayers.linkFile(dgAc.agent('MARA-KS01'), 'Players/Agent MILK. Mara Kessler.md')")
+    page.wait_for_timeout(400)
+    record("acell-players", "…and once linked it is the player file, with A-Cell's lines merged in",
+           page.evaluate("() => dgAc.playerPath(dgAc.agent('MARA-KS01'))") == "Players/Agent MILK. Mara Kessler.md"
+           and "- old line" in page.evaluate("() => dgVault.get('Players/Agent MILK. Mara Kessler.md').content"), "")
+    record("acell-players", "no JS errors (own player file)", not errs, str(errs))
+    page.close()
+
+def test_acell_mobile_own_file(p):
+    """2026-11-07: on the phone too, an Agent's screen suggests the
+    Handler's own note as their file; Use it links it (A-Cell's copy
+    merged in) and the screen says which note it is."""
+    page, errs = open_phone(p)
+    MINE = "Impossible/Agents/Ilse Varga - Agent Kite.md"
+    page.evaluate("""(m) => dgVault.load().then(() => Promise.all([
+      dgVault.save(m, '---\\ncell: "[[Impossible]]"\\n---\\n# Ilse Varga\\n'),
+      dgVault.save('Players/Ilse Varga.md', '---\\nagent code: ILSE-VR03\\n---\\n# Ilse Varga\\n\\n## Handler notes\\n\\n- Trusts nobody with the log\\n')]))""", MINE)
+    page.evaluate("() => dgAcm.go('agent', 'ILSE-VR03')")
+    wait_for_condition(lambda: page.locator("[data-acm=pf-use]").count() == 1, timeout_ms=6000)
+    record("acell-mobile-agents", "the Agent screen suggests your own note as their file",
+           page.get_attribute("[data-acm=pf-use]", "data-path") == MINE, page.inner_text("#acm-view")[:300])
+    page.click("[data-acm=pf-use]")
+    wait_for_condition(lambda: "agent code: ILSE-VR03" in page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE), timeout_ms=5000)
+    wait_for_condition(lambda: "Their file: " + MINE.replace(".md", "") in page.inner_text("#acm-view"), timeout_ms=4000)
+    c = page.evaluate("(m) => (dgVault.get(m) || {}).content || ''", MINE)
+    record("acell-mobile-agents", "Use it links it, merges A-Cell's copy, and the screen names the file",
+           "- Trusts nobody with the log" in c and 'cell: "[[Impossible]]"' in c and "Their file: " + MINE.replace(".md", "") in page.inner_text("#acm-view"), c)
+    record("acell-mobile-agents", "no JS errors (own file on the phone)", not errs, str(errs))
     page.close()
 
 def test_acell_console(p):
@@ -14626,6 +14884,11 @@ def main():
         safe(test_acell_mobile_panels, browser, area="acell-mobile-panels")
         safe(test_vault_sync_rules, browser, area="vault-sync")
         safe(test_acell_console, browser, area="acell-console")
+        safe(test_acell_cell_operations, browser, area="acell-cells")
+        safe(test_acell_operation_folders, browser, area="acell-cells")
+        safe(test_acell_vault_layout, browser, area="acell-cells")
+        safe(test_acell_players_own_file, browser, area="acell-players")
+        safe(test_acell_mobile_own_file, browser, area="acell-mobile-agents")
         safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")

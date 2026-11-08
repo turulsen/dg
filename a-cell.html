@@ -993,6 +993,20 @@
   .cell-chs{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:8px 0; font-size:12px; }
   .cell-chs > span{ letter-spacing:.14em; text-transform:uppercase; font-size:10.5px; color:var(--ink-2); margin-right:4px; }
   .cell-chs small{ flex-basis:100%; color:var(--ink-3); font-size:11px; }
+  .cell-ops{ margin:10px 0 8px; border-top:1px dashed var(--rule); padding-top:8px; }
+  .cell-ops-hd{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  .cell-ops-hd > span{ letter-spacing:.14em; text-transform:uppercase; font-size:10.5px; color:var(--ink-2); }
+  .cell-op-row, .cell-op-form{ display:flex; align-items:center; gap:6px; padding:4px 0; border-bottom:1px dotted var(--rule); }
+  .cell-op-name{ flex:1; min-width:0; font-family:'Special Elite',monospace; font-size:14px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cell-op-f{ font:11.5px 'Courier Prime',monospace; color:var(--ink-2); padding:2px 0 6px; }
+  .cell-op-f code{ background:rgba(0,0,0,.06); padding:0 5px; color:var(--ink); }
+  .cell-op-f .warn{ color:#8b1a1a; }
+  .cell-op-pick{ margin:4px 0 10px; border:1px solid var(--rule); background:#fbf6e3; padding:10px 12px; display:grid; gap:6px; }
+  .cell-op-pick label{ font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-2); }
+  .cell-op-sel{ font:13px 'Courier Prime',monospace; padding:6px; border:1px solid var(--rule); border-radius:0; background:#fff; max-width:100%; }
+  .cell-op-acts{ display:flex; gap:6px; }
+  .cell-op-in{ flex:1; min-width:0; font:14px 'Courier Prime',monospace; padding:6px 8px; border:1px solid var(--rule); border-radius:0; background:#fffdf4; }
+  .cell-op-del{ color:#8b1a1a; border-color:#8b1a1a; }
   .cell-ch{ width:34px; height:30px; border:1px solid var(--ink-2); background:transparent; font:13px 'Courier Prime',monospace; cursor:pointer; }
   .cell-ch.on{ background:var(--ink); color:#f4eed8; }
   /* The Agent File's ink and paper for the Sheet and Cells panels too:
@@ -3298,7 +3312,139 @@
     renderUnassigned();
   }
 
+  /* ── A Cell's operations (2026-11-04): listed on its card, renamed,
+     added and deleted here (Rename and Delete were only in the Evidence
+     tab's folders, and only with that Cell filtered). The list is
+     dgTapes' copy of operations/ (acell-tapes.js); a change reloads it,
+     and the Evidence tab's folders. Renaming keeps the operation's vault
+     folder (its notes' paths stay as they are). ── */
+  var opEdit = null; // { cell: cell_id, op: operation_id | '' (new) }
+  function cellOps(c) {
+    var T = window.dgTapes;
+    return T && T.operations ? T.operations().filter(function (o) { return o.cell_id === c.cell_id; }).sort(function (a, b) { return (a.created_at || 0) - (b.created_at || 0); }) : [];
+  }
+  function opsHtml(c) {
+    var ops = cellOps(c), ed = opEdit && opEdit.cell === c.cell_id ? opEdit : null;
+    function form(op) {
+      return '<div class="cell-op-form" data-op-form="' + escapeHtml(c.cell_id) + '"><input type="text" class="cell-op-in" data-op-name="' + escapeHtml(op ? op.operation_id : '') + '" value="' + escapeHtml(op ? op.name : '') + '" placeholder="Operation name" maxlength="80">' +
+        '<button type="button" class="paper-btn primary" data-op-save>' + (op ? 'Save' : 'Add') + '</button><button type="button" class="paper-btn" data-op-cancel>Cancel</button></div>';
+    }
+    return '<div class="cell-ops"><div class="cell-ops-hd"><span>Operations</span>' +
+      (ed && !ed.op ? '' : '<button type="button" class="paper-btn" data-op-new="' + escapeHtml(c.cell_id) + '">+ Operation</button>') + '</div>' +
+      ops.map(function (o) {
+        if (ed && ed.op === o.operation_id) return form(o);
+        return '<div class="cell-op-row"><span class="cell-op-name">' + escapeHtml(o.name || o.operation_id) + '</span>' +
+          '<button type="button" class="paper-btn" data-op-rename="' + escapeHtml(o.operation_id) + '" data-op-cell="' + escapeHtml(c.cell_id) + '">Rename</button>' +
+          '<button type="button" class="paper-btn" data-op-folder="' + escapeHtml(o.operation_id) + '" data-op-cell="' + escapeHtml(c.cell_id) + '">Folder&hellip;</button>' +
+          '<button type="button" class="paper-btn cell-op-del" data-op-del="' + escapeHtml(o.operation_id) + '">Delete</button></div>' + folderLine(o, c);
+      }).join('') +
+      (ed && !ed.op ? form(null) : '') +
+      (!ops.length && !(ed && !ed.op) ? '<div class="cells-empty-note">No operations yet.</div>' : '') + '</div>';
+  }
+  // Its vault folder, how many notes, a same-named one elsewhere; Folder… picks one.
+  var opFolderPick = '';
+  function folderLine(o, c) {
+    var M = window.dgAcm;
+    if (!M || !M.vaultFolders) return '';
+    var all = M.vaultFolders(), dir = o.vault_folder || '', n = dir ? all[dir] || 0 : 0;
+    var dup = M.sameNamed(o.name, dir).concat(dir ? M.sameNamed(dir.split('/').pop(), dir) : []).filter(function (x, i, arr) { return arr.findIndex(function (y) { return y.dir === x.dir; }) === i; });
+    var line = '<div class="cell-op-f">Vault folder ' + (dir ? '<code>' + escapeHtml(dir) + '</code> &middot; ' + n + ' note' + (n === 1 ? '' : 's') + (n ? '' : ' <span class="warn">(empty: moved or renamed in Obsidian?)</span>') : '<span class="cells-empty-note">none yet</span>') +
+      (dup.length ? ' <span class="warn">&middot; also: ' + dup.map(function (x) { return '<code>' + escapeHtml(x.dir) + '</code> (' + x.count + ')'; }).join(', ') + '</span>' : '') + '</div>';
+    if (opFolderPick !== o.operation_id) return line;
+    var names = Object.keys(all).sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); });
+    var first = dup.map(function (x) { return x.dir; });
+    var opts = first.concat(names.filter(function (d) { return first.indexOf(d) < 0; }));
+    // The same-named folder found elsewhere is the likely pick.
+    var pick = first[0] || dir;
+    return line + '<div class="cell-op-pick" data-op-pick="' + escapeHtml(o.operation_id) + '"><label>Use this vault folder for ' + escapeHtml(o.name) + '</label>' +
+      '<select class="cell-op-sel">' + opts.map(function (d) { return '<option value="' + escapeHtml(d) + '"' + (d === pick ? ' selected' : '') + '>' + escapeHtml(d) + ' (' + all[d] + ')</option>'; }).join('') + '</select>' +
+      '<p class="cell-add-note">Nothing is moved or overwritten: rename and merge folders in Obsidian. The operation\'s sessions and NPCs point to the notes in the folder you pick.</p>' +
+      '<div class="cell-op-acts"><button type="button" class="paper-btn primary" data-op-pickok>Use it</button><button type="button" class="paper-btn" data-op-pickx>Cancel</button></div></div>';
+  }
+  function opsChanged(msg) {
+    var T = window.dgTapes, E = window.dgAcellEvidence;
+    return (T && T.reloadOps ? T.reloadOps() : Promise.resolve()).then(function () {
+      if (E && E.refreshFolders) E.refreshFolders();
+      opEdit = null;
+      statusEl.textContent = msg;
+      renderGroups();
+    });
+  }
+  function opAct(e) {
+    var b = e.target.closest('[data-op-new],[data-op-rename],[data-op-del],[data-op-save],[data-op-cancel],[data-op-folder],[data-op-pickok],[data-op-pickx]');
+    if (!b || !groupsEl.contains(b)) return;
+    var T = window.dgTapes, all = T && T.operations ? T.operations() : [];
+    if (b.hasAttribute('data-op-folder')) {
+      var fid = b.getAttribute('data-op-folder');
+      opFolderPick = opFolderPick === fid ? '' : fid;
+      var M0 = window.dgAcm, V0 = window.dgVault;
+      if (M0 && V0 && !V0.notes().length) { statusEl.textContent = 'Loading the vault…'; V0.load().then(function () { statusEl.textContent = ''; renderGroups(); }, function () { statusEl.textContent = 'Could not load the vault.'; }); }
+      renderGroups(); return;
+    }
+    if (b.hasAttribute('data-op-pickx')) { opFolderPick = ''; renderGroups(); return; }
+    if (b.hasAttribute('data-op-pickok')) {
+      var box = b.closest('[data-op-pick]'), pid = box.getAttribute('data-op-pick'), dir = box.querySelector('.cell-op-sel').value;
+      if (!dir || !window.dgAcm || !window.dgAcm.setOpFolder) return;
+      b.disabled = true; statusEl.textContent = 'Pointing it to ' + dir + '…';
+      window.dgAcm.loadOpDocs().then(function () { return window.dgAcm.setOpFolder(pid, dir); }).then(function (n) {
+        opFolderPick = '';
+        return opsChanged('Vault folder: ' + dir + (n ? ' · ' + n + ' session' + (n === 1 ? '' : 's') + ' pointed to the notes there.' : '.'));
+      }).catch(function (err) { b.disabled = false; statusEl.textContent = 'Could not change it: ' + ((err && err.message) || err); });
+      return;
+    }
+    if (b.hasAttribute('data-op-new')) { opEdit = { cell: b.getAttribute('data-op-new'), op: '' }; renderGroups(); focusOp(); return; }
+    if (b.hasAttribute('data-op-rename')) { opEdit = { cell: b.getAttribute('data-op-cell'), op: b.getAttribute('data-op-rename') }; renderGroups(); focusOp(); return; }
+    if (b.hasAttribute('data-op-cancel')) { opEdit = null; renderGroups(); return; }
+    if (b.hasAttribute('data-op-del')) {
+      var id = b.getAttribute('data-op-del'), o = all.filter(function (x) { return x.operation_id === id; })[0];
+      if (!o || !confirm('Delete Operation "' + o.name + '"? Evidence filed under it becomes Unfiled, not deleted; its vault notes stay.')) return;
+      b.disabled = true; statusEl.textContent = 'Deleting ' + o.name + '…';
+      window.dgAcellApi.post({ action: 'delete_operation', operation_id: id })
+        .then(function () { return opsChanged('Deleted ' + o.name + '.'); })
+        .catch(function (err) { b.disabled = false; statusEl.textContent = 'Could not delete it: ' + ((err && err.message) || err); });
+      return;
+    }
+    saveOp(b.closest('[data-op-form]'));
+  }
+  function focusOp() { var i = groupsEl.querySelector('.cell-op-in'); if (i) { i.focus(); i.select(); } }
+  function saveOp(f) {
+    if (!f || !opEdit) return;
+    var inp = f.querySelector('.cell-op-in'), name = inp.value.trim(), id = inp.getAttribute('data-op-name'), cellId = opEdit.cell;
+    if (!name) { inp.focus(); return; }
+    var T = window.dgTapes, cur = id && T ? (T.operations().filter(function (x) { return x.operation_id === id; })[0] || {}) : {};
+    if (id && name === cur.name) { opEdit = null; renderGroups(); return; }
+    Array.prototype.forEach.call(f.querySelectorAll('button, input'), function (x) { x.disabled = true; });
+    statusEl.textContent = id ? 'Renaming…' : 'Adding ' + name + '…';
+    var M = window.dgAcm;
+    var job = id ? window.dgAcellApi.post({ action: 'update_operation', operation_id: id, name: name })
+      // A new one also gets its vault folder (Sessions, NPCs, Locations), as from the phone's + Operation.
+      : M && M.createOperation ? M.createOperation(name, cellId)
+      : window.dgAcellApi.post({ action: 'create_operation', name: name, cell_id: cellId });
+    job.then(function () { return opsChanged(id ? 'Renamed to ' + name + '.' : 'Added ' + name + '.'); })
+      .catch(function (err) {
+        Array.prototype.forEach.call(f.querySelectorAll('button, input'), function (x) { x.disabled = false; });
+        statusEl.textContent = 'Could not save it: ' + ((err && err.message) || err);
+      });
+  }
+  groupsEl.addEventListener('click', opAct);
+  groupsEl.addEventListener('keydown', function (e) {
+    if (!e.target.classList || !e.target.classList.contains('cell-op-in')) return;
+    if (e.key === 'Enter') { e.preventDefault(); saveOp(e.target.closest('[data-op-form]')); }
+    else if (e.key === 'Escape') { opEdit = null; renderGroups(); }
+  });
+  // The list arrives with dgTapes; redraw then (not while a name is being typed).
+  document.addEventListener('dg-tapes', function () { if (cells.length && !opEdit && !opFolderPick) renderGroups(); });
+  // Note counts follow the vault; and A-Cell followed a folder renamed in Obsidian.
+  var vaultT = 0;
+  document.addEventListener('dg-vault', function () { clearTimeout(vaultT); vaultT = setTimeout(function () { if (cells.length && !opEdit && !opFolderPick) renderGroups(); }, 400); });
+  document.addEventListener('dg-acell-followed', function (e) {
+    var d = e.detail || {};
+    statusEl.textContent = (d.folders || []).map(function (m) { return m[0] + ' → ' + m[1]; }).join(', ') + ((d.folders || []).length ? ': followed from Obsidian. ' : '') + (d.sessions ? d.sessions + ' session' + (d.sessions === 1 ? '' : 's') + ' pointed to the moved notes.' : '');
+  });
+
   function renderGroups() {
+    // dgTapes loads once (its promise is kept); its dg-tapes event redraws.
+    if (window.dgTapes && window.dgTapes.load) window.dgTapes.load().catch(function () {});
     if (!cells.length) {
       groupsEl.innerHTML = '<div class="cells-empty-note">No Cells yet -- click "+ Create Cell" to start one.</div>';
       return;
@@ -3335,6 +3481,7 @@
           var on = (c.channels || []).indexOf(ch) !== -1;
           return '<button type="button" class="cell-ch' + (on ? ' on' : '') + '" data-cell-ch="' + i + '" data-ch="' + ch + '" aria-pressed="' + on + '">' + ch + '</button>';
         }).join('') + '<small>up to three: its players can hear different tapes on each</small></div>' +
+        opsHtml(c) +
         '<div class="cell-members">' + members + '</div>' +
         (friendlyLink
           ? '<p class="cell-add-note">Friendly table link (players pick from this Cell\'s Friendlies, rolls land in its feed): ' +
@@ -4827,6 +4974,8 @@
     // opts: { cell_id, operation_id } -- where the new item goes (the phone's
     // quick Add evidence: the session's Cell and operation).
     newItem: function (opts) { showForm(null, opts); },
+    // The Cells tab renamed, added or deleted an operation: the folders again.
+    refreshFolders: function () { fetchAll(true); },
     release: function (id, on) {
       var h = evidenceItems.filter(function (x) { return x.evidence_id === id; })[0];
       if (!h) return Promise.reject(new Error('That evidence is gone.'));

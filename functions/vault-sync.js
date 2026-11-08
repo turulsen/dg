@@ -50,6 +50,14 @@ function conflictPath(p, taken) {
   return out;
 }
 
+// What the Shortcut saves: the path, and its folder and file name apart --
+// the phone saves text it's handed as .txt unless the name (with .md) is
+// set on its own (2026-11-05: notes from A-Cell arrived as "Name.txt",
+// which Obsidian doesn't read and the Shortcut never sends back).
+function forPhone(path, text) {
+  var i = path.lastIndexOf('/');
+  return { path: path, text: text, name: i >= 0 ? path.slice(i + 1) : path, folder: i >= 0 ? path.slice(0, i) : '' };
+}
 // notes: [{ path, content, synced }]; files: [{ path, text }]
 // Returns { upserts: [{ path, content, synced }], removes: [path], write: [{ path, text }], stats }
 function reconcile(notes, files) {
@@ -63,6 +71,7 @@ function reconcile(notes, files) {
   var taken = {}; Object.keys(byPath).forEach(function (p) { taken[p] = true; });
   var seen = {}, upserts = [], write = [], removes = [];
   var stats = { created: 0, updated: 0, sent: 0, conflicts: 0, removed: 0, same: 0, duplicates: 0 };
+  var moved = {}, created = {};
 
   (files || []).forEach(function (f) {
     var text = String(f.text == null ? '' : f.text).replace(/\r\n/g, '\n');
@@ -76,6 +85,8 @@ function reconcile(notes, files) {
     if (seen[path]) { stats.duplicates += 1; if (!stats.duplicate_example) stats.duplicate_example = path; return; }
     seen[path] = true;
     if (!note) {
+      // New to A-Cell: perhaps a note the phone moved (matched below by its text).
+      (created[norm(text)] = created[norm(text)] || []).push(upserts.length);
       upserts.push({ path: path, content: text, synced: text, pending: null });
       taken[path] = true;
       stats.created += 1;
@@ -96,14 +107,14 @@ function reconcile(notes, files) {
       stats.updated += 1;
     } else if (mine && !theirs) {
       upserts.push({ path: path, content: content, synced: synced, pending: content });
-      write.push({ path: path, text: content });
+      write.push(forPhone(path, content));
       stats.sent += 1;
     } else {
       var cp = conflictPath(path, taken);
       taken[cp] = true;
       upserts.push({ path: path, content: text, synced: text, pending: null });
       upserts.push({ path: cp, content: content, synced: null, pending: content });
-      write.push({ path: cp, text: content });
+      write.push(forPhone(cp, content));
       stats.conflicts += 1;
     }
   });
@@ -111,22 +122,73 @@ function reconcile(notes, files) {
   // Texts the phone has: a note missing from the phone whose text is one of
   // them is a leftover copy under an old path (a name iOS cut short), not
   // an A-Cell edit waiting to go out.
-  var phoneHas = {};
-  (files || []).forEach(function (f) { phoneHas[norm(f.text)] = true; });
+  var phoneHas = {}, phoneDirs = {}, phoneByName = {};
+  (files || []).forEach(function (f) {
+    phoneHas[norm(f.text)] = true;
+    var p = cleanPath(f.path);
+    if (!p) return;
+    var sg = p.split('/');
+    for (var i = 1; i < sg.length; i++) phoneDirs[sg.slice(0, i).join('/')] = true;
+    (phoneByName[sg[sg.length - 1].toLowerCase()] = phoneByName[sg[sg.length - 1].toLowerCase()] || []).push(p);
+  });
   Object.keys(byPath).forEach(function (path) {
     if (seen[path]) return;
     var note = byPath[path], content = note.content == null ? '' : note.content;
-    if (phoneHas[norm(content)]) { removes.push(path); stats.removed += 1; return; }
+    // Moved (or renamed) on the phone: the same text arrived at another path.
+    if (phoneHas[norm(content)]) { removes.push(path); stats.removed += 1; stats.moved_away = (stats.moved_away || 0) + 1; moved[path] = true; return; }
+    // Moved on the phone after A-Cell changed it (2026-11-05: a vault
+    // reorganised before A-Cell's edits had reached the phone): the text
+    // both last agreed on arrived at a new path. A-Cell's version goes
+    // there, and the old path is dropped -- not sent back to recreate it.
+    var at = note.synced != null && !eq(content, note.synced) ? (created[norm(note.synced)] || []).filter(function (i) { return !upserts[i].taken; })[0] : undefined;
+    if (at !== undefined) {
+      var u = upserts[at];
+      u.taken = true;
+      u.content = content; u.pending = content;
+      write.push(forPhone(u.path, content));
+      removes.push(path); moved[path] = true;
+      stats.removed += 1; stats.moved_away = (stats.moved_away || 0) + 1; stats.moved_edited = (stats.moved_edited || 0) + 1;
+      stats.created -= 1; stats.sent += 1;
+      return;
+    }
+    // Its folder is gone from the phone (moved or deleted there): never
+    // recreate it (2026-11-05: a reorganised vault had its old folders
+    // brought back). A note of that name elsewhere gets A-Cell's version
+    // beside it, "Name (A-Cell).md"; otherwise it's held here, listed.
+    var dir = path.indexOf('/') >= 0 ? path.slice(0, path.lastIndexOf('/')) : '';
+    // Also a note A-Cell made and already sent, which never came back
+    // (2026-11-07: notes that only ever reached the phone as .txt kept
+    // recreating their old folders on every sync): sent once, not again.
+    var sentBefore = note.synced == null && note.pending != null;
+    if ((note.synced != null || sentBefore) && !eq(content, note.synced) && dir && !phoneDirs[dir]) {
+      var same = phoneByName[baseName(path).toLowerCase()] || [];
+      if (same.length === 1 && note.synced != null) {
+        var cp2 = conflictPath(same[0], taken);
+        taken[cp2] = true;
+        upserts.push({ path: cp2, content: content, synced: null, pending: content });
+        write.push(forPhone(cp2, content));
+        removes.push(path); moved[path] = true;
+        stats.removed += 1; stats.moved_away = (stats.moved_away || 0) + 1; stats.conflicts += 1; stats.sent += 1;
+      } else {
+        stats.held_orphans = (stats.held_orphans || 0) + 1;
+        (stats.held_paths = stats.held_paths || []).length < 20 && stats.held_paths.push(path);
+      }
+      return;
+    }
     if (note.synced == null || !eq(content, note.synced)) {
       upserts.push({ path: path, content: content, synced: note.synced == null ? null : note.synced, pending: content });
-      write.push({ path: path, text: content });
+      write.push(forPhone(path, content));
       stats.sent += 1;
     } else {
       removes.push(path);
       stats.removed += 1;
     }
   });
-  return { upserts: upserts, removes: removes, write: write, stats: stats };
+  // `movedAway`: removes whose text is still on the phone elsewhere -- a
+  // reorganised vault, not notes gone missing (the mass-delete guard in
+  // index.js leaves these out of its count).
+  upserts.forEach(function (u) { delete u.taken; });
+  return { upserts: upserts, removes: removes, movedAway: removes.filter(function (p) { return moved[p]; }), write: write, stats: stats };
 }
 
 // Firestore document id for a note path: no slashes allowed in an id.

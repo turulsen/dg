@@ -44,7 +44,7 @@
         try {
           col(f).onSnapshot(function (s) {
             var fresh = {};
-            s.forEach(function (doc) { fresh[doc.id] = true; var mine = byId[doc.id], d = norm(doc.id, doc.data()); if (!mine || !mine._pending || d.updated_at >= mine.updated_at) byId[doc.id] = d; });
+            s.forEach(function (doc) { fresh[doc.id] = true; var mine = byId[doc.id], d = norm(doc.id, doc.data()); var recent = mine && (mine._pending || Date.now() - mine.updated_at < 10000); if (!mine || !recent || d.updated_at >= mine.updated_at) byId[doc.id] = d; });
             Object.keys(byId).forEach(function (k) { if (!fresh[k] && !byId[k]._pending) delete byId[k]; });
             emit();
           }, function () { /* keep what was read */ });

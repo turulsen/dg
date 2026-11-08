@@ -180,6 +180,14 @@ body[data-ac-mode="play"] .folder-wrap .folder, body[data-ac-mode="debrief"] .fo
 .ac-pfile{ background:var(--ac-paper); border:1px solid var(--ac-line); padding:12px 16px 16px; font-family:'Courier Prime',monospace; color:var(--ac-ink); min-width:0; position:sticky; top:12px; max-height:calc(100vh - 40px); overflow:auto; }
 .ac-pf-hd{ display:flex; align-items:center; gap:10px; border-bottom:1px solid #e3d9bb; padding-bottom:10px; margin-bottom:8px; }
 .ac-pf-hd .ac-t{ font-family:'Special Elite',monospace; font-size:17px; }
+/* The player file: which note it is, the suggestion, the merge (2026-11-05) */
+.ac-pf-link{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; font:12px 'Courier Prime',monospace; color:#4a3f28; margin:-2px 0 10px; }
+.ac-pf-link:empty{ display:none; }
+.ac-pf-path{ background:rgba(0,0,0,.05); padding:2px 6px; color:#1c1608; overflow-wrap:anywhere; }
+.ac-pf-ask{ flex-basis:100%; }
+.ac-pf-ask b{ font-weight:700; color:#1c1608; }
+.ac-pf-old{ flex-basis:100%; color:#8a5a10; }
+.ac-lnk{ background:none; border:0; border-bottom:1px solid currentColor; padding:0; font:inherit; color:#1c1608; cursor:pointer; }
 .ac-pfile .vn-body{ font-size:13.5px; line-height:1.6; }
 .ac-pfile h2.vn-h{ font-size:16px; border-bottom:1px dashed #e3d9bb; }
 .ac-sheetmodal .vn-sheet{ max-width:980px; background:#efe6c8; }

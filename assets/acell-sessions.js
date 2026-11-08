@@ -38,6 +38,9 @@
     return {
       id: id, name: d.name || 'Untitled session', cell_id: d.cell_id || '', operation_id: d.operation_id || '', date: d.date || '',
       note_path: d.note_path || '', html_note: d.html_note || null,
+      // The operation's phase this session plays in: a folder in the vault
+      // (its NPCs/, Locations/, Investigation/ take the notes made in it).
+      phase: d.phase || '',
       evidence: Array.isArray(d.evidence) ? d.evidence : [], tracks: Array.isArray(d.tracks) ? d.tracks : [],
       pads: Array.isArray(d.pads) ? d.pads : [], npcs: Array.isArray(d.npcs) ? d.npcs : [], away: Array.isArray(d.away) ? d.away : [],
       quick_notes: Array.isArray(d.quick_notes) ? d.quick_notes : [], start: d.start || null, started_at: d.started_at || 0,
@@ -83,8 +86,13 @@
             s.forEach(function (doc) {
               var mine = byId[doc.id];
               var d = norm(doc.id, doc.data());
-              // A write of ours still on its way wins over an older copy.
-              if (!mine || !mine._pending || d.updated_at >= mine.updated_at) byId[doc.id] = d;
+              // A write of ours still on its way wins over an older copy -- and
+              // so does one just made: a copy from before it can still arrive
+              // after it lands (2026-11-05: a quick note jotted right after
+              // another lost the first). Older than ten seconds, it's another
+              // device's edit (its clock may be behind) and it's taken.
+              var fresh = mine && (mine._pending || Date.now() - mine.updated_at < 10000);
+              if (!mine || !fresh || d.updated_at >= mine.updated_at) byId[doc.id] = d;
             });
             emit();
           }, function () { /* keep what was read */ });
