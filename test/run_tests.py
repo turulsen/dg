@@ -5713,6 +5713,76 @@ def test_acell_mobile_own_file(p):
     record("acell-mobile-agents", "no JS errors (own file on the phone)", not errs, str(errs))
     page.close()
 
+def test_acell_play_notes_nav(p):
+    """2026-11-08, the Play desk's notebook: a [[link]] opens its note right
+    there (Play stays), ‹ Back / Forward › walk the trail, the crumb shows
+    it, ☰ Notes lists this session's notes and the operation's folder,
+    Back to the session note returns."""
+    page, errs = open_acell_shell(p)
+    page.evaluate("""() => dgVault.load().then(() => Promise.all([
+      dgVault.save('Pale Lantern/NPCs/Ruth Ainsley.md', '# Ruth Ainsley\\n\\nThe harbour master. Knows [[Keeper Hollis]].\\n'),
+      dgVault.save('Pale Lantern/NPCs/Keeper Hollis.md', '# Keeper Hollis\\n\\nTends the lamp.\\n')]))""")
+    page.click("#ac-modes [data-mode=play]")
+    page.wait_for_selector(".pd-notebook .pd-nnav", timeout=6000)
+    page.click(".pd-tab[data-t='*']")
+    page.wait_for_selector(".pd-notebook [data-vlink='Ruth Ainsley']", timeout=5000)
+    page.click(".pd-notebook [data-vlink='Ruth Ainsley']")
+    page.wait_for_selector(".pd-notebook .pd-visit", timeout=4000)
+    record("acell-play", "a [[link]] in Play opens its note in the notebook; Play stays",
+           page.evaluate("() => document.body.dataset.acMode") == "play" and "The harbour master" in page.inner_text(".pd-notebook .pd-visit") and "Ruth Ainsley" in page.inner_text(".pd-crumb"), page.inner_text(".pd-notebook")[:300])
+    page.click(".pd-notebook .pd-visit [data-vlink='Keeper Hollis']")
+    wait_for_condition(lambda: "Tends the lamp" in page.inner_text(".pd-notebook .pd-visit"), timeout_ms=4000)
+    record("acell-play", "…and onwards: the crumb shows the trail", "Ruth Ainsley › Keeper Hollis" in page.inner_text(".pd-crumb"), page.inner_text(".pd-crumb"))
+    page.click("[data-pd=nb-back]")
+    wait_for_condition(lambda: "The harbour master" in page.inner_text(".pd-notebook .pd-nbody"), timeout_ms=3000)
+    page.click("[data-pd=nb-back]")
+    wait_for_condition(lambda: page.locator(".pd-notebook .pd-visit").count() == 0, timeout_ms=3000)
+    back_ok = page.locator(".pd-notebook .pd-ed").count() == 1 and "Opening" in page.inner_text(".pd-notebook .pd-nbody")
+    page.click("[data-pd=nb-fwd]")
+    wait_for_condition(lambda: page.locator(".pd-notebook .pd-visit").count() == 1, timeout_ms=3000)
+    record("acell-play", "‹ Back to the session note, Forward › again", back_ok and "The harbour master" in page.inner_text(".pd-notebook .pd-visit"), "")
+    page.click("[data-pd=nb-menu]")
+    page.wait_for_selector(".pd-nmenu", timeout=3000)
+    menu = page.inner_text(".pd-nmenu")
+    record("acell-play", "☰ Notes: this session's notes, the operation's folder, the notes visited",
+           "THIS SESSION" in menu.upper() and "PALE LANTERN" in menu.upper() and "Keeper Hollis" in menu and "VISITED" in menu.upper(), menu)
+    page.click(".pd-nmenu [data-pd=nb-go][data-path='Pale Lantern/NPCs/Keeper Hollis.md']")
+    wait_for_condition(lambda: "Tends the lamp" in page.inner_text(".pd-notebook .pd-visit"), timeout_ms=3000)
+    page.click("[data-pd=nb-home]")
+    wait_for_condition(lambda: page.locator(".pd-notebook .pd-visit").count() == 0, timeout_ms=3000)
+    record("acell-play", "a note from the menu opens; Back to the session note returns", page.locator(".pd-notebook .pd-ed").count() == 1 and page.locator(".pd-nmenu").count() == 0, "")
+    record("acell-play", "no JS errors (notebook navigation)", not errs, str(errs))
+    page.close()
+
+def test_acell_play_evidence_viewer(p):
+    """2026-11-08, the Play desk: an item in the Evidence box opens in a
+    viewer -- its text, where it's filed, Release / Unrelease, ‹ Prev /
+    Next › through the box, Edit on the Evidence tab."""
+    page, errs = open_acell_shell(p)
+    acell_feed_evidence(page)
+    page.evaluate("() => dgSessions.update('sess_4', { evidence: ['ev_log', 'ev_tide'] })")
+    page.click("#ac-modes [data-mode=play]")
+    page.wait_for_selector(".pd-f[data-ev=ev_log] .pd-fopen", timeout=6000)
+    page.click(".pd-f[data-ev=ev_log] .pd-fopen")
+    page.wait_for_selector(".pd-evmodal", timeout=3000)
+    v = page.inner_text(".pd-evmodal")
+    record("acell-play", "an Evidence box item opens in the viewer: title, text, not released",
+           "Keeper's log" in v and "14 March. Fog again." in v and "NOT RELEASED" in v.upper(), v[:300])
+    record("acell-play", "…‹ Prev is off on the first, Next › on", page.is_disabled(".pd-evmodal [data-eva=prev]") and not page.is_disabled(".pd-evmodal [data-eva=next]"), "")
+    page.click(".pd-evmodal [data-eva=rel]")
+    wait_for_condition(lambda: (fs_doc(page, "evidence/ev_log") or {}).get("released") is True, timeout_ms=5000)
+    wait_for_condition(lambda: page.locator(".pd-evmodal [data-eva=rel]").count() and "UNRELEASE" in page.inner_text(".pd-evmodal [data-eva=rel]").upper(), timeout_ms=4000)
+    record("acell-play", "Release to the Cell releases it; the button becomes Unrelease", "UNRELEASE" in page.inner_text(".pd-evmodal [data-eva=rel]").upper(), page.inner_text(".pd-evmodal")[:200])
+    page.click(".pd-evmodal [data-eva=next]")
+    wait_for_condition(lambda: "Tide chart" in page.inner_text(".pd-evmodal"), timeout_ms=3000)
+    record("acell-play", "Next › shows the box's next item", "Tide chart" in page.inner_text(".pd-evmodal") and page.locator(".pd-evmodal").count() == 1, "")
+    page.click(".pd-evmodal [data-eva=edit]")
+    wait_for_condition(lambda: page.locator("#evidence-new-title").count() == 1 and page.input_value("#evidence-new-title") == "Tide chart", timeout_ms=5000)
+    record("acell-play", "Edit opens the item's form on the Evidence tab",
+           page.locator("#evidence-new-title").count() == 1 and page.input_value("#evidence-new-title") == "Tide chart" and page.locator(".pd-evmodal").count() == 0, "")
+    record("acell-play", "no JS errors (evidence viewer)", not errs, str(errs))
+    page.close()
+
 def test_acell_console(p):
     """v3.12.0, the Music tab's control center: the broadcast on a tape
     deck -- channels, the Cell's channel, a link to play or cue, the
@@ -14889,6 +14959,8 @@ def main():
         safe(test_acell_vault_layout, browser, area="acell-cells")
         safe(test_acell_players_own_file, browser, area="acell-players")
         safe(test_acell_mobile_own_file, browser, area="acell-mobile-agents")
+        safe(test_acell_play_notes_nav, browser, area="acell-play")
+        safe(test_acell_play_evidence_viewer, browser, area="acell-play")
         safe(test_acell_vault_new_link, browser, area="acell-vault-link")
         safe(test_acell_mobile_typing_kept, browser, area="acell-mobile")
         safe(test_acell_mobile_waiting, browser, area="acell-mobile")

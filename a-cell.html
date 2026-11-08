@@ -3664,6 +3664,7 @@
 </script>
 
 <script src="assets/evidence-md.js"></script>
+<script src="assets/evidence-viewer.js"></script>
 <script>
 /* ══════════════════════════════════════════════
    EVIDENCE -- an evidence locker the Handler files, each item scoped to
@@ -4974,6 +4975,12 @@
     // opts: { cell_id, operation_id } -- where the new item goes (the phone's
     // quick Add evidence: the session's Cell and operation).
     newItem: function (opts) { showForm(null, opts); },
+    // The Play desk's evidence viewer (2026-11-08): Edit opens this item's
+    // form on the Evidence tab; photoSrc gives a photo's address (a legacy
+    // gdrive: one resolved through the image proxy) to cb.
+    edit: function (id) { var h = evidenceItems.filter(function (x) { return x.evidence_id === id; })[0]; if (h) showForm(h); },
+    photoSrc: function (photo, cb) { if (!photo) return; if (extractDriveId(photo)) loadEvidencePhotoDataUri(photo, cb); else cb(photo); },
+    isPdf: isPdfUrl_,
     // The Cells tab renamed, added or deleted an operation: the folders again.
     refreshFolders: function () { fetchAll(true); },
     release: function (id, on) {

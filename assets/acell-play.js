@@ -75,7 +75,7 @@
   }
   function save() { A.keep(KEY3, L); }
 
-  var st = { open: false, arrange: false, built: '', ed: null, edFor: '', scene: null, edit: false, turn: 0, htmlFor: '', jot: '', pick: '' };
+  var st = { open: false, arrange: false, built: '', ed: null, edFor: '', scene: null, edit: false, turn: 0, htmlFor: '', jot: '', pick: '', trail: [], at: -1, menu: false, ved: null, vedFor: '' };
 
   /* ── Building the desk ── */
   function place(id) { var r = L.items[id]; return 'grid-column:' + (r.x + 1) + ' / span ' + r.w + ';grid-row:' + (r.y + 1) + ' / span ' + r.h; }
@@ -99,7 +99,7 @@
     if (st.built === key) return;
     releaseDice();
     if (window.dgAcConsole && window.dgAcConsole.lent && window.dgAcConsole.lent() && panel.contains(document.getElementById('ac-console'))) window.dgAcConsole.detach();
-    if (st.ed) { st.ed.destroy(); st.ed = null; st.edFor = ''; }
+    if (st.ed) { st.ed.destroy(); st.ed = null; st.edFor = ''; } if (st.ved) { st.ved.destroy(); st.ved = null; st.vedFor = ''; }
     st.htmlFor = '';
     st.built = key;
     if (!s) {
@@ -199,14 +199,18 @@
     var box = ob('notebook');
     if (!box) return;
     var list = window.dgSessions.notesOf(s);
-    if (st.noteFor !== s.id) { st.noteFor = s.id; st.note = +((A.store('dg_acell_nbnote', {}))[s.id] || 0); }
+    if (st.noteFor !== s.id) { st.noteFor = s.id; st.note = +((A.store('dg_acell_nbnote', {}))[s.id] || 0); st.trail = []; st.at = -1; st.menu = false; }
     if (!(st.note < list.length)) st.note = 0;
     var n = list[st.note];
-    if (!box.querySelector('.pd-nbody')) { if (st.ed) { st.ed.destroy(); st.ed = null; } st.edFor = ''; st.htmlFor = ''; box.innerHTML = '<div class="pd-ntabs"></div><div class="pd-nbody"></div>'; }
+    if (!box.querySelector('.pd-nbody') || !box.querySelector('.pd-nnav')) { if (st.ed) { st.ed.destroy(); st.ed = null; } if (st.ved) { st.ved.destroy(); st.ved = null; } st.edFor = ''; st.vedFor = ''; st.htmlFor = ''; box.innerHTML = '<div class="pd-ntabs"></div><div class="pd-nnav"></div><div class="pd-nbody"></div>'; }
     var nt = box.querySelector('.pd-ntabs');
     nt.innerHTML = list.length > 1 ? list.map(function (x, k) { return '<button type="button" class="pd-ntab' + (k === st.note ? ' on' : '') + '" data-pd="note" data-i="' + k + '">' + esc(noteTitle(x)) + '</button>'; }).join('') : '';
     nt.style.display = list.length > 1 ? '' : 'none';
     var el = box.querySelector('.pd-nbody');
+    drawNav(box, s, list);
+    // A note opened from a link or the Notes menu, in place of the session's.
+    if (st.at >= 0 && st.trail[st.at]) { drawVisit(el, st.trail[st.at]); return; }
+    if (st.ved) { st.ved.destroy(); st.ved = null; st.vedFor = ''; el.innerHTML = ''; }
     if (!n || n.kind !== 'vault') { if (st.ed) { st.ed.destroy(); st.ed = null; } st.edFor = ''; }
     if (n && n.kind === 'html' && window.dgSessionNotes) {
       if (st.htmlFor === 'h' + n.id + n.lang && el.querySelector('.sn-viewer, iframe')) return;
@@ -257,14 +261,72 @@
         hideHead: true, mode: st.edit ? 'edit' : 'read', grow: true,
         scene: st.scene === '*' ? null : { title: st.scene },
         emptyText: note ? 'Nothing in this scene yet — ✎ edit to write.' : 'Loading the note…',
-        onLink: function (p) { A.setMode('prep'); A.openNote(p); },
+        onLink: function (p) { goNote(p); },
         onCue: cue
       });
     }
     el.querySelector('.pd-bar').innerHTML = bar;
   }
+  /* ── Moving between vault notes in Play (2026-11-08): a link opens its
+     note here (Play stays), ‹ Back / Forward › walk the trail, the crumb
+     shows it, ☰ Notes lists this session's notes, the operation's folder
+     (its phases) and the notes visited. st.trail / st.at: -1 is the
+     session's own note. ── */
+  function goNote(p) {
+    if (!p || !V().get(p)) return;
+    st.trail = st.trail.slice(0, st.at + 1).concat([p]);
+    st.at = st.trail.length - 1;
+    st.menu = false;
+    drawNotebook(A.session());
+  }
+  function opDir(s) {
+    var L = window.dgAcm && window.dgAcm.layout, op = s && (window.dgTapes ? window.dgTapes.operations() : []).filter(function (o) { return o.operation_id === s.operation_id; })[0];
+    var idx = L && op ? L.opIndex(op) : null;
+    return idx ? idx.dir : (op && op.vault_folder) || '';
+  }
+  function drawNav(box, s, list) {
+    var nav = box.querySelector('.pd-nnav'), here = st.at >= 0 ? st.trail[st.at] : '';
+    var crumb = st.trail.slice(0, st.at + 1).map(function (p) { return V().title(p); });
+    nav.innerHTML = '<button type="button" data-pd="nb-back"' + (st.at >= 0 ? '' : ' disabled') + '>‹ Back</button>' +
+      '<button type="button" data-pd="nb-fwd"' + (st.at < st.trail.length - 1 ? '' : ' disabled') + '>Forward ›</button>' +
+      '<button type="button" data-pd="nb-menu" class="' + (st.menu ? 'on' : '') + '">☰ Notes</button>' +
+      '<span class="pd-crumb">' + (here ? esc((list[st.note] ? noteTitle(list[st.note]) : 'Session') + ' › ') + '<b>' + esc(crumb.join(' › ')) + '</b>' : '') + '</span>' +
+      (here ? '<button type="button" data-pd="nb-home">Back to the session note</button>' : '');
+    var m = box.querySelector('.pd-nmenu');
+    if (!st.menu) { if (m) m.remove(); return; }
+    if (!m) { m = document.createElement('div'); m.className = 'pd-nmenu'; box.appendChild(m); }
+    m.style.top = (nav.offsetTop + nav.offsetHeight) + 'px';
+    var dir = opDir(s), ns = dir ? V().notes().filter(function (x) { return x.path.indexOf(dir + '/') === 0; }) : [];
+    var html = '<h4>This session</h4>' + list.map(function (x, k) { return '<button type="button" data-pd="nb-sess" data-i="' + k + '"' + (st.at < 0 && k === st.note ? ' class="on"' : '') + '>' + esc(noteTitle(x)) + (x.kind !== 'vault' ? ' <small>' + (x.kind === 'gdoc' ? 'Google Doc' : 'HTML') + '</small>' : '') + '</button>'; }).join('');
+    if (ns.length) {
+      html += '<h4>' + esc(dir.split('/').pop()) + '</h4>';
+      var groups = {};
+      ns.forEach(function (x) { var rel = x.path.slice(dir.length + 1), d = rel.indexOf('/') >= 0 ? rel.slice(0, rel.lastIndexOf('/')) : ''; (groups[d] = groups[d] || []).push(x.path); });
+      Object.keys(groups).sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }); }).forEach(function (d) {
+        var depth = d ? d.split('/').length : 0;
+        if (d) html += '<div class="pd-nm-dir" style="--d:' + (depth - 1) + '">' + esc(d.split('/').pop()) + '</div>';
+        groups[d].sort(function (a, b) { return V().title(a).localeCompare(V().title(b), undefined, { numeric: true, sensitivity: 'base' }); }).forEach(function (p) {
+          html += '<button type="button" data-pd="nb-go" data-path="' + esc(p) + '" style="--d:' + depth + '"' + (p === here ? ' class="on"' : '') + '>' + esc(V().title(p)) + '</button>';
+        });
+      });
+    }
+    var seen = {}, visited = st.trail.slice().reverse().filter(function (p) { if (seen[p]) return false; seen[p] = true; return true; });
+    if (visited.length) html += '<h4>Visited</h4>' + visited.map(function (p) { return '<button type="button" data-pd="nb-go" data-path="' + esc(p) + '">' + esc(V().title(p)) + '</button>'; }).join('');
+    m.innerHTML = html;
+  }
+  function drawVisit(el, path) {
+    if (st.ed) { st.ed.destroy(); st.ed = null; st.edFor = ''; }
+    if (st.htmlFor && window.dgSessionNotes && window.dgSessionNotes.current() && window.dgSessionNotes.current().docked) window.dgSessionNotes.close();
+    st.htmlFor = '';
+    if (st.ved && st.vedFor === path && el.querySelector('.pd-ved')) return;
+    if (st.ved) st.ved.destroy();
+    el.innerHTML = '<div class="pd-page pd-visit"><div class="pd-ved"></div></div>';
+    st.vedFor = path;
+    st.ved = V().editor(el.querySelector('.pd-ved'), path, { hideHead: false, mode: 'read', grow: true, onLink: function (p) { goNote(p); }, onCue: cue });
+  }
   function setNote(i) {
     var s = A.session();
+    st.at = -1; st.menu = false;
     st.note = i; st.scene = null; st.edit = false;
     var memo = A.store('dg_acell_nbnote', {}); memo[s.id] = i; A.keep('dg_acell_nbnote', memo);
     drawNotebook(s);
@@ -385,9 +447,54 @@
       var h = E && E.find(id);
       if (!h) return '<div class="pd-f"><span>' + (E && E.items().length ? '(deleted)' : 'Loading…') + '</span></div>';
       var es = A.evidenceState(h);
-      return '<div class="pd-f" data-ev="' + esc(id) + '"><span>' + esc(h.title || 'Untitled') + '</span>' +
+      return '<div class="pd-f" data-ev="' + esc(id) + '"><button type="button" class="pd-fopen" data-pd="ev-open" title="Open it">' + esc(h.title || 'Untitled') + '</button>' +
         (es.released ? '<i class="ok">released' + (es.unseen.length ? ' · unseen: ' + esc(es.unseen.join(', ')) : '') + '</i>' : '<button type="button" data-pd="release">release ▸</button>') + '</div>';
     }).join('') : '<div class="pd-hint">Nothing in the box (Prep → Evidence → + Add to session).</div>');
+  }
+
+  /* ── The evidence viewer (2026-11-08): an item of the session's box,
+     opened: its photo (zoomable, or Open PDF), where it's filed, its text,
+     Release / Unrelease, Edit, and ‹ Prev / Next › through the box. ── */
+  function evView(id) {
+    var E = window.dgAcellEvidence, s = A.session();
+    if (!E || !s) return;
+    var ids = s.evidence.filter(function (x) { return E.find(x); }), h = E.find(id);
+    if (!h) return;
+    var at = ids.indexOf(id), es = A.evidenceState(h);
+    var where = [h.operation_id && E.opName ? E.opName(h.operation_id) : '', h.cell_id && E.cellName ? E.cellName(h.cell_id) : '', h.created_at ? new Date(+h.created_at).toLocaleDateString([], { day: 'numeric', month: 'short' }) : ''].filter(Boolean).join(' · ');
+    var pdf = h.photo && E.isPdf && E.isPdf(h.photo);
+    var old = document.querySelector('.pd-evmodal');
+    if (old) old.remove();
+    var w = A.modal('<div class="pd-evv">' +
+      '<div class="pd-evph">' + (h.photo ? (pdf ? '<a class="ac-btn" data-evpdf target="_blank" rel="noopener">Open PDF</a>' : '<img alt="" data-evimg><span>Click to zoom</span>') : '<span class="pd-evnone">No photo</span>') + '</div>' +
+      '<div class="pd-evtx"><span class="pd-evst' + (es.released ? ' on' : '') + '">' + (es.released ? 'Released' + (es.unseen.length ? ' · unseen: ' + esc(es.unseen.join(', ')) : '') : 'Not released') + '</span>' +
+      '<h3>' + esc(h.title || 'Untitled') + '</h3>' + (where ? '<div class="pd-evmeta">' + esc(where) + '</div>' : '') +
+      '<div class="pd-evbody dg-md">' + (window.dgEvidenceMd ? window.dgEvidenceMd.render(h.body || '') : esc(h.body || '')) + '</div>' +
+      '<div class="pd-evacts"><button type="button" class="ac-btn p" data-eva="rel">' + (h.released ? 'Unrelease' : 'Release to the Cell') + '</button>' +
+      (h.photo && !pdf ? '<button type="button" class="ac-btn" data-eva="zoom">Zoom</button>' : '') +
+      '<button type="button" class="ac-btn" data-eva="edit">Edit</button>' +
+      '<button type="button" class="ac-btn" data-eva="prev"' + (at > 0 ? '' : ' disabled') + '>‹ Prev</button><button type="button" class="ac-btn" data-eva="next"' + (at >= 0 && at < ids.length - 1 ? '' : ' disabled') + '>Next ›</button>' +
+      '<button type="button" class="ac-btn" data-vclose>Close</button></div></div></div>', 'pd-evmodal');
+    if (h.photo) E.photoSrc(h.photo, function (src) {
+      var img = w.querySelector('[data-evimg]'), a = w.querySelector('[data-evpdf]');
+      if (img) img.src = src;
+      if (a) a.href = window.dgEvidenceViewer ? window.dgEvidenceViewer.pdfHref(src) : src;
+    });
+    function zoom() { var img = w.querySelector('[data-evimg]'); if (img && img.src && window.dgEvidenceViewer) window.dgEvidenceViewer.open(img.src, h.title || 'Evidence'); }
+    w.addEventListener('click', function (e) {
+      if (e.target.closest('[data-evimg]')) { zoom(); return; }
+      var b = e.target.closest('[data-eva]');
+      if (!b) return;
+      var a = b.getAttribute('data-eva');
+      if (a === 'zoom') zoom();
+      else if (a === 'prev' && at > 0) evView(ids[at - 1]);
+      else if (a === 'next' && at < ids.length - 1) evView(ids[at + 1]);
+      else if (a === 'edit') { w.remove(); A.setMode('prep'); window.dgAcellTab('evidence'); setTimeout(function () { E.edit(id); }, 60); }
+      else if (a === 'rel') {
+        b.disabled = true; b.textContent = h.released ? 'Unreleasing…' : 'Releasing…';
+        E.release(id, !h.released).then(function () { evView(id); }, function (err) { b.disabled = false; b.textContent = (err && err.message) || String(err); });
+      }
+    });
   }
 
   /* ── Effect pads ── */
@@ -511,6 +618,13 @@
       case 'tape': { var mt = music(s); if (mt.tape) m.playCue(+b.getAttribute('data-i')); else playTape(mt.tracks[+b.getAttribute('data-i')]); return; }
       case 'insert': window.dgTapes.insert(b.getAttribute('data-id')); return;
       case 'eject': window.dgTapes.eject(); return;
+      case 'nb-back': if (st.at >= 0) { st.at--; drawNotebook(s); } return;
+      case 'nb-fwd': if (st.at < st.trail.length - 1) { st.at++; drawNotebook(s); } return;
+      case 'nb-menu': st.menu = !st.menu; drawNotebook(s); return;
+      case 'nb-home': st.at = -1; st.menu = false; drawNotebook(s); return;
+      case 'nb-go': goNote(b.getAttribute('data-path')); return;
+      case 'nb-sess': setNote(+b.getAttribute('data-i')); return;
+      case 'ev-open': evView(b.closest('[data-ev]').getAttribute('data-ev')); return;
       case 'release': {
         var id = b.closest('[data-ev]').getAttribute('data-ev');
         b.disabled = true; b.textContent = 'releasing…';
@@ -658,7 +772,7 @@
     } else if (was) {
       releaseDice();
       if (window.dgAcConsole && panel.contains(document.getElementById('ac-console'))) window.dgAcConsole.detach();
-      if (st.ed) { st.ed.destroy(); st.ed = null; st.edFor = ''; }
+      if (st.ed) { st.ed.destroy(); st.ed = null; st.edFor = ''; } if (st.ved) { st.ved.destroy(); st.ved = null; st.vedFor = ''; }
       if (window.dgSessionNotes && window.dgSessionNotes.current() && window.dgSessionNotes.current().docked) window.dgSessionNotes.close();
       st.htmlFor = '';
       panel.innerHTML = '';
