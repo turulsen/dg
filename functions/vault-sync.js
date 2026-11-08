@@ -191,9 +191,28 @@ function reconcile(notes, files) {
   return { upserts: upserts, removes: removes, movedAway: removes.filter(function (p) { return moved[p]; }), write: write, stats: stats };
 }
 
+// An incremental sync (2026-11-08): the phone sends every note's path, but
+// the text only of those changed since its last sync -- reading ~500 notes
+// took minutes, too long for an automation in the background. A path sent
+// without text is the note as both sides last agreed (`synced`). If one
+// can't be read that way (a note A-Cell doesn't have, or never agreed on),
+// the sync does nothing this time and asks for everything next time.
+// entries: [{ path, text, hasText }] -> { files: [{ path, text }], needFull }
+function resolvePartial(notes, entries) {
+  var byPath = {};
+  (notes || []).forEach(function (n) { byPath[cleanPath(n.path) || n.path] = n; });
+  var files = [], needFull = false;
+  (entries || []).forEach(function (e) {
+    if (e.hasText) { files.push({ path: e.path, text: e.text }); return; }
+    var n = byPath[cleanPath(e.path)];
+    if (n && n.synced != null) files.push({ path: e.path, text: n.synced });
+    else needFull = true;
+  });
+  return { files: needFull ? [] : files, needFull: needFull };
+}
 // Firestore document id for a note path: no slashes allowed in an id.
 function docId(path) {
   return Buffer.from(path, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId };
+module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId, resolvePartial: resolvePartial };
