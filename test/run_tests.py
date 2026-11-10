@@ -3277,7 +3277,10 @@ def test_acell_evidence_share_languages_format(p):
     page.add_script_tag(url=f"{BASE}/assets/evidence-md.js")
     out = page.evaluate("""() => [dgEvidenceMd.render('<img src=x onerror=alert(1)> **b**'), dgEvidenceMd.render('Plain\\nline\\n\\nNext'),
         dgEvidenceMd.render('2 * 3 * 4'), dgEvidenceMd.render('> quoted\\n---\\n1. a\\n2. b'), dgEvidenceMd.render('1. One\\n\\nText\\n\\n2. Two')]""")
-    record("evidence-v36", "the renderer escapes HTML", "<img" not in out[0] and "&lt;img" in out[0] and "<b>b</b>" in out[0], out[0])
+    record("evidence-v36", "the renderer escapes HTML", "<img" not in out[0] and "&lt;img" in out[0] and "<b class=\"md-b\">b</b>" in out[0], out[0])
+    wt = page.evaluate("""() => { const d = document.createElement('div'); d.style.fontWeight = '300'; d.innerHTML = dgEvidenceMd.render('a **b** c');
+        document.body.appendChild(d); return getComputedStyle(d.querySelector('b')).fontWeight; }""")
+    record("evidence-v36", "bold is real bold even in light (300) text", wt == "700", wt)
     record("evidence-v36", "old plain text keeps its lines and paragraphs", out[1] == "<p>Plain<br>line</p><p>Next</p>", out[1])
     record("evidence-v36", "a lone asterisk isn't taken for italics", out[2] == "<p>2 * 3 * 4</p>", out[2])
     record("evidence-v36", "quote, rule and numbered list", out[3] == "<blockquote>quoted</blockquote><hr><ol><li>a</li><li>b</li></ol>", out[3])

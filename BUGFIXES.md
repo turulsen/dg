@@ -7100,6 +7100,18 @@ The markup was right (`<b>`); the note text inherited the page's light
 `.vn-body` is 400 and `b`/`strong` 700 now. Test:
 `test_acell_vault_format`.
 
+### Evidence: bold didn't show in Preview or for the Agents
+
+Reported 2026-11-10. The same cause as "Vault notes: bold didn't show"
+just above, whose fix was only partial: it set 700 on `.vn-body` alone.
+Evidence text is drawn by `assets/evidence-md.js` in containers that
+inherit the light 300 weight (A-Cell's Preview, the cards, the evidence
+viewer, Agent Hub, the notebook, Notes), so `<b>` ("bolder") was only
+400. The renderer now marks bold `<b class="md-b">` and adds one rule,
+`b.md-b{font-weight:700}`, so it is real bold wherever it is drawn.
+Check in `test_acell_evidence_share_languages_format` (400 on the old
+code). `sw.js` `CACHE_NAME` v323.
+
 ### The player vanished from Pads
 
 Behind the phone frame the computer's Play desk is open too (A-Cell's
