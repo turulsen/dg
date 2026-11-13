@@ -141,5 +141,17 @@ mc = V.mergeChanged([{ path: 'Impossible/AV/INDIA MOON/Investigation/Encounter G
   V.mergeChanged([], []).files.concat([{ path: 'Impossible/AV/INDIA MOON/Investigation/Encounter Group.md', text: 'e', hasText: true, raw: {} }]));
 check('…a path iOS cut short (its last folder gone): the note of that name inside the folder still named', !mc.unmatched.length && mc.files.length === 2 && mc.files[0].text === 'e' && !mc.files[1].text, mc);
 
+// 2026-11-13: notes A-Cell sent came back a little different, and each sync copied them again.
+x = r([{ path: 'Op/NPCs/Andre.md', content: '---\ntags:\n  - npc\n---\n# Andre\n', synced: null, pending: '---\ntags:\n  - npc\n---\n# Andre\n' }],
+  [{ path: 'Op/NPCs/Andre.md', text: '\uFEFF---\ntags:  \n  - npc\n---\n\n\n\n# Andre' }]);
+check('a note A-Cell sent that comes back with a BOM, spaces at line ends, extra blank lines: agreed, no copy',
+  !x.write.length && x.stats.conflicts === 0 && x.upserts.length === 1 && x.upserts[0].pending === null, x);
+x = r([{ path: 'Op/NPCs/Andre.md', content: 'made in A-Cell', synced: null, pending: 'made in A-Cell' }], [{ path: 'Op/NPCs/Andre.md', text: 'quite different' }]);
+check('…a note A-Cell made and sent, not edited since, comes back really different: the phone\'s version kept, no copy',
+  !x.write.length && x.stats.conflicts === 0 && x.stats.adopted === 1 && x.upserts[0].content === 'quite different', x);
+x = r([{ path: 'N.md', content: 'A-Cell edit', synced: 'base', pending: 'A-Cell edit' }], [{ path: 'N.md', text: 'phone edit' }]);
+check('…a real two-sided change still keeps both, and the report shows where they differ',
+  x.stats.conflicts === 1 && x.write.length === 1 && /at 0 of/.test(x.stats.conflict_samples[0]), x);
+
 console.log(JSON.stringify(out));
 
