@@ -5420,10 +5420,17 @@ def test_acell_mobile_typing_kept(p):
     page.click("#acm-view .vn-ta")
     page.keyboard.press("Control+End")
     page.evaluate("() => { window.__ta = document.querySelector('#acm-view .vn-ta'); }")
+    # Typed at once (no pause, as a person can't): the editor's own
+    # caret placement mustn't land in the middle of it (2026-11-13).
+    saved_now = lambda: page.evaluate("() => (dgVault.get('T/Typing.md') || {}).content || ''")
     page.keyboard.type("First words")
-    page.wait_for_timeout(1500)   # the save, and the vault's change event
+    # Waits for the save itself (and its change event), not a fixed time:
+    # under load a fixed pause could end before the save (2026-11-13).
+    wait_for_condition(lambda: "First words" in saved_now(), timeout_ms=8000)
+    page.wait_for_timeout(400)
     page.keyboard.type(" and more")
-    page.wait_for_timeout(1500)
+    wait_for_condition(lambda: "First words and more" in saved_now(), timeout_ms=8000)
+    page.wait_for_timeout(400)
     same = page.evaluate("() => document.querySelector('#acm-view .vn-ta') === window.__ta && document.activeElement === window.__ta")
     saved = page.evaluate("() => (dgVault.get('T/Typing.md') || {}).content || ''")
     record("acell-mobile", "writing a note on a phone: the save doesn't redraw the text box (the keyboard stays)", same and "First words and more" in saved, repr(saved[-40:]))

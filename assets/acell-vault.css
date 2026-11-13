@@ -114,3 +114,4 @@ h1.vn-h{font-size:24px}h2.vn-h{font-size:20px}h3.vn-h{font-size:17px}h4.vn-h,h5.
 .vn-del{color:#8b1a1a;border-color:#8b1a1a}
 .vn-hpick{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .vn-hpick select{flex:1 1 220px;min-width:0}
+.vn-part{margin:14px 0 4px}.vn-part>b{font-size:14px}.vn-set b{font-weight:700}.vn-why{color:var(--vn-mute,#7a6f58);font-size:12px}

@@ -214,7 +214,10 @@
             if (ta) {
               var at = 0, ls = ta.value.split('\n');
               for (var i = 0; i < Math.min(nt.line, ls.length); i++) at += ls[i].length + 1;
-              setTimeout(function () { ta.focus(); try { ta.setSelectionRange(at, at); } catch (e) { /* old */ } }, 60);
+              // Not if typing has started meanwhile: the late caret landed
+              // mid-word (2026-11-13).
+              var v0 = ta.value;
+              setTimeout(function () { if (ta.value !== v0) return; ta.focus(); try { ta.setSelectionRange(at, at); } catch (e) { /* old */ } }, 60);
             }
             var tool = el.querySelector('.acm-ktool');
             tool.addEventListener('pointerdown', function (e) { if (e.target.closest('[data-kt]')) e.preventDefault(); });

@@ -978,6 +978,16 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   vault settings list the held notes (up to 200) with **Move to…** (into
   a folder the vault has, beside a same-named note as "(A-Cell)") and
   **Delete**.
+  Since v3.19.0 the sync is incremental: the Shortcut sends every
+  note's path and name as `paths` / `names` (lines of text) and the text
+  only of notes modified since its `dg-sync-since.txt` (`changed`); a
+  path A-Cell can't resolve without text (`resolvePartial`) changes
+  nothing and returns `since` 2000-01-01 so the next run is a full one.
+  The reply has `write`, `since` (now minus 10 minutes), `stats`, a
+  one-line `headline` and a readable `report` (`report()` in
+  `vault-sync.js`) the Shortcut appends to `DG sync log.txt`. The
+  Notes vault settings list all 56 Shortcut steps by part, each with
+  what it does.
 - **Tapes** (`assets/acell-tapes.js`, Firestore `tapes/{id}`): a
   cassette per operation or Cell with its tracks (library tracks and
   links), the loops under them and its effect pads. Putting one in a
@@ -1500,6 +1510,11 @@ is applied by hand (`gcloud storage buckets update
 gs://dg-app-b3447.firebasestorage.app --cors-file=storage.cors.json`),
 with a preview channel's origin added at that time.
 
+**v3.19.0 (PR #100).** The `vaultSync` Cloud Function changed (the
+incremental sync and the report; `firebase deploy --only
+functions:vaultSync`). It still takes the old full upload, so the
+deploy can go before the Shortcut changes.
+
 **Node.js 22 (v3.0.1).** `functions/package.json` asks for Node 22: Google
 retires Node 20 for Cloud Functions on 2026-10-30, and deploys of a Node
 20 codebase stop working then.
@@ -1525,7 +1540,7 @@ full reasoning on the split (Issues = live status board, `BUGFIXES.md`
 = narrative archive of what shipped, this section = closed/decided
 matters worth a permanent note).
 
-As of 2026-10-30 (v3.13.0; not re-checked against GitHub since 2026-10-13), four open tracked issues (#10 is closed; see
+As of 2026-11-13 (v3.19.0; checked against GitHub that day), four open tracked issues (#5, #8, #9, #39) (#10 is closed; see
 `BUGFIXES.md`'s "Issue #10's actual root cause"): #5 (Handler-facing access
 control — shared A-Cell password, dossiers reachable by Agent Code, no
 per-player identity), #8 (Agent Hub: long load screen then empty

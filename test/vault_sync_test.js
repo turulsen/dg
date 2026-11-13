@@ -109,5 +109,16 @@ check('…a path A-Cell can\'t read that way (a note it doesn\'t have): nothing 
 pr = V.resolvePartial([{ path: 'M.md', content: 'm', synced: null, pending: 'm' }], [{ path: 'M.md', hasText: false }]);
 check('…nor one never agreed on', pr.needFull, pr);
 
+// 2026-11-13: a readable report for the Shortcut to save (a notification shows two lines).
+let rp = V.report({ partial: true, files: 412, created: 1, updated: 2, conflicts: 1, held_orphans: 1, held_paths: ['Old/NPCs/Marla.md'] },
+  [{ path: 'Impossible/Players/Charles D.md' }], { changed: 3, when: new Date('2026-11-13T12:00:00Z') });
+check('the report says what came in, what went out (by path) and what was held, with a one-line headline',
+  rp.headline === 'DG sync: 3 in, 1 out, 1 kept twice' && /13 Nov 2026, 13:00/.test(rp.text) && /3 changed on the phone/.test(rp.text) &&
+  /\n  Impossible\/Players\/Charles D\.md\n/.test(rp.text) && /Old\/NPCs\/Marla\.md/.test(rp.text), rp);
+rp = V.report({ partial: true, need_full: true }, []);
+check('…and when the next run must read everything, it says so', /every note/.test(rp.headline) && /Nothing was changed/.test(rp.text), rp);
+rp = V.report({ files: 10, held_removals: 9 }, []);
+check('…a warning flags the headline', /Check the report/.test(rp.headline) && /WARNING/.test(rp.text), rp);
+
 console.log(JSON.stringify(out));
 

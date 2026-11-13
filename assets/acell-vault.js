@@ -712,6 +712,87 @@
       });
     })).then(function (r) { return r.length; });
   }
+  // The Shortcut, step by step (2026-11-13): the same 56 numbered steps
+  // the Handler builds from; each named variable is picked by name.
+  var SC_PARTS = [
+    ['When did we last sync?', 'Reads the little file where the phone noted the last sync; the first time there is none, so 1 January 2000 means "everything is new".', [
+      ['Get File from Folder', 'Get file from <b>Shortcuts</b> at path <i>dg-sync-since.txt</i>; show more: Error If Not Found off', 'Opens the note of the last sync. Off: a missing file doesn\'t stop the Shortcut.'],
+      ['If', 'If <b>File</b> has any value', 'Was it found?'],
+      ['Get Text from Input', 'Get text from <b>File</b>', 'The time written in it.'],
+      ['Get Dates from Input', 'Get dates from <b>Text</b>', 'Makes it a date the phone can compare.'],
+      ['Set Variable', '<i>Since</i> to <b>Dates</b>', ''],
+      ['(Otherwise)', '', 'If it wasn\'t found:'],
+      ['Date', 'Specified Date <i>1 January 2000</i>', 'Far in the past: every note counts as changed.'],
+      ['Set Variable', '<i>Since</i> to <b>Date</b>', ''],
+      ['(End If)', '', '']]],
+    ['List every note', 'Everything in the vault and its subfolders, only the .md notes.', [
+      ['Get Contents of Folder', 'Get contents of <b>Delta Green</b>; show more: Recursive on', 'Every file, subfolders too.'],
+      ['Filter Files', 'Filter <b>Folder Contents</b> where File Extension is <i>md</i>', 'Only notes: no images or Obsidian\'s own files.'],
+      ['Set Variable', '<i>AllNotes</i> to <b>Files</b>', '']]],
+    ['Where every note is', 'Two lists, one line per note, made without opening a note (fast). A-Cell sees from them what exists, moved or was deleted.', [
+      ['Get Details of Files', 'Get <b>File Path</b> from <b>AllNotes</b>', ''],
+      ['Combine Text', 'Combine <b>File Path</b> with New Lines', ''],
+      ['Replace Text', 'Replace <i>(?m)^.*/Delta Green/</i> with nothing in <b>Combined Text</b>; Regular Expression on', 'Cuts the iCloud part off: "Impossible/Charles.md" is left.'],
+      ['Set Variable', '<i>Paths</i> to <b>Updated Text</b>', ''],
+      ['Get Details of Files', 'Get <b>Name</b> from <b>AllNotes</b>', ''],
+      ['Combine Text', 'Combine <b>Name</b> with New Lines', ''],
+      ['Set Variable', '<i>Names</i> to <b>Combined Text</b>', '']]],
+    ['What changed', 'Only notes edited since the last sync are read, so a run is quick.', [
+      ['Filter Files', 'Filter <b>AllNotes</b> where Last Modified Date is after <b>Since</b>', ''],
+      ['Set Variable', '<i>Changed</i> to <b>Files</b>', '']]],
+    ['Read the changed notes', 'Place, name and text of each, on one labelled card.', [
+      ['Repeat with Each', 'Repeat with each item in <b>Changed</b>', ''],
+      ['Get Details of Files', 'Get <b>File Path</b> from <b>Repeat Item</b>', ''],
+      ['Replace Text', 'Replace <i>^.*/Delta Green/</i> with nothing in <b>File Path</b>; Regular Expression on', ''],
+      ['Set Variable', '<i>OnePath</i> to <b>Updated Text</b>', ''],
+      ['Get Details of Files', 'Get <b>Name</b> from <b>Repeat Item</b>', ''],
+      ['Set Variable', '<i>OneName</i> to <b>Name</b>', ''],
+      ['Get Text from Input', 'Get text from <b>Repeat Item</b>', 'Opens the note: the slow part, so only for changed notes.'],
+      ['Dictionary', '<i>path</i> = <b>OnePath</b>, <i>name</i> = <b>OneName</b>, <i>text</i> = <b>Text</b>', ''],
+      ['(End Repeat)', '', 'The cards together are <b>Repeat Results</b>.']]],
+    ['Pack it up', '', [
+      ['Dictionary', '<i>key</i> = your sync key (above)', 'Proves the package is yours.'],
+      ['Set Dictionary Value', 'Set <i>changed</i> to <b>Repeat Results</b> in <b>Dictionary</b>', ''],
+      ['Set Dictionary Value', 'Set <i>paths</i> to <b>Paths</b> in the <b>Dictionary</b> just above', ''],
+      ['Set Dictionary Value', 'Set <i>names</i> to <b>Names</b> in the <b>Dictionary</b> just above', ''],
+      ['Set Variable', '<i>Package</i> to the <b>Dictionary</b> just above', '']]],
+    ['Send it', 'A-Cell takes in the changed notes and answers with what the phone should save.', [
+      ['URL', SYNC_URL, ''],
+      ['Get Contents of URL', 'Show more: Method POST, Request Body File, File = <b>Package</b>', ''],
+      ['Set Variable', '<i>Reply</i> to <b>Contents of URL</b>', '']]],
+    ['Save what A-Cell sends back', 'Notes A-Cell made or changed, saved as .md in the right folder. Often none.', [
+      ['Get Dictionary Value', 'Value for <i>write</i> in <b>Reply</b>', ''],
+      ['Repeat with Each', 'Repeat with each item in <b>Dictionary Value</b>', ''],
+      ['Get Dictionary Value', 'Value for <i>text</i> in <b>Repeat Item</b>', ''],
+      ['Text', '<b>Dictionary Value</b>', 'Without this the note saves as .txt.'],
+      ['Get Dictionary Value', 'Value for <i>name</i> in <b>Repeat Item</b>', ''],
+      ['Set Variable', '<i>Name</i> to <b>Dictionary Value</b>', ''],
+      ['Get Dictionary Value', 'Value for <i>path</i> in <b>Repeat Item</b>', ''],
+      ['Set Variable', '<i>Path</i> to <b>Dictionary Value</b>', ''],
+      ['Set Name', 'Set name of <b>Text</b> to <b>Name</b>; show more: Don\'t Include File Extension on', ''],
+      ['Save File', 'Save <b>Renamed Item</b> to <b>Delta Green</b>; show more: Ask Where to Save off, Subpath = <b>Path</b>, Overwrite If File Exists on', 'On a phone the Subpath is the whole file path, not a folder.'],
+      ['(End Repeat)', '', '']]],
+    ['Note the time of this sync', 'So the next run reads only what changed after it.', [
+      ['Get Dictionary Value', 'Value for <i>since</i> in <b>Reply</b>', ''],
+      ['Text', '<b>Dictionary Value</b>', ''],
+      ['Save File', 'Save <b>Text</b> to <b>Shortcuts</b>; show more: Ask Where to Save off, Subpath <i>dg-sync-since.txt</i>, Overwrite If File Exists on', '']]],
+    ['Report', 'The full account goes into a log file (Files app, iCloud Drive, Shortcuts, <i>DG sync log.txt</i>, newest at the bottom); the notification shows one line.', [
+      ['Get Dictionary Value', 'Value for <i>report</i> in <b>Reply</b>', ''],
+      ['Append to Text File', 'Append <b>Dictionary Value</b> to <i>DG sync log.txt</i> in <b>Shortcuts</b>; Make New Line on', ''],
+      ['Get Dictionary Value', 'Value for <i>headline</i> in <b>Reply</b>', ''],
+      ['Show Notification', '<b>Dictionary Value</b>', '']]]
+  ];
+  function shortcutSteps() {
+    var n = 0;
+    return SC_PARTS.map(function (p, i) {
+      var start = n + 1;
+      return '<p class="vn-small vn-part"><b>' + (i + 1) + '. ' + p[0] + '</b>' + (p[1] ? '<br>' + p[1] : '') + '</p>' +
+        '<ol class="vn-steps" start="' + start + '">' + p[2].map(function (s) {
+          n += 1;
+          return '<li><b>' + s[0] + '</b>' + (s[1] ? ': ' + s[1] : '') + (s[2] ? ' <span class="vn-why">' + s[2] + '</span>' : '') + '</li>';
+        }).join('') + '</ol>';
+    }).join('');
+  }
   function settings() {
     var w = modal('<div class="vn-mh"><b>Notes vault</b><button type="button" data-vclose>✕</button></div><div class="vn-set"><div class="vn-empty">Loading…</div></div>', 'vn-wide');
     var box = w.querySelector('.vn-set');
@@ -735,26 +816,9 @@
         '<div class="vn-row"><span>Address</span><code class="vn-url">' + SYNC_URL + '</code></div>' +
         '<h4>2 · The Shortcut (once, on your iPhone)</h4>' +
         '<p class="vn-small">It sends every note\'s path, but the text only of notes changed since the last sync, so it\'s quick enough for an automation.</p>' +
-        '<ol class="vn-steps">' +
-        '<li>Shortcuts → <b>+</b> → name it <b>Sync DG vault</b>.</li>' +
-        '<li><b>Get File from Folder</b>: Shortcuts folder, File Path <i>dg-sync-since.txt</i>, Error If Not Found off. <b>If</b> it has any value: <b>Get Text</b> → <b>Get Dates</b> → <b>Set Variable</b> <i>Since</i>; Otherwise: <b>Date</b> <i>1 January 2000</i> → <b>Set Variable</b> <i>Since</i>.</li>' +
-        '<li><b>Get Contents of Folder</b>: your vault folder, Recursive on. <b>Filter Files</b>: File Extension is <i>md</i>.</li>' +
-        '<li><b>Get Details of Files</b>: File Path of the filtered files → <b>Combine Text</b> with New Lines → <b>Replace Text</b> <i>(?m)^.*/Delta Green/</i> with nothing (Regular Expression on; your vault folder\'s name) → <b>Set Variable</b> <i>Paths</i>.</li>' +
-        '<li><b>Get Details of Files</b>: Name of the filtered files → <b>Combine Text</b> with New Lines → <b>Set Variable</b> <i>Names</i>.</li>' +
-        '<li><b>Filter Files</b>: the filtered files where Last Modified Date is after <i>Since</i>. <b>Repeat with Each</b> of those: Get Details File Path → Replace Text (as above) → Get Name → Get Text → <b>Dictionary</b> <i>path</i>, <i>name</i>, <i>text</i>. End Repeat.</li>' +
-        '<li><b>Dictionary</b>: <i>key</i> = your sync key (above). <b>Set Dictionary Value</b> <i>changed</i> = Repeat Results; then <i>paths</i> = Paths; then <i>names</i> = Names.</li>' +
-        '<li><b>Get Contents of URL</b>: the address above, Method <b>POST</b>, Request Body <b>File</b> = that Dictionary.</li>' +
-        '<li><b>Get Dictionary Value</b> <i>write</i>, then <b>Repeat with Each</b>. Inside it, in this order:' +
-        '<ol><li><b>Get Dictionary Value</b>: <i>text</i> in Repeat Item.</li>' +
-        '<li><b>Text</b>: the Dictionary Value above (without this step the phone saves the note as .txt).</li>' +
-        '<li><b>Get Dictionary Value</b>: <i>name</i> in Repeat Item → <b>Set Variable</b> <i>Name</i>.</li>' +
-        '<li><b>Get Dictionary Value</b>: <i>path</i> in Repeat Item → <b>Set Variable</b> <i>Path</i>.</li>' +
-        '<li><b>Set Name</b> of <i>Text</i> to <i>Name</i>, <b>Don\'t Include File Extension</b> on.</li>' +
-        '<li><b>Save File</b>: Renamed Item to your vault folder, Subpath = <i>Path</i> (the whole path, file name included: on a phone Subpath is the file, not a folder), <b>Ask Where to Save</b> off, <b>Overwrite If File Exists</b> on.</li></ol>End Repeat.</li>' +
-        '<li><b>Get Dictionary Value</b> <i>since</i> in Contents of URL → <b>Text</b> → <b>Save File</b> to the Shortcuts folder, Subpath <i>dg-sync-since.txt</i>, Ask Where to Save off, Overwrite on. (The next run sends only what changed after this.)</li>' +
-        '<li>Optional: Automation → <b>App</b> → Obsidian <b>is closed</b> → Run <b>Sync DG vault</b>, Run Immediately.</li>' +
-        '</ol>' +
-        '<p class="vn-small"><b>Notes arriving as .txt?</b> That\'s step 9: the note needs the <b>Text</b> step before Set Name, and Save File\'s Subpath is the whole <i>path</i>. The next sync sends those notes again as .md; then delete the .txt copies.</p>' +
+        '<p class="vn-small">Make a new Shortcut, <b>Sync DG vault</b>. Every named variable (<i>Since</i>, <i>AllNotes</i>...) is picked by name: tap the field, Select Variable. Then an Automation: App, Obsidian is closed, Run Immediately. Run it once by hand first: that run reads every note.</p>' +
+        shortcutSteps() +
+        '<p class="vn-small"><b>Notes arriving as .txt?</b> That\'s part 8: the note needs the <b>Text</b> step (42) before Set Name, and Save File\'s Subpath is the whole <i>path</i>. The next sync sends those notes again as .md; then delete the .txt copies.</p>' +
         '<p class="vn-small">Notes changed on both sides are kept twice ("Name (A-Cell).md") rather than one overwriting the other. A note deleted on the phone goes from A-Cell too, unless you changed it here since.</p>' +
         '<h4>Vault activity</h4><p class="vn-small">Every note A-Cell made, changed or deleted, newest first. Tap one to open it.</p><div class="vn-act"><div class="vn-empty">Loading…</div></div>' +
         '<h4>Without the Shortcut</h4>' +

@@ -526,8 +526,10 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     if (changedIn && !Array.isArray(changedIn) && typeof changedIn === 'object') changedIn = (changedIn.path || changedIn.text) ? [changedIn] : Object.values(changedIn);
     const partial = Array.isArray(changedIn);
     let clean = parse(files, !partial);
+    let changedCount = 0;
     if (partial) {
       const changed = parse(changedIn, true), byPath = {};
+      changedCount = changed.length;
       changed.forEach((c) => { byPath[vaultSync_.cleanPath(c.path)] = c; });
       clean = clean.map((c) => byPath[vaultSync_.cleanPath(c.path)] || c);
       const listed = {};
@@ -558,7 +560,8 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
         const summary0 = { partial: true, need_full: true, files: clean.length, at: Date.now() };
         await cfgRef.set({ last_sync: summary0 }, { merge: true });
         logger.info('vaultSync: incremental sync needs a full one', summary0);
-        res.json({ status: 'OK', write: [], since: '2000-01-01T00:00:00Z', stats: summary0 });
+        const rep0 = vaultSync_.report(summary0, []);
+        res.json({ status: 'OK', write: [], since: '2000-01-01T00:00:00Z', stats: summary0, headline: rep0.headline, report: rep0.text });
         return;
       }
       clean = r.files.map((f) => Object.assign({ raw: { path: f.path } }, f));
@@ -631,7 +634,8 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     await cfgRef.set({ last_sync: stored }, { merge: true });
     logger.info('vaultSync', summary);
     if (partial) summary.partial = true;
-    res.json({ status: 'OK', write: out.write, since: sinceNext, stats: summary });
+    const rep = vaultSync_.report(summary, out.write, { changed: changedCount });
+    res.json({ status: 'OK', write: out.write, since: sinceNext, stats: summary, headline: rep.headline, report: rep.text });
   } catch (err) {
     logger.error('vaultSync failed', err);
     res.status(500).json({ status: 'ERROR', message: 'vaultSync failed: ' + ((err && err.message) || String(err)) });
