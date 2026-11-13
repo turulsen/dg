@@ -712,7 +712,7 @@
       });
     })).then(function (r) { return r.length; });
   }
-  // The Shortcut, step by step (2026-11-13): the same 56 numbered steps
+  // The Shortcut, step by step (2026-11-13): the same numbered steps (59 since 2026-11-13)
   // the Handler builds from; each named variable is picked by name.
   var SC_PARTS = [
     ['When did we last sync?', 'Reads the little file where the phone noted the last sync; the first time there is none, so 1 January 2000 means "everything is new".', [
@@ -727,7 +727,7 @@
       ['(End If)', '', '']]],
     ['List every note', 'Everything in the vault and its subfolders, only the .md notes.', [
       ['Get Contents of Folder', 'Get contents of <b>Delta Green</b>; show more: Recursive on', 'Every file, subfolders too.'],
-      ['Filter Files', 'Filter <b>Folder Contents</b> where File Extension is <i>md</i>', 'Only notes: no images or Obsidian\'s own files.'],
+      ['Filter Files', 'Filter <b>Folder Contents</b> where File Extension is <i>md</i>', 'Only notes: no images or Obsidian\'s own files. This one condition only: an extra empty one (File Size is Number) keeps just a few notes.'],
       ['Set Variable', '<i>AllNotes</i> to <b>Files</b>', '']]],
     ['Where every note is', 'Two lists, one line per note, made without opening a note (fast). A-Cell sees from them what exists, moved or was deleted.', [
       ['Get Details of Files', 'Get <b>File Path</b> from <b>AllNotes</b>', ''],
@@ -738,7 +738,7 @@
       ['Combine Text', 'Combine <b>Name</b> with New Lines', ''],
       ['Set Variable', '<i>Names</i> to <b>Combined Text</b>', '']]],
     ['What changed', 'Only notes edited since the last sync are read, so a run is quick.', [
-      ['Filter Files', 'Filter <b>AllNotes</b> where Last Modified Date is after <b>Since</b>', ''],
+      ['Filter Files', 'Filter <b>AllNotes</b> where Date Modified is after <b>Since</b>', 'Since is the variable (long-press the date, Select Variable), not a date picked in the calendar.'],
       ['Set Variable', '<i>Changed</i> to <b>Files</b>', '']]],
     ['Read the changed notes', 'Place, name and text of each, on one labelled card.', [
       ['Repeat with Each', 'Repeat with each item in <b>Changed</b>', ''],
@@ -748,14 +748,17 @@
       ['Get Details of Files', 'Get <b>Name</b> from <b>Repeat Item</b>', ''],
       ['Set Variable', '<i>OneName</i> to <b>Name</b>', ''],
       ['Get Text from Input', 'Get text from <b>Repeat Item</b>', 'Opens the note: the slow part, so only for changed notes.'],
-      ['Dictionary', '<i>path</i> = <b>OnePath</b>, <i>name</i> = <b>OneName</b>, <i>text</i> = <b>Text</b>', ''],
+      ['Dictionary', '<i>path</i> = <b>OnePath</b>, <i>name</i> = <b>OneName</b>, <i>text</i> = <b>Text</b>', 'All three values are variable bubbles (Select Variable), not typed words: a typed "Text" sends the word instead of the note.'],
       ['(End Repeat)', '', 'The cards together are <b>Repeat Results</b>.']]],
     ['Pack it up', '', [
       ['Dictionary', '<i>key</i> = your sync key (above)', 'Proves the package is yours.'],
-      ['Set Dictionary Value', 'Set <i>changed</i> to <b>Repeat Results</b> in <b>Dictionary</b>', ''],
       ['Set Dictionary Value', 'Set <i>paths</i> to <b>Paths</b> in the <b>Dictionary</b> just above', ''],
       ['Set Dictionary Value', 'Set <i>names</i> to <b>Names</b> in the <b>Dictionary</b> just above', ''],
-      ['Set Variable', '<i>Package</i> to the <b>Dictionary</b> just above', '']]],
+      ['Set Variable', '<i>Package</i> to the <b>Dictionary</b> just above', ''],
+      ['If', '<b>Repeat Results</b> has any value', 'Nothing changed since the last sync: there are no cards, and Set Dictionary Value would stop with "No value provided".'],
+      ['Set Dictionary Value', 'Set <i>changed</i> to <b>Repeat Results</b> in <b>Package</b>', ''],
+      ['Set Variable', '<i>Package</i> to the <b>Dictionary</b> just above', ''],
+      ['(Otherwise, empty; End If)', '', '']]],
     ['Send it', 'A-Cell takes in the changed notes and answers with what the phone should save.', [
       ['URL', SYNC_URL, ''],
       ['Get Contents of URL', 'Show more: Method POST, Request Body File, File = <b>Package</b>', ''],
@@ -818,7 +821,7 @@
         '<p class="vn-small">It sends every note\'s path, but the text only of notes changed since the last sync, so it\'s quick enough for an automation.</p>' +
         '<p class="vn-small">Make a new Shortcut, <b>Sync DG vault</b>. Every named variable (<i>Since</i>, <i>AllNotes</i>...) is picked by name: tap the field, Select Variable. Then an Automation: App, Obsidian is closed, Run Immediately. Run it once by hand first: that run reads every note.</p>' +
         shortcutSteps() +
-        '<p class="vn-small"><b>Notes arriving as .txt?</b> That\'s part 8: the note needs the <b>Text</b> step (42) before Set Name, and Save File\'s Subpath is the whole <i>path</i>. The next sync sends those notes again as .md; then delete the .txt copies.</p>' +
+        '<p class="vn-small"><b>Notes arriving as .txt?</b> That\'s part 8: the note needs the <b>Text</b> step (45) before Set Name, and Save File\'s Subpath is the whole <i>path</i>. The next sync sends those notes again as .md; then delete the .txt copies.</p>' +
         '<p class="vn-small">Notes changed on both sides are kept twice ("Name (A-Cell).md") rather than one overwriting the other. A note deleted on the phone goes from A-Cell too, unless you changed it here since.</p>' +
         '<h4>Vault activity</h4><p class="vn-small">Every note A-Cell made, changed or deleted, newest first. Tap one to open it.</p><div class="vn-act"><div class="vn-empty">Loading…</div></div>' +
         '<h4>Without the Shortcut</h4>' +
