@@ -201,14 +201,15 @@ function reconcile(notes, files) {
 function resolvePartial(notes, entries) {
   var byPath = {};
   (notes || []).forEach(function (n) { byPath[cleanPath(n.path) || n.path] = n; });
-  var files = [], needFull = false;
+  var files = [], needFull = false, missing = [], unknown = 0;
   (entries || []).forEach(function (e) {
     if (e.hasText) { files.push({ path: e.path, text: e.text }); return; }
     var n = byPath[cleanPath(e.path)];
     if (n && n.synced != null) files.push({ path: e.path, text: n.synced });
-    else needFull = true;
+    else { needFull = true; if (!n) unknown += 1; missing.push(cleanPath(e.path) || String(e.path)); }
   });
-  return { files: needFull ? [] : files, needFull: needFull };
+  // Which ones, for the report (2026-11-13): "couldn't match" alone said nothing.
+  return { files: needFull ? [] : files, needFull: needFull, missing: missing, unknown: unknown };
 }
 // Firestore document id for a note path: no slashes allowed in an id.
 function docId(path) {
@@ -228,6 +229,15 @@ function report(s, write, opts) {
   if (s.need_full) {
     L.push('The quick sync couldn\'t match every note by its path alone.');
     L.push('Nothing was changed. The next run reads every note (slower, once).');
+    L.push('');
+    L.push('Notes listed (paths): ' + n('files') + '. Sent as changed: ' + n('changed') + ', of them with text: ' + n('changed_text') + '.');
+    if (s.changed_type) L.push('The "changed" value arrived as: ' + s.changed_type + '.');
+    if (n('missing')) {
+      L.push('Without text, and A-Cell has no agreed copy: ' + n('missing') + ' (' + n('unknown') + ' A-Cell has never had).');
+      (s.missing_paths || []).forEach(function (m) { L.push('  ' + m); });
+      if (n('missing') > (s.missing_paths || []).length) L.push('  ...and ' + (n('missing') - (s.missing_paths || []).length) + ' more');
+    }
+    if (!n('changed')) L.push('No note came with its text: check steps 20-22 (Filter, Changed, the Repeat) and step 32 (changed = Repeat Results).');
     return { headline: 'DG sync: next run reads every note', text: L.join('\n') + '\n' };
   }
   L.push(s.partial ? 'Quick sync: ' + n('files') + ' notes listed, ' + (opts.changed || 0) + ' changed on the phone and read.'

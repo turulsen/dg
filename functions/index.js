@@ -517,6 +517,8 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     // text -- and `changed`, the text of those changed since the last sync.
     // Without `changed`, `files` carries every note's text, as before.
     let changedIn = Array.isArray(body) ? undefined : body.changed;
+    // What "changed" looked like as it arrived, for the report.
+    const changedType = changedIn === undefined ? 'missing' : Array.isArray(changedIn) ? 'a list of ' + changedIn.length : typeof changedIn === 'string' ? 'text (' + changedIn.length + ' characters)' : typeof changedIn;
     if (!Array.isArray(body) && typeof body.paths === 'string') {
       const ps = body.paths.split(/\r?\n/), ns = typeof body.names === 'string' ? body.names.split(/\r?\n/) : [];
       files = ps.map((p, i) => ({ path: p.trim(), name: (ns[i] || '').trim() })).filter((f) => f.path);
@@ -526,10 +528,11 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     if (changedIn && !Array.isArray(changedIn) && typeof changedIn === 'object') changedIn = (changedIn.path || changedIn.text) ? [changedIn] : Object.values(changedIn);
     const partial = Array.isArray(changedIn);
     let clean = parse(files, !partial);
-    let changedCount = 0;
+    let changedCount = 0, changedText = 0;
     if (partial) {
       const changed = parse(changedIn, true), byPath = {};
       changedCount = changed.length;
+      changedText = changed.filter((c) => c.hasText && c.text.trim()).length;
       changed.forEach((c) => { byPath[vaultSync_.cleanPath(c.path)] = c; });
       clean = clean.map((c) => byPath[vaultSync_.cleanPath(c.path)] || c);
       const listed = {};
@@ -557,7 +560,8 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     if (partial) {
       const r = vaultSync_.resolvePartial(notes, clean);
       if (r.needFull) {
-        const summary0 = { partial: true, need_full: true, files: clean.length, at: Date.now() };
+        const summary0 = { partial: true, need_full: true, files: clean.length, changed: changedCount, changed_text: changedText, changed_type: changedType,
+          missing: r.missing.length, unknown: r.unknown, missing_paths: r.missing.slice(0, 15), at: Date.now() };
         await cfgRef.set({ last_sync: summary0 }, { merge: true });
         logger.info('vaultSync: incremental sync needs a full one', summary0);
         const rep0 = vaultSync_.report(summary0, []);

@@ -120,5 +120,10 @@ check('…and when the next run must read everything, it says so', /every note/.
 rp = V.report({ files: 10, held_removals: 9 }, []);
 check('…a warning flags the headline', /Check the report/.test(rp.headline) && /WARNING/.test(rp.text), rp);
 
+pr = V.resolvePartial([{ path: 'A.md', content: 'a', synced: 'a' }], [{ path: 'A.md', hasText: false }, { path: 'Impossible/New.md', hasText: false }]);
+rp = V.report({ partial: true, need_full: true, files: 2, changed: 0, changed_text: 0, changed_type: 'missing', missing: pr.missing.length, unknown: pr.unknown, missing_paths: pr.missing }, []);
+check('…the report names the notes that couldn\'t be matched, and says when no text came at all',
+  pr.missing.length === 1 && pr.unknown === 1 && /Impossible\/New\.md/.test(rp.text) && /arrived as: missing/.test(rp.text) && /steps 20-22/.test(rp.text), rp);
+
 console.log(JSON.stringify(out));
 
