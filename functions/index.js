@@ -495,8 +495,11 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       for (let f of list) {
         if (typeof f === 'string') { try { f = JSON.parse(f); } catch (e) { continue; } }
         if (!f || typeof f !== 'object') continue;
-        const hasText = withText && f.text != null;
-        const text = String(f.text == null ? '' : f.text);
+        // A note the Shortcut itself saved reads back as the word "Text" on
+        // iOS (2026-11-13; the file is fine): not its text.
+        const unreadable = withText && f.text != null && String(f.text).trim() === 'Text';
+        const hasText = withText && f.text != null && !unreadable;
+        const text = unreadable ? '' : String(f.text == null ? '' : f.text);
         if (text.length > 900000) continue;
         // iOS can cut a file's name short in File Path ("The Hotel.md" ->
         // "The"): the name sent on its own ("name", from Get Details > Name)
@@ -508,7 +511,7 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
           const cut = fp.indexOf('/') < 0 && fp.indexOf(':') >= 0 ? ':' : '/';
           fp = fp ? fp.split(cut).slice(0, -1).concat([full]).join(cut) : full;
         }
-        outList.push({ path: fp, text, hasText, raw: { path: f.path, name: f.name } });
+        outList.push({ path: fp, text, hasText, unreadable, raw: { path: f.path, name: f.name } });
       }
       return outList;
     };
@@ -517,6 +520,8 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     // text -- and `changed`, the text of those changed since the last sync.
     // Without `changed`, `files` carries every note's text, as before.
     let changedIn = Array.isArray(body) ? undefined : body.changed;
+    // What "changed" looked like as it arrived, for the report.
+    const changedType = changedIn === undefined ? 'missing' : Array.isArray(changedIn) ? 'a list of ' + changedIn.length : typeof changedIn === 'string' ? 'text (' + changedIn.length + ' characters)' : typeof changedIn;
     if (!Array.isArray(body) && typeof body.paths === 'string') {
       const ps = body.paths.split(/\r?\n/), ns = typeof body.names === 'string' ? body.names.split(/\r?\n/) : [];
       files = ps.map((p, i) => ({ path: p.trim(), name: (ns[i] || '').trim() })).filter((f) => f.path);
@@ -526,15 +531,14 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     if (changedIn && !Array.isArray(changedIn) && typeof changedIn === 'object') changedIn = (changedIn.path || changedIn.text) ? [changedIn] : Object.values(changedIn);
     const partial = Array.isArray(changedIn);
     let clean = parse(files, !partial);
-    let changedCount = 0;
+    let changedCount = 0, changedText = 0, unmatched = [], listedExample = '', sameText = null, changed = [];
     if (partial) {
-      const changed = parse(changedIn, true), byPath = {};
+      changed = parse(changedIn, true);
       changedCount = changed.length;
-      changed.forEach((c) => { byPath[vaultSync_.cleanPath(c.path)] = c; });
-      clean = clean.map((c) => byPath[vaultSync_.cleanPath(c.path)] || c);
-      const listed = {};
-      clean.forEach((c) => { listed[vaultSync_.cleanPath(c.path)] = true; });
-      changed.forEach((c) => { if (!listed[vaultSync_.cleanPath(c.path)]) clean.push(c); });
+      changedText = changed.filter((c) => c.hasText && c.text.trim()).length;
+      listedExample = clean.length ? String((clean[0].raw && clean[0].raw.path) || clean[0].path).slice(-160) : '';
+      const m = vaultSync_.mergeChanged(clean, changed);
+      clean = m.files; unmatched = m.unmatched;
     }
     const snap = await db.collection('vault').get();
     const notes = [];
@@ -551,13 +555,26 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       moved.push({ from: x.path, to: np, note: x });
       delete at[x.path]; at[np] = x; x.path = np;
     });
+    // Notes that read back as "Text": what A-Cell sent (or last agreed);
+    // one A-Cell doesn't have is left out this time.
+    const ur = vaultSync_.resolveUnreadable(notes, clean);
+    clean = ur.files;
     // A path sent without text is the note as both sides last agreed; one
     // that can't be read that way: nothing this time, everything next time.
     const sinceNext = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     if (partial) {
       const r = vaultSync_.resolvePartial(notes, clean);
+      // Every changed note with the same short text: the Shortcut sends a
+      // fixed word, not the notes (2026-11-13: "Text", typed into step 29).
+      const texts = changed.filter((c) => c.hasText).map((c) => c.text.trim());
+      if (texts.length >= 5 && texts.every((t) => t === texts[0]) && texts[0].length < 40) { r.needFull = true; sameText = texts[0]; }
+      // A changed note that matches no listed path means the two lists
+      // came in different forms: change nothing rather than guess.
+      if (unmatched.length) r.needFull = true;
       if (r.needFull) {
-        const summary0 = { partial: true, need_full: true, files: clean.length, at: Date.now() };
+        const summary0 = { partial: true, need_full: true, files: clean.length, changed: changedCount, changed_text: changedText, changed_type: changedType,
+          missing: r.missing.length, unknown: r.unknown, missing_paths: r.missing.slice(0, 15),
+          same_text: sameText, unmatched_count: unmatched.length, unmatched_changed: unmatched.slice(0, 3), listed_example: listedExample, at: Date.now() };
         await cfgRef.set({ last_sync: summary0 }, { merge: true });
         logger.info('vaultSync: incremental sync needs a full one', summary0);
         const rep0 = vaultSync_.report(summary0, []);
@@ -567,6 +584,15 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       clean = r.files.map((f) => Object.assign({ raw: { path: f.path } }, f));
     }
     const out = vaultSync_.reconcile(notes, clean);
+    // A note the phone has but couldn't read is never taken as deleted.
+    if (ur.skipped.length) {
+      const keep = {};
+      ur.skipped.forEach((p) => { keep[p] = true; });
+      const before = out.removes.length;
+      out.removes = out.removes.filter((p) => !keep[vaultSync_.cleanPath(p)]);
+      out.stats.removed -= before - out.removes.length;
+      out.write = out.write.filter((w) => !keep[vaultSync_.cleanPath(w.path)]);
+    }
     // Nothing (or far too little) arrived from a vault A-Cell already has:
     // more likely the Shortcut couldn't read the folder than a mass delete.
     const syncedCount = notes.filter((n) => n.synced != null).length;
@@ -611,7 +637,7 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       if (++n >= 400) await flush();
     }
     await flush();
-    const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, moved: moved.length, at: now });
+    const summary = Object.assign({}, out.stats, { unreadable: ur.resolved, unreadable_skipped: ur.skipped.slice(0, 10) }, { held_removals: held, too_big: tooBig, files: clean.length, moved: moved.length, at: now });
     // How many came with their own name, and (for a collision) what the Shortcut sent.
     summary.with_name = clean.filter((c) => String(c.raw.name == null ? '' : c.raw.name).trim()).length;
     if (out.stats.duplicates && out.stats.duplicate_example) {

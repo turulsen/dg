@@ -987,7 +987,22 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   one-line `headline` and a readable `report` (`report()` in
   `vault-sync.js`) the Shortcut appends to `DG sync log.txt`. The
   Notes vault settings list all 56 Shortcut steps by part, each with
-  what it does.
+  what it does (59 since v3.19.1: an If around `changed`, which is
+  empty when nothing changed).
+  Since v3.19.1 the quick sync's two lists are merged by `mergeChanged`
+  (same path; one path ending the other; a file name only one note has;
+  for a path iOS cut short, the note of that name in the folder it still
+  names; file URLs decoded). A changed note matching no listed path
+  changes nothing. "The phone saved what it was sent" tolerates a BOM,
+  spaces at line ends and blank lines; a note A-Cell made and sent that
+  comes back different is sent again without a copy (never taken over
+  A-Cell's text); a phone text of just "Text" counts as unreadable
+  (`resolveUnreadable`: what A-Cell sent or last agreed, and never a
+  deletion); a run in which every changed note has the same short text
+  is refused. When a run changes nothing, the report says why (counts,
+  unmatched paths with an example of each form, where two texts
+  differ). `functions/scripts/restore-text-notes.js` restores notes
+  whose text became "Text" from a nightly backup.
 - **Tapes** (`assets/acell-tapes.js`, Firestore `tapes/{id}`): a
   cassette per operation or Cell with its tracks (library tracks and
   links), the loops under them and its effect pads. Putting one in a
@@ -1509,6 +1524,11 @@ hour and the service worker cached it; see `BUGFIXES.md`).
 is applied by hand (`gcloud storage buckets update
 gs://dg-app-b3447.firebasestorage.app --cors-file=storage.cors.json`),
 with a preview channel's origin added at that time.
+
+**v3.19.1 (PR #101).** `vaultSync` changed again (the matching and
+safety rules above; `firebase deploy --only functions:vaultSync`, done
+on 2026-11-13). New one-time tool `functions/scripts/restore-text-notes.js`
+(Admin SDK, run from Cloud Shell; not needed in the end).
 
 **v3.19.0 (PR #100).** The `vaultSync` Cloud Function changed (the
 incremental sync and the report; `firebase deploy --only

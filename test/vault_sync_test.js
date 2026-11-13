@@ -120,5 +120,46 @@ check('…and when the next run must read everything, it says so', /every note/.
 rp = V.report({ files: 10, held_removals: 9 }, []);
 check('…a warning flags the headline', /Check the report/.test(rp.headline) && /WARNING/.test(rp.text), rp);
 
+pr = V.resolvePartial([{ path: 'A.md', content: 'a', synced: 'a' }], [{ path: 'A.md', hasText: false }, { path: 'Impossible/New.md', hasText: false }]);
+rp = V.report({ partial: true, need_full: true, files: 2, changed: 0, changed_text: 0, changed_type: 'missing', missing: pr.missing.length, unknown: pr.unknown, missing_paths: pr.missing }, []);
+check('…the report names the notes that couldn\'t be matched, and says when no text came at all',
+  pr.missing.length === 1 && pr.unknown === 1 && /Impossible\/New\.md/.test(rp.text) && /arrived as: missing/.test(rp.text) && /steps 20-22/.test(rp.text), rp);
+
+// 2026-11-13: the changed notes' paths in another form than the list's (every note came twice).
+let mc = V.mergeChanged(
+  [{ path: 'Impossible/Op/NPCs/Ruth.md', raw: {} }, { path: 'Impossible/Op/Locations/Bar.md', raw: {} }, { path: 'H-Cell/Bar.md', raw: {} }, { path: 'Impossible/Op/Index - Op.md', raw: {} }],
+  [{ path: 'file:///private/var/mobile/Library/Mobile%20Documents/iCloud~md~obsidian/Documents/Delta%20Green/Impossible/Op/NPCs/Ruth.md', text: 'r', hasText: true, raw: {} },
+   { path: '/var/x/Delta Green/Impossible/Op/Locations/Bar.md', text: 'b', hasText: true, raw: {} },
+   { path: 'Somewhere/Index - Op.md', text: 'i', hasText: true, raw: {} }]);
+check('the changed notes take the listed path: a file URL, a longer path ending the same, a file name only one note has',
+  mc.files.length === 4 && !mc.unmatched.length && mc.files[0].text === 'r' && mc.files[1].text === 'b' && mc.files[1].path === 'Impossible/Op/Locations/Bar.md' && !mc.files[2].text && mc.files[3].text === 'i', mc);
+mc = V.mergeChanged([{ path: 'A/Bar.md', raw: {} }, { path: 'B/Bar.md', raw: {} }], [{ path: 'C/Bar.md', text: 'x', hasText: true, raw: { path: 'C/Bar.md' } }]);
+check('…two notes of that name and no path to tell them apart: unmatched, said in the report', mc.unmatched.length === 1 && mc.files.length === 3, mc);
+check('a file URL cleans to the plain path', V.cleanPath('file:///x/Delta%20Green/Caf%C3%A9.md') === 'x/Delta Green/Café.md', V.cleanPath('file:///x/Delta%20Green/Caf%C3%A9.md'));
+
+mc = V.mergeChanged([{ path: 'Impossible/AV/INDIA MOON/Investigation/Encounter Group/Encounter Group', raw: {} }, { path: 'Impossible/LAMMS/Locations/Encounter Group', raw: {} }],
+  V.mergeChanged([], []).files.concat([{ path: 'Impossible/AV/INDIA MOON/Investigation/Encounter Group.md', text: 'e', hasText: true, raw: {} }]));
+check('…a path iOS cut short (its last folder gone): the note of that name inside the folder still named', !mc.unmatched.length && mc.files.length === 2 && mc.files[0].text === 'e' && !mc.files[1].text, mc);
+
+// 2026-11-13: notes A-Cell sent came back a little different, and each sync copied them again.
+x = r([{ path: 'Op/NPCs/Andre.md', content: '---\ntags:\n  - npc\n---\n# Andre\n', synced: null, pending: '---\ntags:\n  - npc\n---\n# Andre\n' }],
+  [{ path: 'Op/NPCs/Andre.md', text: '\uFEFF---\ntags:  \n  - npc\n---\n\n\n\n# Andre' }]);
+check('a note A-Cell sent that comes back with a BOM, spaces at line ends, extra blank lines: agreed, no copy',
+  !x.write.length && x.stats.conflicts === 0 && x.upserts.length === 1 && x.upserts[0].pending === null, x);
+x = r([{ path: 'Op/NPCs/Andre.md', content: 'made in A-Cell', synced: null, pending: 'made in A-Cell' }], [{ path: 'Op/NPCs/Andre.md', text: 'quite different' }]);
+check('…a note A-Cell made and sent, not edited since, comes back really different: A-Cell keeps its text and sends it again, no copy',
+  x.write.length === 1 && x.write[0].text === 'made in A-Cell' && x.stats.conflicts === 0 && x.stats.adopted === 1 && !x.upserts.some(function (u) { return u.content === 'quite different'; }), x);
+x = r([{ path: 'N.md', content: 'A-Cell edit', synced: 'base', pending: 'A-Cell edit' }], [{ path: 'N.md', text: 'phone edit' }]);
+check('…a real two-sided change still keeps both, and the report shows where they differ',
+  x.stats.conflicts === 1 && x.write.length === 1 && /at 0 of/.test(x.stats.conflict_samples[0]), x);
+
+// 2026-11-13: a note the Shortcut saved reads back as the word "Text" (the file itself is fine).
+let ru = V.resolveUnreadable([{ path: 'P/Agent (A-Cell).md', content: 'full', synced: null, pending: 'full' }, { path: 'P/Old.md', content: 'old', synced: 'old', pending: null }],
+  [{ path: 'P/Agent (A-Cell).md', unreadable: true, hasText: false, text: '' }, { path: 'P/Old.md', unreadable: true, hasText: false, text: '' }, { path: 'P/New.md', unreadable: true, hasText: false, text: '' }, { path: 'P/Fine.md', hasText: true, text: 'f' }]);
+check('a note read back as "Text": what A-Cell sent, or last agreed; one A-Cell doesn\'t have is left out',
+  ru.resolved === 2 && ru.files.length === 3 && ru.files[0].text === 'full' && ru.files[1].text === 'old' && ru.skipped[0] === 'P/New.md', ru);
+x = r([{ path: 'P/Agent (A-Cell).md', content: 'full', synced: null, pending: 'full' }], ru.files.slice(0, 1));
+check('…and so the note A-Cell sent counts as saved: no copy, nothing sent again', !x.write.length && x.stats.conflicts === 0 && x.upserts[0].pending === null && x.upserts[0].synced === 'full', x);
+
 console.log(JSON.stringify(out));
 

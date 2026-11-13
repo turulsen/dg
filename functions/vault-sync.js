@@ -29,8 +29,27 @@
 // accents decomposed (NFD), CRLF line ends, or a trailing newline added.
 function norm(t) { return String(t == null ? '' : t).normalize('NFC').replace(/\r\n?/g, '\n').replace(/\s+$/, ''); }
 function eq(a, b) { return a != null && b != null && norm(a) === norm(b); }
+// Looser, for "the phone saved what it was sent" (2026-11-13: notes A-Cell
+// sent came back a little different -- a BOM, spaces at line ends, blank
+// lines -- and each sync made another "(A-Cell)" copy of them).
+function loose(t) { return norm(t).replace(/^\uFEFF/, '').replace(/[ \t\u00A0]+$/gm, '').replace(/\n[ \t]*(?=\n)/g, '').replace(/^\s+/, ''); }
+function savedAs(text, sent) { return sent != null && (eq(text, sent) || loose(text) === loose(sent)); }
+// Where two texts first differ, invisible characters shown, for the report.
+function diffAt(a, b) {
+  a = norm(a); b = norm(b);
+  var i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  var show = function (t) { return JSON.stringify(t.slice(Math.max(0, i - 15), i + 25)); };
+  return 'at ' + i + ' of ' + a.length + '/' + b.length + ': phone ' + show(a) + ' vs A-Cell ' + show(b);
+}
 function cleanPath(p) {
-  p = String(p || '').normalize('NFC').trim();
+  p = String(p || '').trim();
+  // A file URL ("file:///private/.../Delta%20Green/Note.md"): plain path,
+  // spaces and accents decoded (2026-11-13).
+  if (/^file:\/\//i.test(p) || /%[0-9A-Fa-f]{2}/.test(p) && /\//.test(p)) {
+    p = p.replace(/^file:\/\//i, '');
+    try { p = decodeURIComponent(p); } catch (e) { /* keep it as it came */ }
+  }
+  p = p.normalize('NFC');
   // iOS Shortcuts' File Path: "iCloudDrive:Obsidian:Vault:Folder:Note.txt" --
   // colons for folders, and a text file's extension. Made relative to the
   // vault (iCloud Drive/Obsidian/<vault>/), with .md.
@@ -94,8 +113,8 @@ function reconcile(notes, files) {
     }
     var content = note.content == null ? '' : note.content;
     // The phone saved what it was sent last time: that's agreed now.
-    var synced = note.pending != null && eq(text, note.pending) ? text : note.synced;
-    if (eq(content, text)) {
+    var synced = savedAs(text, note.pending) ? text : note.synced;
+    if (eq(content, text) || (note.pending != null && savedAs(text, note.pending) && eq(content, note.pending))) {
       if (!eq(note.synced, text) || note.pending != null) upserts.push({ path: path, content: content, synced: content, pending: null });
       stats.same += 1;
       return;
@@ -109,7 +128,18 @@ function reconcile(notes, files) {
       upserts.push({ path: path, content: content, synced: synced, pending: content });
       write.push(forPhone(path, content));
       stats.sent += 1;
+    } else if (note.synced == null && note.pending != null && eq(content, note.pending)) {
+      // A note A-Cell made and sent, not edited here since, never agreed,
+      // back different: the phone didn't save what it was sent (2026-11-13:
+      // it saved the word "Text"). A-Cell keeps its text and sends it
+      // again -- no copy (a copy would be copied again next sync), and the
+      // phone's version never replaces A-Cell's.
+      write.push(forPhone(path, content));
+      stats.sent += 1;
+      stats.adopted = (stats.adopted || 0) + 1;
+      if ((stats.adopted_samples = stats.adopted_samples || []).length < 2) stats.adopted_samples.push(path + ' ' + diffAt(text, content));
     } else {
+      if ((stats.conflict_samples = stats.conflict_samples || []).length < 3) stats.conflict_samples.push(path + ' ' + diffAt(text, content));
       var cp = conflictPath(path, taken);
       taken[cp] = true;
       upserts.push({ path: path, content: text, synced: text, pending: null });
@@ -201,14 +231,15 @@ function reconcile(notes, files) {
 function resolvePartial(notes, entries) {
   var byPath = {};
   (notes || []).forEach(function (n) { byPath[cleanPath(n.path) || n.path] = n; });
-  var files = [], needFull = false;
+  var files = [], needFull = false, missing = [], unknown = 0;
   (entries || []).forEach(function (e) {
     if (e.hasText) { files.push({ path: e.path, text: e.text }); return; }
     var n = byPath[cleanPath(e.path)];
     if (n && n.synced != null) files.push({ path: e.path, text: n.synced });
-    else needFull = true;
+    else { needFull = true; if (!n) unknown += 1; missing.push(cleanPath(e.path) || String(e.path)); }
   });
-  return { files: needFull ? [] : files, needFull: needFull };
+  // Which ones, for the report (2026-11-13): "couldn't match" alone said nothing.
+  return { files: needFull ? [] : files, needFull: needFull, missing: missing, unknown: unknown };
 }
 // Firestore document id for a note path: no slashes allowed in an id.
 function docId(path) {
@@ -228,6 +259,21 @@ function report(s, write, opts) {
   if (s.need_full) {
     L.push('The quick sync couldn\'t match every note by its path alone.');
     L.push('Nothing was changed. The next run reads every note (slower, once).');
+    L.push('');
+    if (s.same_text != null) L.push('Every changed note came with the same text, "' + s.same_text + '": step 29\'s text row is typed, not the variable Text. Nothing was changed.');
+    L.push('Notes listed (paths): ' + n('files') + '. Sent as changed: ' + n('changed') + ', of them with text: ' + n('changed_text') + '.');
+    if (s.changed_type) L.push('The "changed" value arrived as: ' + s.changed_type + '.');
+    if (n('missing')) {
+      L.push('Without text, and A-Cell has no agreed copy: ' + n('missing') + ' (' + n('unknown') + ' A-Cell has never had).');
+      (s.missing_paths || []).forEach(function (m) { L.push('  ' + m); });
+      if (n('missing') > (s.missing_paths || []).length) L.push('  ...and ' + (n('missing') - (s.missing_paths || []).length) + ' more');
+    }
+    if (s.unmatched_changed && s.unmatched_changed.length) {
+      L.push('Changed notes that matched no listed path: ' + n('unmatched_count') + ', e.g.');
+      s.unmatched_changed.forEach(function (u) { L.push('  ' + u); });
+      if (s.listed_example) L.push('  a listed path looks like: ' + s.listed_example);
+    }
+    if (!n('changed')) L.push('No note came with its text: check steps 20-22 (Filter, Changed, the Repeat) and step 32 (changed = Repeat Results).');
     return { headline: 'DG sync: next run reads every note', text: L.join('\n') + '\n' };
   }
   L.push(s.partial ? 'Quick sync: ' + n('files') + ' notes listed, ' + (opts.changed || 0) + ' changed on the phone and read.'
@@ -238,8 +284,18 @@ function report(s, write, opts) {
   L.push('A-Cell to phone: ' + out + ' note' + (out === 1 ? '' : 's') + ' saved into the vault.');
   write.slice(0, 40).forEach(function (w) { L.push('  ' + w.path); });
   if (out > 40) L.push('  ...and ' + (out - 40) + ' more');
-  if (n('conflicts')) L.push('Changed on both sides, kept twice (the "(A-Cell)" copy): ' + n('conflicts'));
+  if (n('conflicts')) {
+    L.push('Changed on both sides, kept twice (the "(A-Cell)" copy): ' + n('conflicts'));
+    (s.conflict_samples || []).forEach(function (c) { L.push('  ' + c); });
+  }
+  if (n('adopted')) L.push('WARNING: notes A-Cell sent came back different (the phone didn\'t save them as sent); sent again, no copy: ' + n('adopted'));
+  (s.adopted_samples || []).forEach(function (c) { L.push('  ' + c); });
   if (n('removed')) L.push('Gone from the phone, so removed from A-Cell: ' + n('removed') + (n('moved_away') ? ' (' + n('moved_away') + ' of them moved, not deleted)' : ''));
+  if (n('unreadable')) L.push('Notes the Shortcut saved read back as "Text" on the phone; taken as what A-Cell sent: ' + n('unreadable'));
+  if ((s.unreadable_skipped || []).length) {
+    L.push('Read back as "Text" and A-Cell has no copy, left out this time: ' + s.unreadable_skipped.length);
+    s.unreadable_skipped.forEach(function (u) { L.push('  ' + u); });
+  }
   var held = s.held_paths || [];
   if (n('held_orphans') || held.length) {
     L.push('Held in A-Cell, their folder is gone from the phone: ' + (n('held_orphans') || held.length));
@@ -256,4 +312,58 @@ function report(s, write, opts) {
   return { headline: headline, text: L.join('\n') + '\n' };
 }
 
-module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId, resolvePartial: resolvePartial, report: report };
+// The quick sync's two lists made one (2026-11-13: every note arrived
+// twice, the changed notes' paths in another form than the list's, so
+// none matched). A changed note replaces its listed path when the paths
+// are the same, when one ends with the other, or when only one listed
+// note has its file name. listed, changed: [{ path, text, hasText, raw }].
+function mergeChanged(listed, changed) {
+  var key = function (x) { return cleanPath(x.path).toLowerCase(); };
+  var out = listed.slice(), at = {}, byBase = {};
+  out.forEach(function (x, i) {
+    var k = key(x); if (!k) return;
+    at[k] = i;
+    var b = k.split('/').pop();
+    (byBase[b] = byBase[b] || []).push(i);
+  });
+  var unmatched = [];
+  (changed || []).forEach(function (c) {
+    var k = key(c), i = k ? at[k] : undefined;
+    if (i === undefined && k) {
+      var cands = byBase[k.split('/').pop()] || [];
+      var ends = cands.filter(function (j) { var lk = key(out[j]); return k.slice(-(lk.length + 1)) === '/' + lk || lk.slice(-(k.length + 1)) === '/' + k; });
+      // iOS can cut a long File Path short, folders and all ("...:Investigation:Encoun.txt"
+      // for ".../Investigation/Encounter Group/Encounter Group.md"): among notes of that
+      // name, the one inside the folder the cut path still names (2026-11-13).
+      var dir = function (x) { return x.slice(0, x.lastIndexOf('/')); }, kd = dir(k);
+      var inside = cands.filter(function (j) { var ld = dir(key(out[j])); return ld === kd || ld.indexOf(kd + '/') === 0 || ld.slice(-(kd.length + 1)) === '/' + kd || kd.slice(-(ld.length + 1)) === '/' + ld; });
+      if (ends.length === 1) i = ends[0];
+      else if (cands.length === 1) i = cands[0];
+      else if (inside.length === 1) i = inside[0];
+    }
+    if (i !== undefined) { out[i] = Object.assign({}, c, { path: out[i].path }); return; }
+    out.push(c);
+    unmatched.push(String((c.raw && c.raw.path) || c.path).slice(-160) + ((c.raw && c.raw.name) ? ' (name: ' + String(c.raw.name).slice(0, 60) + ')' : ''));
+  });
+  return { files: out, unmatched: unmatched };
+}
+
+// A note that read back unreadable on the phone (the word "Text"): what
+// A-Cell sent it, or what both sides last agreed; a note A-Cell doesn't
+// have is left out (neither made nor deleted). entries: parsed notes.
+function resolveUnreadable(notes, entries) {
+  var byPath = {};
+  (notes || []).forEach(function (n) { byPath[cleanPath(n.path) || n.path] = n; });
+  var files = [], skipped = [], resolved = 0;
+  (entries || []).forEach(function (e) {
+    if (!e.unreadable) { files.push(e); return; }
+    var n = byPath[cleanPath(e.path)];
+    var t = n ? (n.pending != null ? n.pending : n.synced) : null;
+    if (t == null || String(t).trim() === 'Text') { skipped.push(cleanPath(e.path)); return; }
+    resolved += 1;
+    files.push(Object.assign({}, e, { text: t, hasText: true, unreadable: false }));
+  });
+  return { files: files, skipped: skipped, resolved: resolved };
+}
+
+module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId, resolvePartial: resolvePartial, report: report, mergeChanged: mergeChanged, resolveUnreadable: resolveUnreadable };

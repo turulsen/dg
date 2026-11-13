@@ -7390,3 +7390,47 @@ typed sooner, so the late caret landed mid-word. The editor now leaves
 the caret alone if the text changed in those 60 ms, and the test waits
 for the save itself rather than a fixed pause. Passed 6 of 6 runs in
 parallel under load (it failed 1 in 3 before).
+
+## Setting up the incremental sync on the phone (v3.19.1, PR #101)
+
+Reported 2026-11-13 while the Handler built the v3.19.0 Shortcut. Each
+run's report showed the next problem; the server was made to say more
+and to change nothing whenever the two lists disagreed, so no run did
+lasting damage to the vault. Root causes, in the order they surfaced:
+
+- **"No value" for `names`** -- step 17's *Name* was a variable called
+  Name, not the Name detail (a Shortcut fix).
+- **Only 16 of ~480 notes seen** -- an empty *File Size is Number*
+  condition in both Filter steps (a Shortcut fix). The in-app steps now
+  warn about it.
+- **"couldn't match every note", nothing said why** -- the report now
+  lists the counts, the unmatched paths and what `changed` arrived as.
+- **Every note arrived twice (972 for 486)** -- the changed notes' paths
+  were the typed words "OnePath"/"OneName" (a Shortcut fix), and the
+  server merged the two lists by exact path only. `mergeChanged` now
+  also matches by path ending and unique file name, decodes file URLs,
+  and a path iOS cut short ("...:Investigation:Encoun.txt" for
+  ".../Encounter Group/Encounter Group.md") takes the note of that name
+  in the folder it still names.
+- **"(A-Cell)" copies multiplied on every run, and ~480 notes in A-Cell
+  read "Text".** The text row of the loop's Dictionary was the typed
+  word "Text", so every changed note was sent as "Text"; the first run
+  that went through took it over A-Cell's text of every note the Handler
+  hadn't edited in A-Cell (those that were edited were kept as
+  "(A-Cell)" copies, so nothing A-Cell held alone was lost), and every
+  note A-Cell sent came back as "Text" and was copied again. Two fixes
+  made along the way were wrong and are noted here: one guessed that
+  only files the Shortcut saved read back as "Text"; one kept the
+  phone's version of a note A-Cell had sent, which put "Text" over 14
+  copies. The repair was a full read once the Shortcut sent the real
+  text (all 514 notes back in A-Cell, no restore needed). Now: a phone
+  text of just "Text" never replaces A-Cell's; a note A-Cell sent that
+  comes back different is sent again, never copied or taken; small
+  differences (BOM, spaces, blank lines) count as saved; a run where
+  every changed note has the same short text is refused; a note the
+  phone has but can't be read is never taken as deleted.
+- **"No value" for `changed` when nothing had changed** -- the read loop
+  had no cards; the steps now put Set changed inside an If.
+
+Tests: `test/vault_sync_test.js` (45 checks, each case from the reports)
+and the handler harness.
