@@ -298,8 +298,14 @@ function mergeChanged(listed, changed) {
     if (i === undefined && k) {
       var cands = byBase[k.split('/').pop()] || [];
       var ends = cands.filter(function (j) { var lk = key(out[j]); return k.slice(-(lk.length + 1)) === '/' + lk || lk.slice(-(k.length + 1)) === '/' + k; });
+      // iOS can cut a long File Path short, folders and all ("...:Investigation:Encoun.txt"
+      // for ".../Investigation/Encounter Group/Encounter Group.md"): among notes of that
+      // name, the one inside the folder the cut path still names (2026-11-13).
+      var dir = function (x) { return x.slice(0, x.lastIndexOf('/')); }, kd = dir(k);
+      var inside = cands.filter(function (j) { var ld = dir(key(out[j])); return ld === kd || ld.indexOf(kd + '/') === 0 || ld.slice(-(kd.length + 1)) === '/' + kd || kd.slice(-(ld.length + 1)) === '/' + ld; });
       if (ends.length === 1) i = ends[0];
       else if (cands.length === 1) i = cands[0];
+      else if (inside.length === 1) i = inside[0];
     }
     if (i !== undefined) { out[i] = Object.assign({}, c, { path: out[i].path }); return; }
     out.push(c);

@@ -137,5 +137,9 @@ mc = V.mergeChanged([{ path: 'A/Bar.md', raw: {} }, { path: 'B/Bar.md', raw: {} 
 check('…two notes of that name and no path to tell them apart: unmatched, said in the report', mc.unmatched.length === 1 && mc.files.length === 3, mc);
 check('a file URL cleans to the plain path', V.cleanPath('file:///x/Delta%20Green/Caf%C3%A9.md') === 'x/Delta Green/Café.md', V.cleanPath('file:///x/Delta%20Green/Caf%C3%A9.md'));
 
+mc = V.mergeChanged([{ path: 'Impossible/AV/INDIA MOON/Investigation/Encounter Group/Encounter Group', raw: {} }, { path: 'Impossible/LAMMS/Locations/Encounter Group', raw: {} }],
+  V.mergeChanged([], []).files.concat([{ path: 'Impossible/AV/INDIA MOON/Investigation/Encounter Group.md', text: 'e', hasText: true, raw: {} }]));
+check('…a path iOS cut short (its last folder gone): the note of that name inside the folder still named', !mc.unmatched.length && mc.files.length === 2 && mc.files[0].text === 'e' && !mc.files[1].text, mc);
+
 console.log(JSON.stringify(out));
 
