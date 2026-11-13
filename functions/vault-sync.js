@@ -32,7 +32,7 @@ function eq(a, b) { return a != null && b != null && norm(a) === norm(b); }
 // Looser, for "the phone saved what it was sent" (2026-11-13: notes A-Cell
 // sent came back a little different -- a BOM, spaces at line ends, blank
 // lines -- and each sync made another "(A-Cell)" copy of them).
-function loose(t) { return norm(t).replace(/^\uFEFF/, '').replace(/[ \t\u00A0]+$/gm, '').replace(/\n{3,}/g, '\n\n').replace(/^\s+/, ''); }
+function loose(t) { return norm(t).replace(/^\uFEFF/, '').replace(/[ \t\u00A0]+$/gm, '').replace(/\n[ \t]*(?=\n)/g, '').replace(/^\s+/, ''); }
 function savedAs(text, sent) { return sent != null && (eq(text, sent) || loose(text) === loose(sent)); }
 // Where two texts first differ, invisible characters shown, for the report.
 function diffAt(a, b) {
@@ -129,11 +129,13 @@ function reconcile(notes, files) {
       write.push(forPhone(path, content));
       stats.sent += 1;
     } else if (note.synced == null && note.pending != null && eq(content, note.pending)) {
-      // A note A-Cell made and sent, not edited here since, never agreed:
-      // what the phone has of it wins. A copy of it would only be copied
-      // again on the next sync.
-      upserts.push({ path: path, content: text, synced: text, pending: null });
-      stats.updated += 1;
+      // A note A-Cell made and sent, not edited here since, never agreed,
+      // back different: the phone didn't save what it was sent (2026-11-13:
+      // it saved the word "Text"). A-Cell keeps its text and sends it
+      // again -- no copy (a copy would be copied again next sync), and the
+      // phone's version never replaces A-Cell's.
+      write.push(forPhone(path, content));
+      stats.sent += 1;
       stats.adopted = (stats.adopted || 0) + 1;
       if ((stats.adopted_samples = stats.adopted_samples || []).length < 2) stats.adopted_samples.push(path + ' ' + diffAt(text, content));
     } else {
@@ -285,7 +287,7 @@ function report(s, write, opts) {
     L.push('Changed on both sides, kept twice (the "(A-Cell)" copy): ' + n('conflicts'));
     (s.conflict_samples || []).forEach(function (c) { L.push('  ' + c); });
   }
-  if (n('adopted')) L.push('Notes A-Cell sent that came back different, the phone\'s version kept (no copy): ' + n('adopted'));
+  if (n('adopted')) L.push('WARNING: notes A-Cell sent came back different (the phone didn\'t save them as sent); sent again, no copy: ' + n('adopted'));
   (s.adopted_samples || []).forEach(function (c) { L.push('  ' + c); });
   if (n('removed')) L.push('Gone from the phone, so removed from A-Cell: ' + n('removed') + (n('moved_away') ? ' (' + n('moved_away') + ' of them moved, not deleted)' : ''));
   var held = s.held_paths || [];

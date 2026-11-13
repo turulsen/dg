@@ -147,8 +147,8 @@ x = r([{ path: 'Op/NPCs/Andre.md', content: '---\ntags:\n  - npc\n---\n# Andre\n
 check('a note A-Cell sent that comes back with a BOM, spaces at line ends, extra blank lines: agreed, no copy',
   !x.write.length && x.stats.conflicts === 0 && x.upserts.length === 1 && x.upserts[0].pending === null, x);
 x = r([{ path: 'Op/NPCs/Andre.md', content: 'made in A-Cell', synced: null, pending: 'made in A-Cell' }], [{ path: 'Op/NPCs/Andre.md', text: 'quite different' }]);
-check('…a note A-Cell made and sent, not edited since, comes back really different: the phone\'s version kept, no copy',
-  !x.write.length && x.stats.conflicts === 0 && x.stats.adopted === 1 && x.upserts[0].content === 'quite different', x);
+check('…a note A-Cell made and sent, not edited since, comes back really different: A-Cell keeps its text and sends it again, no copy',
+  x.write.length === 1 && x.write[0].text === 'made in A-Cell' && x.stats.conflicts === 0 && x.stats.adopted === 1 && !x.upserts.some(function (u) { return u.content === 'quite different'; }), x);
 x = r([{ path: 'N.md', content: 'A-Cell edit', synced: 'base', pending: 'A-Cell edit' }], [{ path: 'N.md', text: 'phone edit' }]);
 check('…a real two-sided change still keeps both, and the report shows where they differ',
   x.stats.conflicts === 1 && x.write.length === 1 && /at 0 of/.test(x.stats.conflict_samples[0]), x);
