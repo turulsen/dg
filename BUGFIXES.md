@@ -7348,3 +7348,45 @@ runs on `main` as well as on this branch. The text typed after a pause
 landed where the cursor had been before the save. The phone keyboard
 fix from v3.14.0 may need another look. The Handler was asked whether
 they see it on their iPhone.
+
+## Faster phone sync, Evidence bold, the typing test (v3.19.0, PR #100)
+
+**The phone sync timed out as an automation.** Reported 2026-11-08: the
+Shortcut synced when run by hand ("a few minutes") but failed every time
+as an iOS automation with "timed out", naming no step. Not a server
+error: background Shortcuts get far less time, and the Shortcut opened
+and read every note in the vault on every run. The sync is incremental
+now: every note's path and name go as two lines-of-text values (no
+loop), the text only of notes modified since the last sync, and the
+reply carries a `since` the phone keeps in `dg-sync-since.txt`. A path
+A-Cell can't resolve without its text (`resolvePartial`) changes
+nothing and asks for a full read next time, so a missing text can never
+look like a deletion. The old full upload still works. The Shortcut was
+rebuilt from a full 56-step list, now also in the Notes vault settings.
+
+**Evidence: bold didn't show in Preview or for the Agents.**
+Reported 2026-11-10. The same cause as "Vault notes: bold didn't show"
+just above, whose fix was only partial: it set 700 on `.vn-body` alone.
+Evidence text is drawn by `assets/evidence-md.js` in containers that
+inherit the light 300 weight (A-Cell's Preview, the cards, the evidence
+viewer, Agent Hub, the notebook, Notes), so `<b>` ("bolder") was only
+400. The renderer now marks bold `<b class="md-b">` and adds one rule,
+`b.md-b{font-weight:700}`, so it is real bold wherever it is drawn.
+Check in `test_acell_evidence_share_languages_format` (400 on the old
+code). `sw.js` `CACHE_NAME` v323.
+
+
+**The sync's notification was cut after two lines,** with no way to
+read the rest (2026-11-13). The reply now has a one-line `headline`
+for the notification and a `report` (what came in, what was saved to
+the phone by path, what was held, any warnings) that the Shortcut
+appends to `DG sync log.txt` in iCloud Drive's Shortcuts folder.
+
+**`test_acell_mobile_typing_kept` failing now and then** (noticed in
+v3.18.0, above). The Handler confirmed the cursor is fine on their
+iPhone, and the cause was a race a person can't hit: the note editor
+places the caret on the tapped line 60 ms after opening, and the test
+typed sooner, so the late caret landed mid-word. The editor now leaves
+the caret alone if the text changed in those 60 ms, and the test waits
+for the save itself rather than a fixed pause. Passed 6 of 6 runs in
+parallel under load (it failed 1 in 3 before).

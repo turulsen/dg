@@ -97,5 +97,28 @@ check('a note A-Cell already sent once whose folder never appeared on the phone:
 x = r([{ path: 'Old Op/NPCs/Ruth.md', content: 'made in A-Cell', synced: null, pending: null }], [{ path: 'Impossible/Other.md', text: 'x' }]);
 check('…the first time (never sent yet) it still goes out', x.write.length === 1 && x.write[0].path === 'Old Op/NPCs/Ruth.md', x);
 
+// 2026-11-08: an incremental sync -- every path, the text only of what changed.
+let pr = V.resolvePartial([{ path: 'A.md', content: 'a', synced: 'a' }, { path: 'B.md', content: 'b2', synced: 'b', pending: 'b2' }],
+  [{ path: 'A.md', hasText: false }, { path: 'B.md', hasText: false }, { path: 'C.md', text: 'new', hasText: true }]);
+check('incremental: a path without text is the note as last agreed; a changed one comes with its text',
+  !pr.needFull && pr.files.length === 3 && pr.files[0].text === 'a' && pr.files[1].text === 'b' && pr.files[2].text === 'new', pr);
+x = r([{ path: 'B.md', content: 'b2', synced: 'b', pending: 'b2' }], pr.files.filter(function (f) { return f.path === 'B.md'; }));
+check('…a note A-Cell sent that the phone hasn\'t saved (unchanged there) is sent again', x.write.length === 1 && x.write[0].text === 'b2', x);
+pr = V.resolvePartial([{ path: 'A.md', content: 'a', synced: 'a' }], [{ path: 'A.md', hasText: false }, { path: 'Unknown.md', hasText: false }]);
+check('…a path A-Cell can\'t read that way (a note it doesn\'t have): nothing this time, everything next time', pr.needFull && !pr.files.length, pr);
+pr = V.resolvePartial([{ path: 'M.md', content: 'm', synced: null, pending: 'm' }], [{ path: 'M.md', hasText: false }]);
+check('…nor one never agreed on', pr.needFull, pr);
+
+// 2026-11-13: a readable report for the Shortcut to save (a notification shows two lines).
+let rp = V.report({ partial: true, files: 412, created: 1, updated: 2, conflicts: 1, held_orphans: 1, held_paths: ['Old/NPCs/Marla.md'] },
+  [{ path: 'Impossible/Players/Charles D.md' }], { changed: 3, when: new Date('2026-11-13T12:00:00Z') });
+check('the report says what came in, what went out (by path) and what was held, with a one-line headline',
+  rp.headline === 'DG sync: 3 in, 1 out, 1 kept twice' && /13 Nov 2026, 13:00/.test(rp.text) && /3 changed on the phone/.test(rp.text) &&
+  /\n  Impossible\/Players\/Charles D\.md\n/.test(rp.text) && /Old\/NPCs\/Marla\.md/.test(rp.text), rp);
+rp = V.report({ partial: true, need_full: true }, []);
+check('…and when the next run must read everything, it says so', /every note/.test(rp.headline) && /Nothing was changed/.test(rp.text), rp);
+rp = V.report({ files: 10, held_removals: 9 }, []);
+check('…a warning flags the headline', /Check the report/.test(rp.headline) && /WARNING/.test(rp.text), rp);
+
 console.log(JSON.stringify(out));
 

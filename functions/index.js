@@ -489,23 +489,52 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     if (!Array.isArray(files)) files = [];
     const received = { body: Array.isArray(body) ? 'list' : typeof body, keys: Array.isArray(body) ? [] : Object.keys(body).slice(0, 8).map((k) => JSON.stringify(k) + ': ' + (Array.isArray(body[k]) ? 'list of ' + body[k].length : typeof body[k])), files: Array.isArray(body) ? 'list' : (Array.isArray(body.files) ? 'list of ' + body.files.length : typeof body.files), content_type: req.get('content-type') || '' };
     if (files.length > 3000) { res.status(413).json({ status: 'ERROR', message: 'Too many files (over 3000).' }); return; }
-    const clean = [];
-    for (let f of files) {
-      if (typeof f === 'string') { try { f = JSON.parse(f); } catch (e) { continue; } }
-      if (!f || typeof f !== 'object') continue;
-      const text = String(f.text == null ? '' : f.text);
-      if (text.length > 900000) continue;
-      // iOS can cut a file's name short in File Path ("The Hotel.md" ->
-      // "The"): the name sent on its own ("name", from Get Details > Name)
-      // wins for the last part of the path.
-      let fp = String(f.path || '');
-      const nm = String(f.name == null ? '' : f.name).trim().replace(/[\/:]/g, ' ');
-      if (nm) {
-        const full = /\.md$/i.test(nm) ? nm : nm + '.md';
-        const cut = fp.indexOf('/') < 0 && fp.indexOf(':') >= 0 ? ':' : '/';
-        fp = fp ? fp.split(cut).slice(0, -1).concat([full]).join(cut) : full;
+    // Each entry as the Shortcut sends it: { path, name, text? }.
+    const parse = (list, withText) => {
+      const outList = [];
+      for (let f of list) {
+        if (typeof f === 'string') { try { f = JSON.parse(f); } catch (e) { continue; } }
+        if (!f || typeof f !== 'object') continue;
+        const hasText = withText && f.text != null;
+        const text = String(f.text == null ? '' : f.text);
+        if (text.length > 900000) continue;
+        // iOS can cut a file's name short in File Path ("The Hotel.md" ->
+        // "The"): the name sent on its own ("name", from Get Details > Name)
+        // wins for the last part of the path.
+        let fp = String(f.path || '');
+        const nm = String(f.name == null ? '' : f.name).trim().replace(/[\/:]/g, ' ');
+        if (nm) {
+          const full = /\.md$/i.test(nm) ? nm : nm + '.md';
+          const cut = fp.indexOf('/') < 0 && fp.indexOf(':') >= 0 ? ':' : '/';
+          fp = fp ? fp.split(cut).slice(0, -1).concat([full]).join(cut) : full;
+        }
+        outList.push({ path: fp, text, hasText, raw: { path: f.path, name: f.name } });
       }
-      clean.push({ path: fp, text, raw: { path: f.path, name: f.name } });
+      return outList;
+    };
+    // Incremental (2026-11-08): every note's path -- `paths` and `names`, one
+    // per line (one Shortcuts action for the lot, no loop), or `files` without
+    // text -- and `changed`, the text of those changed since the last sync.
+    // Without `changed`, `files` carries every note's text, as before.
+    let changedIn = Array.isArray(body) ? undefined : body.changed;
+    if (!Array.isArray(body) && typeof body.paths === 'string') {
+      const ps = body.paths.split(/\r?\n/), ns = typeof body.names === 'string' ? body.names.split(/\r?\n/) : [];
+      files = ps.map((p, i) => ({ path: p.trim(), name: (ns[i] || '').trim() })).filter((f) => f.path);
+      if (changedIn === undefined) changedIn = [];
+    }
+    if (typeof changedIn === 'string') { try { changedIn = JSON.parse(changedIn); } catch (e) { changedIn = []; } }
+    if (changedIn && !Array.isArray(changedIn) && typeof changedIn === 'object') changedIn = (changedIn.path || changedIn.text) ? [changedIn] : Object.values(changedIn);
+    const partial = Array.isArray(changedIn);
+    let clean = parse(files, !partial);
+    let changedCount = 0;
+    if (partial) {
+      const changed = parse(changedIn, true), byPath = {};
+      changedCount = changed.length;
+      changed.forEach((c) => { byPath[vaultSync_.cleanPath(c.path)] = c; });
+      clean = clean.map((c) => byPath[vaultSync_.cleanPath(c.path)] || c);
+      const listed = {};
+      clean.forEach((c) => { listed[vaultSync_.cleanPath(c.path)] = true; });
+      changed.forEach((c) => { if (!listed[vaultSync_.cleanPath(c.path)]) clean.push(c); });
     }
     const snap = await db.collection('vault').get();
     const notes = [];
@@ -522,6 +551,21 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       moved.push({ from: x.path, to: np, note: x });
       delete at[x.path]; at[np] = x; x.path = np;
     });
+    // A path sent without text is the note as both sides last agreed; one
+    // that can't be read that way: nothing this time, everything next time.
+    const sinceNext = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    if (partial) {
+      const r = vaultSync_.resolvePartial(notes, clean);
+      if (r.needFull) {
+        const summary0 = { partial: true, need_full: true, files: clean.length, at: Date.now() };
+        await cfgRef.set({ last_sync: summary0 }, { merge: true });
+        logger.info('vaultSync: incremental sync needs a full one', summary0);
+        const rep0 = vaultSync_.report(summary0, []);
+        res.json({ status: 'OK', write: [], since: '2000-01-01T00:00:00Z', stats: summary0, headline: rep0.headline, report: rep0.text });
+        return;
+      }
+      clean = r.files.map((f) => Object.assign({ raw: { path: f.path } }, f));
+    }
     const out = vaultSync_.reconcile(notes, clean);
     // Nothing (or far too little) arrived from a vault A-Cell already has:
     // more likely the Shortcut couldn't read the folder than a mass delete.
@@ -589,7 +633,9 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     if (stored.received) stored.received = JSON.stringify(stored.received).slice(0, 2000);
     await cfgRef.set({ last_sync: stored }, { merge: true });
     logger.info('vaultSync', summary);
-    res.json({ status: 'OK', write: out.write, stats: summary });
+    if (partial) summary.partial = true;
+    const rep = vaultSync_.report(summary, out.write, { changed: changedCount });
+    res.json({ status: 'OK', write: out.write, since: sinceNext, stats: summary, headline: rep.headline, report: rep.text });
   } catch (err) {
     logger.error('vaultSync failed', err);
     res.status(500).json({ status: 'ERROR', message: 'vaultSync failed: ' + ((err && err.message) || String(err)) });

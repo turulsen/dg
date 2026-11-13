@@ -191,9 +191,69 @@ function reconcile(notes, files) {
   return { upserts: upserts, removes: removes, movedAway: removes.filter(function (p) { return moved[p]; }), write: write, stats: stats };
 }
 
+// An incremental sync (2026-11-08): the phone sends every note's path, but
+// the text only of those changed since its last sync -- reading ~500 notes
+// took minutes, too long for an automation in the background. A path sent
+// without text is the note as both sides last agreed (`synced`). If one
+// can't be read that way (a note A-Cell doesn't have, or never agreed on),
+// the sync does nothing this time and asks for everything next time.
+// entries: [{ path, text, hasText }] -> { files: [{ path, text }], needFull }
+function resolvePartial(notes, entries) {
+  var byPath = {};
+  (notes || []).forEach(function (n) { byPath[cleanPath(n.path) || n.path] = n; });
+  var files = [], needFull = false;
+  (entries || []).forEach(function (e) {
+    if (e.hasText) { files.push({ path: e.path, text: e.text }); return; }
+    var n = byPath[cleanPath(e.path)];
+    if (n && n.synced != null) files.push({ path: e.path, text: n.synced });
+    else needFull = true;
+  });
+  return { files: needFull ? [] : files, needFull: needFull };
+}
 // Firestore document id for a note path: no slashes allowed in an id.
 function docId(path) {
   return Buffer.from(path, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId };
+// A readable account of one sync, for the Shortcut to save as a file
+// (2026-11-13: a notification shows only two lines). s: the summary;
+// write: what goes to the phone; opts: { changed, when }.
+function report(s, write, opts) {
+  s = s || {}; write = write || []; opts = opts || {};
+  var n = function (k) { return Number(s[k]) || 0; };
+  var when = opts.when || new Date(), stamp;
+  try { stamp = when.toLocaleString('en-GB', { timeZone: 'Europe/Copenhagen', dateStyle: 'medium', timeStyle: 'short' }); }
+  catch (e) { stamp = when.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'; }
+  var L = ['DG vault sync, ' + stamp];
+  if (s.need_full) {
+    L.push('The quick sync couldn\'t match every note by its path alone.');
+    L.push('Nothing was changed. The next run reads every note (slower, once).');
+    return { headline: 'DG sync: next run reads every note', text: L.join('\n') + '\n' };
+  }
+  L.push(s.partial ? 'Quick sync: ' + n('files') + ' notes listed, ' + (opts.changed || 0) + ' changed on the phone and read.'
+    : 'Full sync: ' + n('files') + ' notes read.');
+  var into = n('created') + n('updated'), out = write.length;
+  L.push('');
+  L.push('Phone to A-Cell: ' + n('created') + ' new, ' + n('updated') + ' changed.');
+  L.push('A-Cell to phone: ' + out + ' note' + (out === 1 ? '' : 's') + ' saved into the vault.');
+  write.slice(0, 40).forEach(function (w) { L.push('  ' + w.path); });
+  if (out > 40) L.push('  ...and ' + (out - 40) + ' more');
+  if (n('conflicts')) L.push('Changed on both sides, kept twice (the "(A-Cell)" copy): ' + n('conflicts'));
+  if (n('removed')) L.push('Gone from the phone, so removed from A-Cell: ' + n('removed') + (n('moved_away') ? ' (' + n('moved_away') + ' of them moved, not deleted)' : ''));
+  var held = s.held_paths || [];
+  if (n('held_orphans') || held.length) {
+    L.push('Held in A-Cell, their folder is gone from the phone: ' + (n('held_orphans') || held.length));
+    held.slice(0, 40).forEach(function (h) { L.push('  ' + h); });
+    L.push('  Move or delete them in A-Cell, Notes vault settings.');
+  }
+  if (n('held_removals')) L.push('WARNING: ' + n('held_removals') + ' notes looked deleted all at once, so A-Cell kept them. If the vault folder was readable, run it again.');
+  if (n('duplicates')) L.push('WARNING: the same path came twice, ' + n('duplicates') + ' time(s)' + (s.duplicate_example ? ', e.g. ' + s.duplicate_example : '') + '.');
+  if (n('no_path')) L.push('WARNING: ' + n('no_path') + ' note(s) came without a path and were skipped.');
+  if (n('too_big')) L.push('WARNING: ' + n('too_big') + ' note(s) too big to store (over 1 MB).');
+  if (!into && !out && L.length <= 5) L.push('Nothing to do: both sides agree.');
+  var warn = n('held_removals') || n('duplicates') || n('no_path') || n('too_big');
+  var headline = 'DG sync: ' + into + ' in, ' + out + ' out' + (n('conflicts') ? ', ' + n('conflicts') + ' kept twice' : '') + (warn ? '. Check the report' : '');
+  return { headline: headline, text: L.join('\n') + '\n' };
+}
+
+module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId, resolvePartial: resolvePartial, report: report };

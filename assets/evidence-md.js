@@ -15,6 +15,16 @@
 (function () {
   if (window.dgEvidenceMd) return;
 
+  // Bold must be real bold (2026-11-10): the readers' text is a 300
+  // weight, and <b> alone means "one step bolder", only 400 -- it looked
+  // like plain text in Preview and for the Agents. The class sets 700
+  // wherever the text is drawn.
+  try {
+    const st = document.createElement('style');
+    st.textContent = 'b.md-b,strong.md-b{font-weight:700}';
+    (document.head || document.documentElement).appendChild(st);
+  } catch (e) { /* no document */ }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
@@ -22,7 +32,7 @@
   // lone "*" or "2 * 3" is left alone.
   function inline(s) {
     return esc(s)
-      .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '<b>$1</b>')
+      .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '<b class="md-b">$1</b>')
       .replace(/(^|[^*\w])\*(?=\S)([^*]*?\S)\*(?!\*)/g, '$1<i>$2</i>')
       .replace(/(^|[^_\w])_(?=\S)([^_]*?\S)_(?![_\w])/g, '$1<i>$2</i>');
   }
