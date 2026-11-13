@@ -260,6 +260,7 @@ function report(s, write, opts) {
     L.push('The quick sync couldn\'t match every note by its path alone.');
     L.push('Nothing was changed. The next run reads every note (slower, once).');
     L.push('');
+    if (s.same_text != null) L.push('Every changed note came with the same text, "' + s.same_text + '": step 29\'s text row is typed, not the variable Text. Nothing was changed.');
     L.push('Notes listed (paths): ' + n('files') + '. Sent as changed: ' + n('changed') + ', of them with text: ' + n('changed_text') + '.');
     if (s.changed_type) L.push('The "changed" value arrived as: ' + s.changed_type + '.');
     if (n('missing')) {

@@ -531,9 +531,9 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     if (changedIn && !Array.isArray(changedIn) && typeof changedIn === 'object') changedIn = (changedIn.path || changedIn.text) ? [changedIn] : Object.values(changedIn);
     const partial = Array.isArray(changedIn);
     let clean = parse(files, !partial);
-    let changedCount = 0, changedText = 0, unmatched = [], listedExample = '';
+    let changedCount = 0, changedText = 0, unmatched = [], listedExample = '', sameText = null, changed = [];
     if (partial) {
-      const changed = parse(changedIn, true);
+      changed = parse(changedIn, true);
       changedCount = changed.length;
       changedText = changed.filter((c) => c.hasText && c.text.trim()).length;
       listedExample = clean.length ? String((clean[0].raw && clean[0].raw.path) || clean[0].path).slice(-160) : '';
@@ -564,13 +564,17 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     const sinceNext = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     if (partial) {
       const r = vaultSync_.resolvePartial(notes, clean);
+      // Every changed note with the same short text: the Shortcut sends a
+      // fixed word, not the notes (2026-11-13: "Text", typed into step 29).
+      const texts = changed.filter((c) => c.hasText).map((c) => c.text.trim());
+      if (texts.length >= 5 && texts.every((t) => t === texts[0]) && texts[0].length < 40) { r.needFull = true; sameText = texts[0]; }
       // A changed note that matches no listed path means the two lists
       // came in different forms: change nothing rather than guess.
       if (unmatched.length) r.needFull = true;
       if (r.needFull) {
         const summary0 = { partial: true, need_full: true, files: clean.length, changed: changedCount, changed_text: changedText, changed_type: changedType,
           missing: r.missing.length, unknown: r.unknown, missing_paths: r.missing.slice(0, 15),
-          unmatched_count: unmatched.length, unmatched_changed: unmatched.slice(0, 3), listed_example: listedExample, at: Date.now() };
+          same_text: sameText, unmatched_count: unmatched.length, unmatched_changed: unmatched.slice(0, 3), listed_example: listedExample, at: Date.now() };
         await cfgRef.set({ last_sync: summary0 }, { merge: true });
         logger.info('vaultSync: incremental sync needs a full one', summary0);
         const rep0 = vaultSync_.report(summary0, []);
