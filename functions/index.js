@@ -495,8 +495,11 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       for (let f of list) {
         if (typeof f === 'string') { try { f = JSON.parse(f); } catch (e) { continue; } }
         if (!f || typeof f !== 'object') continue;
-        const hasText = withText && f.text != null;
-        const text = String(f.text == null ? '' : f.text);
+        // A note the Shortcut itself saved reads back as the word "Text" on
+        // iOS (2026-11-13; the file is fine): not its text.
+        const unreadable = withText && f.text != null && String(f.text).trim() === 'Text';
+        const hasText = withText && f.text != null && !unreadable;
+        const text = unreadable ? '' : String(f.text == null ? '' : f.text);
         if (text.length > 900000) continue;
         // iOS can cut a file's name short in File Path ("The Hotel.md" ->
         // "The"): the name sent on its own ("name", from Get Details > Name)
@@ -508,7 +511,7 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
           const cut = fp.indexOf('/') < 0 && fp.indexOf(':') >= 0 ? ':' : '/';
           fp = fp ? fp.split(cut).slice(0, -1).concat([full]).join(cut) : full;
         }
-        outList.push({ path: fp, text, hasText, raw: { path: f.path, name: f.name } });
+        outList.push({ path: fp, text, hasText, unreadable, raw: { path: f.path, name: f.name } });
       }
       return outList;
     };
@@ -552,6 +555,10 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       moved.push({ from: x.path, to: np, note: x });
       delete at[x.path]; at[np] = x; x.path = np;
     });
+    // Notes that read back as "Text": what A-Cell sent (or last agreed);
+    // one A-Cell doesn't have is left out this time.
+    const ur = vaultSync_.resolveUnreadable(notes, clean);
+    clean = ur.files;
     // A path sent without text is the note as both sides last agreed; one
     // that can't be read that way: nothing this time, everything next time.
     const sinceNext = new Date(Date.now() - 10 * 60 * 1000).toISOString();
@@ -617,7 +624,7 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       if (++n >= 400) await flush();
     }
     await flush();
-    const summary = Object.assign({}, out.stats, { held_removals: held, too_big: tooBig, files: clean.length, moved: moved.length, at: now });
+    const summary = Object.assign({}, out.stats, { unreadable: ur.resolved, unreadable_skipped: ur.skipped.slice(0, 10) }, { held_removals: held, too_big: tooBig, files: clean.length, moved: moved.length, at: now });
     // How many came with their own name, and (for a collision) what the Shortcut sent.
     summary.with_name = clean.filter((c) => String(c.raw.name == null ? '' : c.raw.name).trim()).length;
     if (out.stats.duplicates && out.stats.duplicate_example) {

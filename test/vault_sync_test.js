@@ -153,5 +153,13 @@ x = r([{ path: 'N.md', content: 'A-Cell edit', synced: 'base', pending: 'A-Cell 
 check('…a real two-sided change still keeps both, and the report shows where they differ',
   x.stats.conflicts === 1 && x.write.length === 1 && /at 0 of/.test(x.stats.conflict_samples[0]), x);
 
+// 2026-11-13: a note the Shortcut saved reads back as the word "Text" (the file itself is fine).
+let ru = V.resolveUnreadable([{ path: 'P/Agent (A-Cell).md', content: 'full', synced: null, pending: 'full' }, { path: 'P/Old.md', content: 'old', synced: 'old', pending: null }],
+  [{ path: 'P/Agent (A-Cell).md', unreadable: true, hasText: false, text: '' }, { path: 'P/Old.md', unreadable: true, hasText: false, text: '' }, { path: 'P/New.md', unreadable: true, hasText: false, text: '' }, { path: 'P/Fine.md', hasText: true, text: 'f' }]);
+check('a note read back as "Text": what A-Cell sent, or last agreed; one A-Cell doesn\'t have is left out',
+  ru.resolved === 2 && ru.files.length === 3 && ru.files[0].text === 'full' && ru.files[1].text === 'old' && ru.skipped[0] === 'P/New.md', ru);
+x = r([{ path: 'P/Agent (A-Cell).md', content: 'full', synced: null, pending: 'full' }], ru.files.slice(0, 1));
+check('…and so the note A-Cell sent counts as saved: no copy, nothing sent again', !x.write.length && x.stats.conflicts === 0 && x.upserts[0].pending === null && x.upserts[0].synced === 'full', x);
+
 console.log(JSON.stringify(out));
 

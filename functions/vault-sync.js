@@ -290,6 +290,11 @@ function report(s, write, opts) {
   if (n('adopted')) L.push('WARNING: notes A-Cell sent came back different (the phone didn\'t save them as sent); sent again, no copy: ' + n('adopted'));
   (s.adopted_samples || []).forEach(function (c) { L.push('  ' + c); });
   if (n('removed')) L.push('Gone from the phone, so removed from A-Cell: ' + n('removed') + (n('moved_away') ? ' (' + n('moved_away') + ' of them moved, not deleted)' : ''));
+  if (n('unreadable')) L.push('Notes the Shortcut saved read back as "Text" on the phone; taken as what A-Cell sent: ' + n('unreadable'));
+  if ((s.unreadable_skipped || []).length) {
+    L.push('Read back as "Text" and A-Cell has no copy, left out this time: ' + s.unreadable_skipped.length);
+    s.unreadable_skipped.forEach(function (u) { L.push('  ' + u); });
+  }
   var held = s.held_paths || [];
   if (n('held_orphans') || held.length) {
     L.push('Held in A-Cell, their folder is gone from the phone: ' + (n('held_orphans') || held.length));
@@ -342,4 +347,22 @@ function mergeChanged(listed, changed) {
   return { files: out, unmatched: unmatched };
 }
 
-module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId, resolvePartial: resolvePartial, report: report, mergeChanged: mergeChanged };
+// A note that read back unreadable on the phone (the word "Text"): what
+// A-Cell sent it, or what both sides last agreed; a note A-Cell doesn't
+// have is left out (neither made nor deleted). entries: parsed notes.
+function resolveUnreadable(notes, entries) {
+  var byPath = {};
+  (notes || []).forEach(function (n) { byPath[cleanPath(n.path) || n.path] = n; });
+  var files = [], skipped = [], resolved = 0;
+  (entries || []).forEach(function (e) {
+    if (!e.unreadable) { files.push(e); return; }
+    var n = byPath[cleanPath(e.path)];
+    var t = n ? (n.pending != null ? n.pending : n.synced) : null;
+    if (t == null || String(t).trim() === 'Text') { skipped.push(cleanPath(e.path)); return; }
+    resolved += 1;
+    files.push(Object.assign({}, e, { text: t, hasText: true, unreadable: false }));
+  });
+  return { files: files, skipped: skipped, resolved: resolved };
+}
+
+module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId, resolvePartial: resolvePartial, report: report, mergeChanged: mergeChanged, resolveUnreadable: resolveUnreadable };
