@@ -580,6 +580,15 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
       clean = r.files.map((f) => Object.assign({ raw: { path: f.path } }, f));
     }
     const out = vaultSync_.reconcile(notes, clean);
+    // A note the phone has but couldn't read is never taken as deleted.
+    if (ur.skipped.length) {
+      const keep = {};
+      ur.skipped.forEach((p) => { keep[p] = true; });
+      const before = out.removes.length;
+      out.removes = out.removes.filter((p) => !keep[vaultSync_.cleanPath(p)]);
+      out.stats.removed -= before - out.removes.length;
+      out.write = out.write.filter((w) => !keep[vaultSync_.cleanPath(w.path)]);
+    }
     // Nothing (or far too little) arrived from a vault A-Cell already has:
     // more likely the Shortcut couldn't read the folder than a mass delete.
     const syncedCount = notes.filter((n) => n.synced != null).length;
