@@ -528,16 +528,14 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     if (changedIn && !Array.isArray(changedIn) && typeof changedIn === 'object') changedIn = (changedIn.path || changedIn.text) ? [changedIn] : Object.values(changedIn);
     const partial = Array.isArray(changedIn);
     let clean = parse(files, !partial);
-    let changedCount = 0, changedText = 0;
+    let changedCount = 0, changedText = 0, unmatched = [], listedExample = '';
     if (partial) {
-      const changed = parse(changedIn, true), byPath = {};
+      const changed = parse(changedIn, true);
       changedCount = changed.length;
       changedText = changed.filter((c) => c.hasText && c.text.trim()).length;
-      changed.forEach((c) => { byPath[vaultSync_.cleanPath(c.path)] = c; });
-      clean = clean.map((c) => byPath[vaultSync_.cleanPath(c.path)] || c);
-      const listed = {};
-      clean.forEach((c) => { listed[vaultSync_.cleanPath(c.path)] = true; });
-      changed.forEach((c) => { if (!listed[vaultSync_.cleanPath(c.path)]) clean.push(c); });
+      listedExample = clean.length ? String((clean[0].raw && clean[0].raw.path) || clean[0].path).slice(-160) : '';
+      const m = vaultSync_.mergeChanged(clean, changed);
+      clean = m.files; unmatched = m.unmatched;
     }
     const snap = await db.collection('vault').get();
     const notes = [];
@@ -559,9 +557,13 @@ exports.vaultSync = onRequest({ invoker: 'public', timeoutSeconds: 120, memory: 
     const sinceNext = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     if (partial) {
       const r = vaultSync_.resolvePartial(notes, clean);
+      // A changed note that matches no listed path means the two lists
+      // came in different forms: change nothing rather than guess.
+      if (unmatched.length) r.needFull = true;
       if (r.needFull) {
         const summary0 = { partial: true, need_full: true, files: clean.length, changed: changedCount, changed_text: changedText, changed_type: changedType,
-          missing: r.missing.length, unknown: r.unknown, missing_paths: r.missing.slice(0, 15), at: Date.now() };
+          missing: r.missing.length, unknown: r.unknown, missing_paths: r.missing.slice(0, 15),
+          unmatched_count: unmatched.length, unmatched_changed: unmatched.slice(0, 3), listed_example: listedExample, at: Date.now() };
         await cfgRef.set({ last_sync: summary0 }, { merge: true });
         logger.info('vaultSync: incremental sync needs a full one', summary0);
         const rep0 = vaultSync_.report(summary0, []);

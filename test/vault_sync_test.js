@@ -125,5 +125,17 @@ rp = V.report({ partial: true, need_full: true, files: 2, changed: 0, changed_te
 check('…the report names the notes that couldn\'t be matched, and says when no text came at all',
   pr.missing.length === 1 && pr.unknown === 1 && /Impossible\/New\.md/.test(rp.text) && /arrived as: missing/.test(rp.text) && /steps 20-22/.test(rp.text), rp);
 
+// 2026-11-13: the changed notes' paths in another form than the list's (every note came twice).
+let mc = V.mergeChanged(
+  [{ path: 'Impossible/Op/NPCs/Ruth.md', raw: {} }, { path: 'Impossible/Op/Locations/Bar.md', raw: {} }, { path: 'H-Cell/Bar.md', raw: {} }, { path: 'Impossible/Op/Index - Op.md', raw: {} }],
+  [{ path: 'file:///private/var/mobile/Library/Mobile%20Documents/iCloud~md~obsidian/Documents/Delta%20Green/Impossible/Op/NPCs/Ruth.md', text: 'r', hasText: true, raw: {} },
+   { path: '/var/x/Delta Green/Impossible/Op/Locations/Bar.md', text: 'b', hasText: true, raw: {} },
+   { path: 'Somewhere/Index - Op.md', text: 'i', hasText: true, raw: {} }]);
+check('the changed notes take the listed path: a file URL, a longer path ending the same, a file name only one note has',
+  mc.files.length === 4 && !mc.unmatched.length && mc.files[0].text === 'r' && mc.files[1].text === 'b' && mc.files[1].path === 'Impossible/Op/Locations/Bar.md' && !mc.files[2].text && mc.files[3].text === 'i', mc);
+mc = V.mergeChanged([{ path: 'A/Bar.md', raw: {} }, { path: 'B/Bar.md', raw: {} }], [{ path: 'C/Bar.md', text: 'x', hasText: true, raw: { path: 'C/Bar.md' } }]);
+check('…two notes of that name and no path to tell them apart: unmatched, said in the report', mc.unmatched.length === 1 && mc.files.length === 3, mc);
+check('a file URL cleans to the plain path', V.cleanPath('file:///x/Delta%20Green/Caf%C3%A9.md') === 'x/Delta Green/Café.md', V.cleanPath('file:///x/Delta%20Green/Caf%C3%A9.md'));
+
 console.log(JSON.stringify(out));
 

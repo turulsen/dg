@@ -30,7 +30,14 @@
 function norm(t) { return String(t == null ? '' : t).normalize('NFC').replace(/\r\n?/g, '\n').replace(/\s+$/, ''); }
 function eq(a, b) { return a != null && b != null && norm(a) === norm(b); }
 function cleanPath(p) {
-  p = String(p || '').normalize('NFC').trim();
+  p = String(p || '').trim();
+  // A file URL ("file:///private/.../Delta%20Green/Note.md"): plain path,
+  // spaces and accents decoded (2026-11-13).
+  if (/^file:\/\//i.test(p) || /%[0-9A-Fa-f]{2}/.test(p) && /\//.test(p)) {
+    p = p.replace(/^file:\/\//i, '');
+    try { p = decodeURIComponent(p); } catch (e) { /* keep it as it came */ }
+  }
+  p = p.normalize('NFC');
   // iOS Shortcuts' File Path: "iCloudDrive:Obsidian:Vault:Folder:Note.txt" --
   // colons for folders, and a text file's extension. Made relative to the
   // vault (iCloud Drive/Obsidian/<vault>/), with .md.
@@ -237,6 +244,11 @@ function report(s, write, opts) {
       (s.missing_paths || []).forEach(function (m) { L.push('  ' + m); });
       if (n('missing') > (s.missing_paths || []).length) L.push('  ...and ' + (n('missing') - (s.missing_paths || []).length) + ' more');
     }
+    if (s.unmatched_changed && s.unmatched_changed.length) {
+      L.push('Changed notes that matched no listed path: ' + n('unmatched_count') + ', e.g.');
+      s.unmatched_changed.forEach(function (u) { L.push('  ' + u); });
+      if (s.listed_example) L.push('  a listed path looks like: ' + s.listed_example);
+    }
     if (!n('changed')) L.push('No note came with its text: check steps 20-22 (Filter, Changed, the Repeat) and step 32 (changed = Repeat Results).');
     return { headline: 'DG sync: next run reads every note', text: L.join('\n') + '\n' };
   }
@@ -266,4 +278,34 @@ function report(s, write, opts) {
   return { headline: headline, text: L.join('\n') + '\n' };
 }
 
-module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId, resolvePartial: resolvePartial, report: report };
+// The quick sync's two lists made one (2026-11-13: every note arrived
+// twice, the changed notes' paths in another form than the list's, so
+// none matched). A changed note replaces its listed path when the paths
+// are the same, when one ends with the other, or when only one listed
+// note has its file name. listed, changed: [{ path, text, hasText, raw }].
+function mergeChanged(listed, changed) {
+  var key = function (x) { return cleanPath(x.path).toLowerCase(); };
+  var out = listed.slice(), at = {}, byBase = {};
+  out.forEach(function (x, i) {
+    var k = key(x); if (!k) return;
+    at[k] = i;
+    var b = k.split('/').pop();
+    (byBase[b] = byBase[b] || []).push(i);
+  });
+  var unmatched = [];
+  (changed || []).forEach(function (c) {
+    var k = key(c), i = k ? at[k] : undefined;
+    if (i === undefined && k) {
+      var cands = byBase[k.split('/').pop()] || [];
+      var ends = cands.filter(function (j) { var lk = key(out[j]); return k.slice(-(lk.length + 1)) === '/' + lk || lk.slice(-(k.length + 1)) === '/' + k; });
+      if (ends.length === 1) i = ends[0];
+      else if (cands.length === 1) i = cands[0];
+    }
+    if (i !== undefined) { out[i] = Object.assign({}, c, { path: out[i].path }); return; }
+    out.push(c);
+    unmatched.push(String((c.raw && c.raw.path) || c.path).slice(-160) + ((c.raw && c.raw.name) ? ' (name: ' + String(c.raw.name).slice(0, 60) + ')' : ''));
+  });
+  return { files: out, unmatched: unmatched };
+}
+
+module.exports = { reconcile: reconcile, cleanPath: cleanPath, docId: docId, resolvePartial: resolvePartial, report: report, mergeChanged: mergeChanged };
