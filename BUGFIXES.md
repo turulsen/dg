@@ -7528,3 +7528,18 @@ in landscape"); built from the approved mock-up. Two fixes came with it:
   the lift now, and a second finger calls the first one's action off.
 Tests: `test_acell_mobile_mat`, `test_notebook_mat_phone`;
 `test_acell_mobile_play` updated for the tab bar. `sw.js` `CACHE_NAME` v331.
+
+## Tracks skipped after about three seconds (v3.21.0)
+
+Reported 2026-11-17, twenty minutes before a session. Caused by
+v3.19.2's clock-based tape step (issue #103): it measured a track's
+time from `started_at`, which is written with the clock of whichever
+device started it. A device whose clock ran ahead by more than a track's
+length read every track as finished and stepped on as soon as the
+2.5-second guard allowed. The step now counts only the time this device
+has itself seen the track play (and needs a length of 5 s or more); a
+tab opened mid-track waits one track length at most. Workaround before
+it shipped: Auto-advance off in the Music console. Test:
+`test_acell_tape_steps_by_clock` (a start far back on another clock
+doesn't skip; a track watched for its length still steps).
+`sw.js` `CACHE_NAME` v332.

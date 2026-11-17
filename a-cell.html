@@ -7170,12 +7170,17 @@
     }
     return durProbe[u] || 0;
   }
-  var clockTried = '', clockTriedAt = 0;
+  var clockTried = '', clockTriedAt = 0, seenKey = '', seenAt = 0;
   setInterval(function () {
     if (!autoAdvanceEnabled || !current.track_url || current.loop || current.paused) return;
-    var dur = trackDuration_();
-    if (!(dur > 0) || liveElapsedSeconds_() < dur + 1) return;
     var key = current.track_url + '|' + (current.started_at || 0);
+    // Only time THIS device has watched the track play counts (2026-11-17:
+    // tracks skipped after ~3 s -- started_at is another device's clock,
+    // and a clock minutes ahead read every track as long finished). A tab
+    // opened mid-track waits a whole track length at most.
+    if (seenKey !== key) { seenKey = key; seenAt = Date.now(); }
+    var dur = trackDuration_();
+    if (!(dur >= 5) || (Date.now() - seenAt) / 1000 < dur + 1 || liveElapsedSeconds_() < dur + 1) return;
     // A try every 15 s at most per track (a failed write, no sign-in yet);
     // the transaction makes sure only one tab or device steps.
     if (clockTried === key && Date.now() - clockTriedAt < 15000) return;

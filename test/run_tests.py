@@ -5383,10 +5383,17 @@ def test_acell_tape_steps_by_clock(p):
     deliver({"track_url": url1, "track_title": "Lighthouse at Dusk", "track_kind": "audio", "started_at": now - 390000, "paused": False, "paused_at": "", "loop": True})
     page.wait_for_timeout(2500)
     record("acell-tapes", "Loop on: the track's time up doesn't step the tape", track() == url1, str(track())[:60])
-    # Loop off, its time up, no 'ended' from the preview: steps by the clock.
+    # Loop off, its start long ago by the clock that wrote it, but this
+    # device has only just seen it: no step (2026-11-17, tracks skipped
+    # after ~3 s -- another device's clock ahead).
     deliver({"loop": False})
-    wait_for_condition(lambda: track() == url2, timeout_ms=5000)
-    record("acell-tapes", "a track whose time is up steps the tape on with no 'ended' (the preview never played)", track() == url2, str(track())[:60])
+    page.wait_for_timeout(3500)
+    record("acell-tapes", "a start time far back (another device's clock) doesn't skip a track this device just saw start", track() == url1, str(track())[:60])
+    # A short track (6 s on its cue) this device watched play out: steps by the clock.
+    page.evaluate("(u) => { const c = window.dgAcellMusic.cueList(); window.dgAcellMusic.setTape({ id: 'tape_dread', name: 'x' }, c.map((x, i) => Object.assign({}, x, { dur: i === 0 ? 6 : 182 }))); }", url1)
+    deliver({"started_at": int(_t.time() * 1000), "loop": False})
+    wait_for_condition(lambda: track() == url2, timeout_ms=12000)
+    record("acell-tapes", "a track this device watched for its length steps the tape on with no 'ended' (the preview never played)", track() == url2, str(track())[:60])
     record("acell-tapes", "no JS errors (tape by the clock)", not errs, str(errs))
     page.close()
 
