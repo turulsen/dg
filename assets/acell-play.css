@@ -344,3 +344,6 @@ body.acm .acm-cxbox [data-cc=live] .cc-mini{ min-height:34px; min-width:38px; }
 .pd-mx{ font:inherit; font-size:11px; background:transparent; color:#e9dfbf; border:1px solid #b8a878; border-left:0; padding:0 6px; cursor:pointer; }
 .pd-save{ display:inline-flex; gap:6px; align-items:center; }
 .pd-savename{ font:inherit; font-size:12px; padding:4px 7px; border:1px solid #b8a878; background:#f6efd8; color:#2a2418; width:150px; }
+/* The combat mat on the desk (assets/acell-mat.js) */
+.pd-grid .pd-mat > .pd-ob{ overflow:hidden; display:flex; flex-direction:column; }
+.pd-grid .pd-mat .mt-ed{ flex:1; }

@@ -39,6 +39,7 @@
 <link rel="stylesheet" href="assets/acell-vault.css">
 <link rel="stylesheet" href="assets/acell-shell.css">
 <link rel="stylesheet" href="assets/acell-play.css">
+<link rel="stylesheet" href="assets/acell-mat.css">
 <link rel="stylesheet" href="assets/acell-mobile.css">
 <style>
   :root{ --term-green:#3ef07a; --term-green-dim:#1e7a42; }
@@ -346,6 +347,13 @@
     padding:6px 9px; font-family:'Courier Prime',monospace; font-size:12px; min-width:180px;
   }
   .cell-add-row select[multiple]{ min-height:88px; }
+  .cell-pick{ flex:1; min-width:220px; display:flex; flex-direction:column; gap:6px; }
+  .cell-pick-q{ font:inherit; font-size:13px; padding:7px 8px; border:1px solid var(--rule); background:rgba(255,252,240,.6); color:var(--ink); }
+  .cell-pick-list{ max-height:240px; overflow-y:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--rule); background:rgba(255,252,240,.45); }
+  .cell-pick-h{ position:sticky; top:0; background:#e9dcb4; font-family:'Courier Prime',monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); padding:4px 8px; }
+  .cell-pick-row{ display:flex; align-items:center; gap:8px; padding:8px; border-top:1px dotted var(--rule); font-size:13px; cursor:pointer; color:var(--ink); }
+  .cell-pick-row[hidden]{ display:none; }
+  .cell-pick-row input{ width:18px; height:18px; margin:0; accent-color:#a3221c; flex:none; }
   .cell-add-note{ font-size:10px; color:var(--ink-3); font-style:italic; width:100%; margin:0; font-family:'Courier Prime',monospace; }
   .cells-empty-note{ font-style:italic; color:var(--ink-3); font-family:'Courier Prime',monospace; }
   .cells-unassigned{ display:flex; flex-wrap:wrap; gap:8px; }
@@ -2010,6 +2018,8 @@
         return null;
       });
     },
+    // The Handler's signed-in Firebase, Firestore only (the combat mat).
+    signedIn: function () { return ensureHandlerSignedIn().then(function () { return window.firebase; }); },
     // The Handler's signed-in Firebase (v3.9.0: the ID Creator's uploads),
     // with Storage loaded.
     handler: function () {
@@ -3442,6 +3452,7 @@
     statusEl.textContent = (d.folders || []).map(function (m) { return m[0] + ' → ' + m[1]; }).join(', ') + ((d.folders || []).length ? ': followed from Obsidian. ' : '') + (d.sessions ? d.sessions + ' session' + (d.sessions === 1 ? '' : 's') + ' pointed to the moved notes.' : '');
   });
 
+  var addPick = {};   // per Cell: { codes: { code: true }, q } -- survives redraws
   function renderGroups() {
     // dgTapes loads once (its promise is kept); its dg-tapes event redraws.
     if (window.dgTapes && window.dgTapes.load) window.dgTapes.load().catch(function () {});
@@ -3456,16 +3467,18 @@
           '<button type="button" class="paper-btn" data-remove-cell="' + i + '" data-remove-agent="' + escapeHtml(code) + '">Remove</button></div>';
       }).join('') || '<div class="cells-empty-note">No members yet.</div>';
       var available = agents.filter(function (a) { return c.member_codes.indexOf(a.code) === -1; });
-      var options = available.map(function (a) {
-        return '<option value="' + escapeHtml(a.code) + '">' + escapeHtml(a.name) + '</option>';
-      }).join('');
       var availableFriendlies = friendlies.filter(function (f) { return c.member_codes.indexOf(f.code) === -1; });
-      if (availableFriendlies.length) {
-        options = (options ? '<optgroup label="Agents">' + options + '</optgroup>' : '') +
-          '<optgroup label="Friendlies (one-shot pregens)">' + availableFriendlies.map(function (f) {
-            return '<option value="' + escapeHtml(f.code) + '">' + escapeHtml(f.name) + '</option>';
-          }).join('') + '</optgroup>';
+      // A tick list, not a <select multiple> (2026-11-17: on an iPhone that
+      // opens a picker, which this panel's redraws -- a vault sync, a tape
+      // loading -- closed mid-scroll and emptied). What's ticked and the
+      // search are kept per Cell across redraws.
+      var pk = addPick[c.cell_id] || (addPick[c.cell_id] = { codes: {}, q: '' });
+      function tick(a) {
+        return '<label class="cell-pick-row" data-name="' + escapeHtml(String(a.name).toLowerCase()) + '"><input type="checkbox" data-add-pick="' + i + '" value="' + escapeHtml(a.code) + '"' + (pk.codes[a.code] ? ' checked' : '') + '> ' + escapeHtml(a.name) + '</label>';
       }
+      var nPicked = Object.keys(pk.codes).filter(function (k) { return pk.codes[k]; }).length;
+      var options = (available.length ? '<div class="cell-pick-h">Agents</div>' + available.map(tick).join('') : '') +
+        (availableFriendlies.length ? '<div class="cell-pick-h">Friendlies (one-shot pregens)</div>' + availableFriendlies.map(tick).join('') : '');
       var addCount = available.length + availableFriendlies.length;
       var hasFriendly = c.member_codes.some(function (code) { return friendliesByCode[code]; });
       var friendlyLink = hasFriendly
@@ -3488,9 +3501,10 @@
             '<a href="' + escapeHtml(friendlyLink) + '" target="_blank" rel="noopener">' + escapeHtml(friendlyLink) + '</a></p>'
           : '') +
         (addCount
-          ? '<div class="cell-add-row"><select data-add-select="' + i + '" multiple size="' + Math.min(addCount + (availableFriendlies.length ? 2 : 0), 8) + '">' + options + '</select>' +
-            '<button type="button" class="paper-btn" data-add-btn="' + i + '">Add Selected</button>' +
-            '<p class="cell-add-note">Ctrl/Cmd-click (or shift-click a range) to pick more than one before Add Selected.</p></div>'
+          ? '<div class="cell-add-row"><div class="cell-pick"><input type="search" class="cell-pick-q" data-add-q="' + i + '" placeholder="Find an Agent or a Friendly…" value="' + escapeHtml(pk.q) + '">' +
+            '<div class="cell-pick-list" data-add-select="' + i + '">' + options + '</div></div>' +
+            '<button type="button" class="paper-btn" data-add-btn="' + i + '">Add Selected' + (nPicked ? ' (' + nPicked + ')' : '') + '</button>' +
+            '<p class="cell-add-note">Tick one or more, then Add Selected.</p></div>'
           : '') +
         '</div>';
     }).join('');
@@ -3506,13 +3520,32 @@
         }).then(function () { statusEl.textContent = ''; }, function (err) { statusEl.textContent = 'Could not save the channels: ' + ((err && err.message) || err); });
       });
     });
+    Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-add-pick]'), function (cb) {
+      cb.addEventListener('change', function () {
+        var i = parseInt(cb.dataset.addPick, 10), pk = addPick[cells[i].cell_id];
+        pk.codes[cb.value] = cb.checked;
+        var n = Object.keys(pk.codes).filter(function (k) { return pk.codes[k]; }).length;
+        var btn = groupsEl.querySelector('[data-add-btn="' + i + '"]');
+        if (btn) btn.textContent = 'Add Selected' + (n ? ' (' + n + ')' : '');
+      });
+    });
+    function filterPick(q) {
+      var i = q.dataset.addQ, pk = addPick[cells[+i].cell_id], t = q.value.trim().toLowerCase();
+      pk.q = q.value;
+      Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-add-select="' + i + '"] .cell-pick-row'), function (r) {
+        r.hidden = !!t && r.getAttribute('data-name').indexOf(t) === -1 && !(r.querySelector('input') || {}).checked;
+      });
+    }
+    Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-add-q]'), function (q) {
+      q.addEventListener('input', function () { filterPick(q); });
+      if (q.value) filterPick(q);
+    });
     Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-add-btn]'), function (btn) {
       btn.addEventListener('click', function () {
-        var i = parseInt(btn.dataset.addBtn, 10);
-        var select = groupsEl.querySelector('[data-add-select="' + i + '"]');
-        var picked = Array.prototype.filter.call(select.options, function (o) { return o.selected; })
-          .map(function (o) { return o.value; });
+        var i = parseInt(btn.dataset.addBtn, 10), pk = addPick[cells[i].cell_id];
+        var picked = Object.keys(pk.codes).filter(function (k) { return pk.codes[k] && cells[i].member_codes.indexOf(k) === -1; });
         if (!picked.length) return;
+        addPick[cells[i].cell_id] = { codes: {}, q: '' };
         var newMembers = cells[i].member_codes.concat(picked);
         saveMembers(cells[i], newMembers);
       });
@@ -7911,6 +7944,7 @@
 <script src="assets/acell-library.js"></script>
 <script src="assets/acell-console.js"></script>
 <script src="assets/acell-players.js"></script>
+<script src="assets/acell-mat.js"></script>
 <script src="assets/acell-play.js"></script>
 <script src="assets/acell-debrief.js"></script>
 <script src="assets/acell-mobile.js"></script>

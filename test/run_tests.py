@@ -2781,7 +2781,7 @@ def test_acell_cells(p):
     # includes every NOT-yet-added Agent's name, so a plain "is Owen's
     # name anywhere in this card" check is already true before the add
     # even happens (he's sitting right there as an unselected option).
-    page.select_option('[data-add-select="0"]', "OWEN-CS12")
+    page.check('[data-add-select="0"] input[value="OWEN-CS12"]')
     page.click('[data-add-btn="0"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == alpha_id
                         and set(b.get("member_codes", [])) == {"OWEN-CS12"})
@@ -2801,7 +2801,7 @@ def test_acell_cells(p):
     page.click("#cells-new-confirm")
     bravo_id = wait_cell_write_and_sync(lambda w: w["data"].get("name") == "Cell Bravo")
     wait_for_condition(lambda: page.locator('.cell-card[data-i="1"]').count() > 0)
-    page.select_option('[data-add-select="1"]', "OWEN-CS12")
+    page.check('[data-add-select="1"] input[value="OWEN-CS12"]')
     page.click('[data-add-btn="1"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == bravo_id
                         and set(b.get("member_codes", [])) == {"OWEN-CS12"})
@@ -2825,10 +2825,18 @@ def test_acell_cells(p):
     # Bulk add: Cell Bravo currently only has Owen -- select both Priya
     # and Marcus at once and confirm one Add Selected click sends both
     # codes in a single update_cell_members call, not two.
-    add_select = page.locator('[data-add-select="1"]')
-    record("acell", "the Add row is a multi-select, not one Agent at a time",
-           add_select.evaluate("el => el.multiple") is True, "")
-    add_select.select_option(["PRIY-AN34", "MARC-9XQ2"])
+    record("acell", "the Add row is a tick list (more than one at a time), not a <select> (2026-11-17: an iPhone picker closed mid-scroll)",
+           page.locator('[data-add-select="1"] input[type=checkbox]').count() >= 2 and page.locator('select[data-add-select]').count() == 0, "")
+    page.check('[data-add-select="1"] input[value="PRIY-AN34"]')
+    # A redraw (a vault sync, a tape loading) keeps what's ticked.
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('dg-tapes'))")
+    page.wait_for_timeout(200)
+    record("acell", "what's ticked survives the panel redrawing", page.is_checked('[data-add-select="1"] input[value="PRIY-AN34"]')
+           and "(1)" in page.inner_text('[data-add-btn="1"]'), page.inner_text('[data-add-btn="1"]'))
+    page.fill('[data-add-q="1"]', "marc")
+    shown = page.eval_on_selector_all('[data-add-select="1"] .cell-pick-row:not([hidden])', "els => els.map(e => e.querySelector('input').value)")
+    record("acell", "the search narrows the list (what's ticked stays in view)", "MARC-9XQ2" in shown and "PRIY-AN34" in shown and len(shown) == 2, str(shown))
+    page.check('[data-add-select="1"] input[value="MARC-9XQ2"]')
     page.click('[data-add-btn="1"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == bravo_id
                         and set(b.get("member_codes", [])) == {"OWEN-CS12", "PRIY-AN34", "MARC-9XQ2"})
@@ -4523,11 +4531,11 @@ def test_acell_play_layouts(p):
            it["notebook"]["y"] == 0 and it["evidence"]["y"] == 4 and it["dossiers"]["y"] == 8 and bottom == 18, str(it))
     page.click("#ac-tools [data-tool=arrange]")
     names = page.eval_on_selector_all(".pd-drawer [data-pd=preset]", "els => els.map(e => e.textContent)")
-    record("acell-layouts", "the Arrange bar offers the five layouts", names == ["Session", "Investigation", "Action", "Music", "Compact"], str(names))
+    record("acell-layouts", "the Arrange bar offers the layouts (Combat since the mat)", names == ["Session", "Combat", "Investigation", "Action", "Music", "Compact"], str(names))
     page.click(".pd-drawer [data-pd=preset][data-n=Investigation]")
     l = lay()
     record("acell-layouts", "a layout rearranges the desk at once; what it doesn't use is put away",
-           l["items"].get("notebook") == {"x": 0, "y": 0, "w": 6, "h": 14} and l.get("away") == ["pads"] and page.locator(".pd-drawer [data-pd=back][data-id=pads]").count() == 1
+           l["items"].get("notebook") == {"x": 0, "y": 0, "w": 6, "h": 14} and l.get("away") == ["pads", "mat"] and page.locator(".pd-drawer [data-pd=back][data-id=pads]").count() == 1
            and "on" in page.get_attribute(".pd-drawer [data-pd=preset][data-n=Investigation]", "class"), str(l)[:300])
     # Mine: save this one, change it, come back to it.
     page.click(".pd-drawer [data-pd=mine-new]")
@@ -4535,9 +4543,9 @@ def test_acell_play_layouts(p):
     page.press(".pd-savename", "Enter")
     page.wait_for_selector(".pd-drawer [data-pd=mine][data-n='Thursday table']", timeout=3000)
     page.click(".pd-drawer [data-pd=preset][data-n=Compact]")
-    record("acell-layouts", "Compact puts everything out in 12 rows", max(r["y"] + r["h"] for r in lay()["items"].values()) == 12 and not lay().get("away"), str(lay()["items"]))
+    record("acell-layouts", "Compact puts everything out in 12 rows", max(r["y"] + r["h"] for r in lay()["items"].values()) == 12 and lay().get("away") == ["mat"], str(lay()["items"]))
     page.click(".pd-drawer [data-pd=mine][data-n='Thursday table']")
-    record("acell-layouts", "a saved layout of my own comes back with a tap", lay()["items"].get("notebook") == {"x": 0, "y": 0, "w": 6, "h": 14} and lay().get("away") == ["pads"], str(lay())[:200])
+    record("acell-layouts", "a saved layout of my own comes back with a tap", lay()["items"].get("notebook") == {"x": 0, "y": 0, "w": 6, "h": 14} and lay().get("away") == ["pads", "mat"], str(lay())[:200])
     # Swap: Initiative dropped onto the tape deck, both about one size.
     page.click(".pd-drawer [data-pd=preset][data-n=Session]")
     before = lay()["items"]
@@ -4562,6 +4570,138 @@ def test_acell_play_layouts(p):
     page.click(".pd-drawer [data-pd=close-gaps]")
     record("acell-layouts", "Close the gaps leaves a tidy desk", max(r["y"] + r["h"] for r in lay()["items"].values()) == 18, str(lay()["items"]))
     record("acell-layouts", "no JS errors (layouts)", not errs, str(errs))
+    page.close()
+
+def test_acell_mobile_cells_add(p):
+    """2026-11-17, on an iPhone: adding a player to a Cell failed -- the
+    multi-select opened iOS's picker, which closed mid-scroll and showed 0
+    chosen (the Cells panel redraws on a vault sync or a tape loading).
+    It's a tick list now; a redraw keeps the ticks; one tap adds them."""
+    page, errs = open_phone(p)
+    page.evaluate("() => dgAcm.go('cells')")
+    page.wait_for_selector("[data-add-select] input[type=checkbox]", state="attached", timeout=6000)
+    first = page.eval_on_selector("[data-add-select] input[type=checkbox]", "e => e.value")
+    page.locator(f"[data-add-select] input[value='{first}']").scroll_into_view_if_needed()
+    page.tap(f"[data-add-select] input[value='{first}']")
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('dg-vault'))")
+    page.wait_for_timeout(700)
+    record("acell-mobile", "on a phone, a tick in the Cell's add list survives the panel redrawing (a vault sync)",
+           page.is_checked(f"[data-add-select] input[value='{first}']"), "")
+    page.locator("[data-add-btn]").first.scroll_into_view_if_needed()
+    page.tap("[data-add-btn] >> nth=0")
+    wait_for_condition(lambda: first in ((fs_doc(page, "cells/cell_osiris") or {}).get("member_codes") or []), timeout_ms=5000)
+    record("acell-mobile", "...and Add Selected adds them to the Cell", first in ((fs_doc(page, "cells/cell_osiris") or {}).get("member_codes") or []), str(fs_doc(page, "cells/cell_osiris")))
+    record("acell-mobile", "no JS errors (phone Cells add)", not errs, str(errs))
+    page.close()
+
+def test_acell_combat_mat(p):
+    """2026-11-17, the combat mat on the Play desk (assets/acell-mat.js):
+    the Combat layout brings it out; the marker, a rectangle, tokens and
+    the Agents' photo tokens go on the Cell's mat (mats/{cell}); the scale
+    is edited bottom right; the ruler is shared while held; Undo; Shown to
+    the Agents; a background photo set to scale from a line drawn on it."""
+    page, errs = open_acell_shell(p, width=1440, height=1000)
+    page.click("#ac-modes [data-mode=play]")
+    page.wait_for_selector(".pd-o[data-o=notebook]", timeout=6000)
+    record("acell-mat", "the mat starts put away on an existing desk", page.locator(".pd-o[data-o=mat]").count() == 0, "")
+    page.click("#ac-tools [data-tool=arrange]")
+    page.click(".pd-drawer [data-pd=preset][data-n=Combat]")
+    page.click("#ac-tools [data-tool=arrange]")
+    page.wait_for_selector(".pd-o[data-o=mat] .mt-svg", timeout=5000)
+    record("acell-mat", "the Combat layout puts the mat on most of the desk", page.locator(".pd-o[data-o=mat]").bounding_box()["width"] > 800, "")
+    page.wait_for_timeout(400)
+    box = page.locator(".mt-stage").bounding_box()
+    def at(fx, fy): return box["x"] + box["width"] * fx, box["y"] + box["height"] * fy
+    mat = lambda: fs_doc(page, "mats/cell_osiris") or {}
+    kinds = lambda: [i.get("t") for i in mat().get("items") or []]
+    page.click(".mt-tool[data-tool=marker]")
+    page.mouse.move(*at(.05, .3)); page.mouse.down()
+    for i in range(1, 12): page.mouse.move(*at(.05 + i * .06, .3 + (i % 3) * .02))
+    page.mouse.up()
+    page.click(".mt-tool[data-tool=rect]")
+    page.mouse.move(*at(.1, .5)); page.mouse.down(); page.mouse.move(*at(.3, .75), steps=5); page.mouse.up()
+    page.click(".mt-tok[data-tool='tok:sedan']"); page.mouse.click(*at(.5, .2))
+    page.click(".mt-ag >> nth=0"); page.mouse.click(*at(.15, .4))
+    wait_for_condition(lambda: kinds() == ["path", "rect", "token", "agent"], timeout_ms=4000)
+    it = mat().get("items") or []
+    record("acell-mat", "marker, rectangle, a token and an Agent go on the Cell's mat (mats/{cell})", kinds() == ["path", "rect", "token", "agent"], str(kinds()))
+    record("acell-mat", "a sedan is placed at its real size (2 x 4.5 m at 1 dot = 1 m)", it[2].get("tok") == "sedan" and it[2].get("w") == 2 and it[2].get("h") == 4.5, str(it[2]))
+    record("acell-mat", "an Agent's token carries their code and name", it[3].get("code") == "MARA-KS01" and "Mara" in it[3].get("name", ""), str(it[3]))
+    # The scale, bottom right.
+    page.fill(".mt-scale input[data-mt=scale]", "2")
+    page.press(".mt-scale input[data-mt=scale]", "Enter")
+    page.locator(".mt-name").click()
+    wait_for_condition(lambda: mat().get("scale") == 2, timeout_ms=3000)
+    record("acell-mat", "the dot size is edited in the bottom-right corner and saved for everyone", mat().get("scale") == 2 and page.is_visible(".mt-scale"), str(mat().get("scale")))
+    # The ruler: shared while held, gone when let go; it reads in metres.
+    page.click(".mt-tool[data-tool=ruler]")
+    page.mouse.move(*at(.1, .9)); page.mouse.down(); page.mouse.move(*at(.5, .9), steps=6)
+    wait_for_condition(lambda: (mat().get("ruler") or {}).get("a"), timeout_ms=3000)
+    lbl = page.text_content(".mt-ruler") or ""
+    record("acell-mat", "the ruler shows metres (at this scale) and is shared while held", bool((mat().get("ruler") or {}).get("a")) and lbl.strip().endswith("m"), lbl)
+    page.mouse.up()
+    wait_for_condition(lambda: mat().get("ruler") is None, timeout_ms=3000)
+    record("acell-mat", "...and cleared when let go", mat().get("ruler") is None, str(mat().get("ruler")))
+    page.click(".mt-bar [data-mt=undo]")
+    wait_for_condition(lambda: kinds() == ["path", "rect", "token"], timeout_ms=3000)
+    record("acell-mat", "Undo takes the last thing back off", kinds() == ["path", "rect", "token"], str(kinds()))
+    page.check(".mt-bar [data-mt=shown]")
+    wait_for_condition(lambda: mat().get("shown") is True, timeout_ms=3000)
+    record("acell-mat", "Shown to the Agents", mat().get("shown") is True, "")
+    # A background photo (no Storage in tests: set directly), then its scale.
+    page.evaluate("() => window.dgMat._setBg('data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'400\\' height=\\'300\\'><rect width=\\'400\\' height=\\'300\\' fill=\\'gray\\'/></svg>'), 400, 300)")
+    wait_for_condition(lambda: (mat().get("bg") or {}).get("url"), timeout_ms=3000)
+    w0 = mat()["bg"]["w"]
+    record("acell-mat", "a background photo goes under the mat, faded, and the scale tool is ready", mat()["bg"].get("op") == 0.6 and "on" in page.get_attribute(".mt-bar [data-tool=scale]", "class"), str(mat()["bg"])[:200])
+    page.mouse.move(*at(.2, .5)); page.mouse.down(); page.mouse.move(*at(.4, .5), steps=5); page.mouse.up()
+    page.wait_for_selector(".mt-ask input", timeout=3000)
+    ln = page.evaluate("() => { const r = document.querySelector('.mt-svg').getBoundingClientRect(); return r.width; }")
+    page.fill(".mt-ask input", "40")
+    page.press(".mt-ask input", "Enter")
+    wait_for_condition(lambda: mat()["bg"]["w"] != w0, timeout_ms=3000)
+    w1 = mat()["bg"]["w"]
+    record("acell-mat", "Set the scale: a line called 40 m becomes 20 dots at 2 m a dot (the photo resized to match)", w1 != w0 and w1 > 0, str((w0, w1)))
+    record("acell-mat", "no JS errors (combat mat)", not errs, str(errs))
+    page.close()
+
+def test_notebook_mat(p):
+    """2026-11-17, the Agents' side of the combat mat: a Mat tab in the
+    notebook shows the Cell's mat live and read-only, the dot size bottom
+    right, the Agent's own token ringed; with the mat not shown, it says
+    so."""
+    fd = _field_notes_docs()
+    fd[f"mats/{FN_CELL}"] = {"title": "The pier, night", "scale": 2, "shown": True, "updated_at": 1,
+                            "items": [{"id": "a1", "t": "path", "pts": [[0, 2], [10, 3]], "c": "#2a2418", "sw": 0.3},
+                                      {"id": "a2", "t": "token", "tok": "sedan", "x": 4, "y": 4, "w": 1, "h": 2.25},
+                                      {"id": "a3", "t": "agent", "code": FN_CODE, "name": "Mara Voss", "photo": "", "x": 2, "y": 6, "w": 1.2, "h": 1.2},
+                                      {"id": "a4", "t": "agent", "code": FN_MATE, "name": "Tom Hale", "photo": "", "x": 5, "y": 6, "w": 1.2, "h": 1.2}]}
+    page, errs = _field_notes_page(p, docs=fd)
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.click("#fn-closed .fn-cover")
+    page.click("#fn-veil .fn-tab[data-view=mat]")
+    wait_for_condition(lambda: any(l.get("path") == f"mats/{FN_CELL}" for l in page.evaluate("() => window.__dgFirestoreListeners || []")) or None, timeout_ms=8000)
+    push_firestore_doc_snapshot(page, f"mats/{FN_CELL}", True, fd[f"mats/{FN_CELL}"])
+    page.wait_for_selector("#fn-veil .mt-svg [data-id=a2]", state="attached", timeout=10000)
+    record("notebook-mat", "the Mat tab shows the Cell's mat: its name, the drawing and the tokens",
+           "The pier, night" in page.inner_text("#fn-veil .mt-title") and page.locator("#fn-veil .mt-svg [data-id=a1]").count() == 1, "")
+    record("notebook-mat", "the dot size shows bottom right", page.inner_text("#fn-veil .mt-scale").strip() == "1 dot = 2 m", page.inner_text("#fn-veil .mt-scale"))
+    record("notebook-mat", "the Agent's own token is ringed, the other's isn't",
+           page.locator("#fn-veil .mt-mine[data-id=a3]").count() == 1 and page.locator("#fn-veil .mt-mine[data-id=a4]").count() == 0, "")
+    record("notebook-mat", "read-only: no drawing tools", page.locator("#fn-veil .mt-tools").count() == 0, "")
+    # Live: the Handler changes the scale and adds a crate.
+    d = dict(fd[f"mats/{FN_CELL}"]); d["scale"] = 5
+    d["items"] = d["items"] + [{"id": "a5", "t": "token", "tok": "crate", "x": 8, "y": 8, "w": 1, "h": 1}]
+    page.evaluate("(a) => { window.__dgFirestoreDocs[a[0]] = a[1]; }", [f"mats/{FN_CELL}", d])
+    push_firestore_doc_snapshot(page, f"mats/{FN_CELL}", True, d)
+    wait_for_condition(lambda: page.locator("#fn-veil .mt-svg [data-id=a5]").count() == 1, timeout_ms=4000)
+    record("notebook-mat", "live: what the Handler draws and the new dot size appear at once",
+           page.locator("#fn-veil .mt-svg [data-id=a5]").count() == 1 and page.inner_text("#fn-veil .mt-scale").strip() == "1 dot = 5 m", page.inner_text("#fn-veil .mt-scale"))
+    d2 = dict(d); d2["shown"] = False
+    push_firestore_doc_snapshot(page, f"mats/{FN_CELL}", True, d2)
+    wait_for_condition(lambda: page.is_visible("#fn-veil .mt-none"), timeout_ms=4000)
+    record("notebook-mat", "not shown to the Agents: 'No map on the table'", page.is_visible("#fn-veil .mt-none") and not page.is_visible("#fn-veil .mt-host"), "")
+    record("notebook-mat", "no JS errors (notebook mat)", not errs, str(errs))
     page.close()
 
 def test_acell_debrief(p):
@@ -15163,6 +15303,9 @@ def main():
         safe(test_acell_tape_steps_once, browser, area="acell-tapes")
         safe(test_acell_tape_steps_by_clock, browser, area="acell-tapes")
         safe(test_acell_play_layouts, browser, area="acell-layouts")
+        safe(test_acell_combat_mat, browser, area="acell-mat")
+        safe(test_acell_mobile_cells_add, browser, area="acell-mobile")
+        safe(test_notebook_mat, browser, area="notebook-mat")
         safe(test_table_radio_loop_mid_track, browser, area="radio")
         safe(test_acell_in_shell, browser, area="acell-shell-hub")
         safe(test_player_pages_never_get_the_handler_feed, browser, area="dice")

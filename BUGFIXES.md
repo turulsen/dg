@@ -7481,3 +7481,21 @@ Investigation, Action, Music, Compact) and the Handler's own saved
 layouts ("Mine", kept on the device). Test: `test_acell_play_layouts`;
 `test_acell_play_desk`'s exact-placement checks run with the automatic
 tidy-up off. `sw.js` `CACHE_NAME` v327.
+
+## The combat mat (v3.20.0, PR #107)
+
+Not a bug: a request (2026-11-17). Found while building it: a mat
+fitted to a tall notebook page sat at its top with the room below it
+empty; `fit()` now centres the map in the spare room. No other fixes
+shipped in this release, apart from the one below.
+
+**A player couldn't be added to a Cell on a phone.** Reported 2026-11-17
+from an iPhone: the Cells panel's add list closed while scrolling, and
+a name picked still showed "0 chosen". The list was a `<select
+multiple>`, which iOS opens as its own picker; the panel redraws itself
+(`renderGroups()`) on a vault sync or a tape loading, which replaced the
+select under the open picker and dropped the choice. It's a tick list
+now (Agents first, then Friendlies, with a search box), and what's
+ticked and the search are kept per Cell (`addPick`) across redraws.
+Tests: `test_acell_mobile_cells_add` (fails on the old code),
+`test_acell_cells` updated. `sw.js` `CACHE_NAME` v329.

@@ -29,22 +29,24 @@
 
   var OBJ = {
     dossiers: 'Initiative', dice: 'Dice Roller', notebook: 'Notebook',
-    deck: 'Tape deck', pad: 'Quick notes', evidence: 'Evidence box', pads: 'Effect pads'
+    deck: 'Tape deck', pad: 'Quick notes', evidence: 'Evidence box', pads: 'Effect pads', mat: 'Combat mat'
   };
   // A 12-column grid of 58px rows: each object { x, y, w, h } in cells.
   // Kept on this device (dg_acell_desk_v3); objects put away sit in `away`.
   var KEY3 = 'dg_acell_desk_v3', COLS = 12, ROW = 58, GAP = 12;
-  var MIN = { dossiers: [3, 4], dice: [2, 2], notebook: [3, 4], deck: [3, 7], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
+  var MIN = { dossiers: [3, 4], dice: [2, 2], notebook: [3, 4], deck: [3, 7], pad: [2, 2], evidence: [2, 2], pads: [2, 2], mat: [5, 6] };
   var DEFAULT = { gaps1: true, items: {
     deck: { x: 0, y: 0, w: 4, h: 9 }, pads: { x: 4, y: 0, w: 5, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
     notebook: { x: 4, y: 3, w: 5, h: 15 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dossiers: { x: 9, y: 8, w: 3, h: 10 }, dice: { x: 0, y: 9, w: 4, h: 6 }
-  }, away: [] };
+  }, away: ['mat'] };
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   var L = (function () {
     var l = A.store(KEY3, null);
     if (!l || !l.items) return clone(DEFAULT);
     l.away = (l.away || []).filter(function (id) { return OBJ[id]; });
-    Object.keys(OBJ).forEach(function (id) { if (!l.items[id] && l.away.indexOf(id) < 0) l.items[id] = clone(DEFAULT.items[id]); });
+    // The combat mat (2026-11-17) comes put away: Combat or the drawer brings it out.
+    if (!l.items.mat && l.away.indexOf('mat') < 0) l.away.push('mat');
+    Object.keys(OBJ).forEach(function (id) { if (!l.items[id] && l.away.indexOf(id) < 0 && DEFAULT.items[id]) l.items[id] = clone(DEFAULT.items[id]); });
     Object.keys(l.items).forEach(function (id) { if (!OBJ[id] || l.away.indexOf(id) >= 0) delete l.items[id]; else fit(l.items[id], id); });
     // The deck holds the compact player since 2026-10-30 (9 rows): a layout
     // the earlier version stretched to 13 comes back to 9 once; a saved
@@ -69,6 +71,7 @@
   // goes under Put away.
   var PRESETS = {
     Session: DEFAULT.items,
+    Combat: { mat: { x: 0, y: 0, w: 9, h: 12 }, dossiers: { x: 9, y: 0, w: 3, h: 8 }, dice: { x: 9, y: 8, w: 3, h: 4 }, deck: { x: 0, y: 12, w: 4, h: 7 }, pads: { x: 4, y: 12, w: 5, h: 3 }, pad: { x: 9, y: 12, w: 3, h: 4 } },
     Investigation: { notebook: { x: 0, y: 0, w: 6, h: 14 }, evidence: { x: 6, y: 0, w: 6, h: 7 }, pad: { x: 6, y: 7, w: 3, h: 4 }, dice: { x: 9, y: 7, w: 3, h: 4 }, deck: { x: 6, y: 11, w: 3, h: 7 }, dossiers: { x: 9, y: 11, w: 3, h: 7 } },
     Action: { dossiers: { x: 0, y: 0, w: 4, h: 10 }, dice: { x: 4, y: 0, w: 4, h: 5 }, pads: { x: 8, y: 0, w: 4, h: 5 }, notebook: { x: 4, y: 5, w: 8, h: 9 }, deck: { x: 0, y: 10, w: 4, h: 7 } },
     Music: { deck: { x: 0, y: 0, w: 5, h: 9 }, pads: { x: 5, y: 0, w: 7, h: 5 }, pad: { x: 5, y: 5, w: 3, h: 4 }, evidence: { x: 8, y: 5, w: 4, h: 4 }, notebook: { x: 0, y: 9, w: 12, h: 8 } },
@@ -184,7 +187,26 @@
   function drawAll() {
     var s = A.session();
     if (!s || !panel.querySelector('.pd-grid')) return;
-    drawDossiers(s); drawNotebook(s); drawPad(s); drawDeck(s); drawEvidence(s); drawPads(s); placeDice();
+    drawDossiers(s); drawNotebook(s); drawPad(s); drawDeck(s); drawEvidence(s); drawPads(s); placeDice(); drawMat(s);
+  }
+
+  /* ── The combat mat (assets/acell-mat.js): the Cell's mat, drawn here,
+     seen live in the Agents' notebooks. Mounted once per desk build. ── */
+  function matMembers() {
+    var s = A.session(), R = window.dgAcellRoster;
+    return (s ? A.members(s.cell_id) : []).map(function (a) {
+      var brief = (R && R.briefs && R.briefs()[a.code]) || {};
+      var url = (window.dgMainPhoto ? window.dgMainPhoto(brief) : '') || brief.face_plate_url || '';
+      return { code: a.code, name: a.name, photo: /^(https?:|data:)/.test(url) ? url : '' };
+    });
+  }
+  function drawMat(s) {
+    var host = panel.querySelector('[data-ob="mat"]');
+    if (!host || !window.dgMat) { if (st.mat) { st.mat.destroy(); st.mat = null; } return; }
+    if (st.mat && st.matHost === host && st.matCell === s.cell_id) { st.mat.refreshAgents(); return; }
+    if (st.mat) st.mat.destroy();
+    st.matHost = host; st.matCell = s.cell_id;
+    st.mat = window.dgMat.editor(host, { cellId: s.cell_id, members: matMembers });
   }
 
   /* ── Initiative: the phone's post-its on the desk (2026-11-02, replacing
@@ -698,7 +720,7 @@
         L.away = L.away.filter(function (x) { return x !== bid; });
         var bottom = 0;
         Object.keys(L.items).forEach(function (k) { bottom = Math.max(bottom, L.items[k].y + L.items[k].h); });
-        L.items[bid] = fit(Object.assign(clone(DEFAULT.items[bid]), { x: 0, y: bottom }), bid);
+        L.items[bid] = fit(Object.assign(clone(DEFAULT.items[bid] || { x: 0, y: 0, w: 8, h: 11 }), { x: 0, y: bottom }), bid);
         save(); build(); return;
       }
       case 'reset': L = clone(DEFAULT); L.preset = 'Session'; save(); build(); return;

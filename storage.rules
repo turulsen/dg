@@ -43,6 +43,13 @@ service firebase.storage {
       allow write: if isHandler();
     }
 
+    // mats/{cellId}/{file} -- the combat mat's background photos
+    // (2026-11-17). Read like the mat itself; only the Handler uploads.
+    match /mats/{allPaths=**} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
     match /evidence/{allPaths=**} {
       allow read: if true;
       allow write: if isHandler();

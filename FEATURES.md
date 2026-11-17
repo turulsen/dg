@@ -908,6 +908,23 @@ same tab lists and uploads the stock (file names as in the pack:
 PR #94).** The tabs above still exist, but A-Cell now works in three
 modes: **Prep** (a folder with index tabs, *Session prep* first),
 **Play** (a desk you arrange on a 12-column grid) and **Debrief**.
+- **The combat mat** (`assets/acell-mat.js`/`.css`, since v3.20.0): a
+  Play desk object (`mat`, put away by default; the **Combat** layout
+  brings it out). One mat per Cell, Firestore `mats/{cellId}` (read by
+  anyone like `radio/`, written by the Handler): `title`, `scale`
+  (metres per dot, edited in the board's bottom-right corner and shown
+  there to the Agents), `shown`, `items` (in dots: `path` marker lines,
+  `rect`, `circle`, `text`, `token` with `tok` from the built-in set
+  drawn in SVG -- sedan, van, police car, motorbike, person, enemy,
+  civilian, door, crate, tree, lamp post -- placed at real size, and
+  `agent` with the Agent's code, name and main photo in a circle), `bg`
+  (a photo uploaded to Storage `mats/{cell}/`, its place and size in
+  dots, fade, locked) and `ruler` (the Handler's ruler while held).
+  **Set the scale** resizes the photo from a line drawn over something
+  of known length. Undo/Redo are per tab. The Agents' side is the
+  notebook's **Mat** tab (`pageMat()` in `assets/field-notes.js`, both
+  pages on a desktop): live and read-only, the Cell's mat when it's
+  Shown, zoom, pan, Fit and a ruler of their own; their own token ringed.
 - **Arranging Play** (`assets/acell-play.js`, since v3.19.3): the
   Arrange bar has five layouts (Session, Investigation, Action, Music,
   Compact; what one doesn't use is put away), "Mine" (layouts saved
@@ -1534,6 +1551,12 @@ hour and the service worker cached it; see `BUGFIXES.md`).
 is applied by hand (`gcloud storage buckets update
 gs://dg-app-b3447.firebasestorage.app --cors-file=storage.cors.json`),
 with a preview channel's origin added at that time.
+
+**v3.20.0 (PR #107).** New collection `mats/{cellId}` (the combat mat;
+`firestore.rules`: read by anyone, written by the Handler) and Storage
+path `mats/` (background photos; `storage.rules`: read by anyone,
+Handler upload). Deploy both: `firebase deploy --only
+firestore:rules,storage`.
 
 **v3.19.1 (PR #101).** `vaultSync` changed again (the matching and
 safety rules above; `firebase deploy --only functions:vaultSync`, done
