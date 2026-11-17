@@ -7101,6 +7101,44 @@
   }
   previewAudio.addEventListener('ended', function () { maybeAutoAdvance_(true); });
 
+  // Reported 2026-11-16 (issue #103: a tape's music still didn't move on).
+  // The step above waits for THIS tab's preview <audio> to end, and it
+  // often never plays at all: on a phone (iOS won't start it without a tap
+  // here), in a background tab, after a failed load. So the broadcast's
+  // own clock decides too: once the live track has run its length (known
+  // from the preview, the tape's track list, or a metadata-only probe),
+  // it steps on, through the same once-only transaction.
+  var durProbe = {};
+  function trackDuration_() {
+    var u = current.track_url;
+    if (!u) return 0;
+    if (previewLoadedUrl === u && isFinite(previewAudio.duration) && previewAudio.duration > 0) return previewAudio.duration;
+    for (var i = 0; i < playlist.length; i++) if (playlist[i].url === u && +playlist[i].dur > 0) return +playlist[i].dur;
+    if (durProbe[u] === undefined && (current.track_kind === 'audio' || isDirectAudioUrl_(u))) {
+      durProbe[u] = 0;
+      try {
+        var a = new Audio();
+        a.preload = 'metadata';
+        a.muted = true;
+        a.addEventListener('loadedmetadata', function () { if (isFinite(a.duration) && a.duration > 0) durProbe[u] = a.duration; a.removeAttribute('src'); }, { once: true });
+        a.src = u;
+      } catch (e) { /* no probe: the preview or the tape has to say */ }
+    }
+    return durProbe[u] || 0;
+  }
+  var clockTried = '', clockTriedAt = 0;
+  setInterval(function () {
+    if (!autoAdvanceEnabled || !current.track_url || current.loop || current.paused) return;
+    var dur = trackDuration_();
+    if (!(dur > 0) || liveElapsedSeconds_() < dur + 1) return;
+    var key = current.track_url + '|' + (current.started_at || 0);
+    // A try every 15 s at most per track (a failed write, no sign-in yet);
+    // the transaction makes sure only one tab or device steps.
+    if (clockTried === key && Date.now() - clockTriedAt < 15000) return;
+    clockTried = key; clockTriedAt = Date.now();
+    maybeAutoAdvance_(false);
+  }, 1000);
+
   // Same on-demand-load, chain-safe idiom assets/table-radio.js's own
   // ensureYouTubeApi()/ensureSoundCloudApi() use -- wrapping (not
   // clobbering) window.onYouTubeIframeAPIReady so this tab's own hidden

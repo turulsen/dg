@@ -110,6 +110,7 @@
 
   var lastStartedAt = null;
   var lastPaused = false;
+  var lastLoop = false;
 
   // Which live-controllable player (if any) currently backs the embed --
   // drives whether a mute/volume change can be applied in place (cheap,
@@ -1848,8 +1849,21 @@
     if (np.started_at !== lastStartedAt) {
       lastStartedAt = np.started_at;
       lastPaused = !!np.paused;
+      lastLoop = !!np.loop;
       window._dgRadioLast = np;
       renderEmbed(np);
+    } else if (!!np.loop !== lastLoop && !!np.paused === lastPaused) {
+      // Same track, Loop switched on or off (2026-11-16, issue #104: a
+      // tape's track still ended and stopped with Loop on -- this listener
+      // only reacted to a new track or a pause, so the player never heard
+      // of it). An <audio> still playing takes it in place; anything else
+      // (YouTube, SoundCloud, a track that already ended) is rebuilt at
+      // the live position.
+      lastLoop = !!np.loop;
+      window._dgRadioLast = np;
+      var loopEl = document.getElementById('dg-radio-audio');
+      if (currentEmbedKind === 'audio' && loopEl && !loopEl.ended) loopEl.loop = lastLoop;
+      else renderEmbed(np);
     } else if (!!np.paused !== lastPaused) {
       // Same track, only the pause state flipped -- toggle the live
       // player in place instead of a full rebuild (which would restart
