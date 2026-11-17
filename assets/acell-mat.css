@@ -61,3 +61,48 @@
 .mt-host{ flex:1; min-height:360px; position:relative; border:1px solid #b8a878; }
 .mt-host[hidden]{ display:none; }
 .mt-none{ padding:30px 10px; text-align:center; color:#6b5a3a; font-family:'Courier Prime',monospace; }
+
+/* ── Phones (2026-11-17) ─────────────────────────────────────────── */
+.mt-ph, .mt-exit{ display:none !important; }
+.mt-ed{ position:relative; }
+/* The Handler's editor in A-Cell's phone layout: Shown, Undo and ⋯ on
+   top (⋯ opens the rest), the mat, a tool strip at the foot; Tokens opens
+   the tokens, Agents, colour and width as a sheet from the bottom. */
+.mt-phone .mt-ph:not(.mt-exit){ display:inline-block !important; }
+.mt-phone .mt-bar{ flex-wrap:nowrap; overflow:hidden; gap:6px; padding:5px 6px; }
+.mt-phone .mt-bar > *{ display:none; }
+.mt-phone .mt-bar > .mt-sw, .mt-phone .mt-bar > [data-mt=undo], .mt-phone .mt-bar > [data-mt=more], .mt-phone .mt-bar > .mt-status{ display:inline-flex; }
+.mt-phone .mt-bar > .mt-status{ flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:10.5px; }
+.mt-phone .mt-bar > .mt-sw{ order:-1; }
+.mt-phone.mt-more .mt-bar{ flex-wrap:wrap; }
+.mt-phone.mt-more .mt-bar > *:not(.mt-exit){ display:inline-flex; }
+.mt-phone.mt-more .mt-bar > .mt-bgctl[hidden]{ display:none; }
+.mt-phone .mt-name{ width:140px; }
+.mt-phone .mt-row{ flex-direction:column; }
+.mt-phone .mt-stage{ order:1; flex:1; }
+.mt-phone .mt-tools{ order:2; width:auto; flex:none; flex-direction:row; overflow-x:auto; overflow-y:hidden; border-right:0; border-top:1px solid #6b5a3a; padding:5px 6px; gap:4px; -webkit-overflow-scrolling:touch; }
+.mt-phone .mt-tools > .mt-lab{ display:none; }
+.mt-phone .mt-tools .mt-tool{ flex:none; white-space:nowrap; padding:7px 9px; }
+.mt-phone .mt-kit{ display:none; position:absolute; left:0; right:0; bottom:44px; z-index:3; background:#2a1c10; border-top:2px solid #b8a878; padding:8px; max-height:60%; overflow:auto; flex-direction:column; gap:5px; }
+.mt-phone.mt-kit-open .mt-kit{ display:flex; }
+.mt-kith{ display:flex; justify-content:space-between; align-items:center; }
+.mt-kith b{ font-family:'Special Elite',monospace; font-weight:400; color:#f2d98a; font-size:15px; }
+.mt-kith button{ font:inherit; background:transparent; color:#e9dfbf; border:0; font-size:16px; cursor:pointer; }
+.mt-phone .mt-kit .mt-tray{ grid-template-columns:repeat(5,minmax(0,1fr)); }
+.mt-phone .mt-sel{ position:absolute; left:0; right:0; bottom:44px; z-index:2; background:#2a1c10; border-top:2px solid #b8a878; }
+.mt-phone .mt-ask{ position:absolute; left:0; right:0; top:40px; z-index:4; }
+
+/* Sideways on a phone: the mat takes the whole screen; Exit gives it back. */
+.mt-pview.mt-portal{ position:fixed; inset:0; z-index:2147483600; background:#f4ead2; padding:4px 8px 8px; min-height:0; }
+.mt-pview.mt-portal .mt-exit{ display:inline-flex !important; }
+.mt-pview.mt-portal .mt-host{ min-height:0; }
+.mt-pview.mt-portal [data-mv=in], .mt-pview.mt-portal [data-mv=out]{ display:none; }
+@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse){
+  .mt-ed.mt-phone:not(.mt-nofull){ position:fixed; inset:0; z-index:2147483600; }
+  .mt-ed.mt-phone:not(.mt-nofull) .mt-exit{ display:inline-flex !important; }
+  .mt-ed.mt-phone:not(.mt-nofull) .mt-row{ flex-direction:row; }
+  .mt-ed.mt-phone:not(.mt-nofull) .mt-tools{ order:0; flex-direction:column; width:122px; overflow-x:hidden; overflow-y:auto; border-top:0; border-right:1px solid #6b5a3a; }
+  .mt-ed.mt-phone:not(.mt-nofull) .mt-kit{ left:122px; bottom:0; top:0; max-height:none; width:330px; right:auto; border-top:0; border-left:2px solid #b8a878; }
+  .mt-ed.mt-phone:not(.mt-nofull) .mt-sel{ left:122px; bottom:0; }
+}
+.mt-kit{ display:flex; flex-direction:column; gap:4px; }

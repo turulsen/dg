@@ -381,3 +381,10 @@ body.acm .acm-wx{ min-width:36px; padding:0 8px; margin-left:4px; border-color:t
 .acm-newphase[hidden]{ display:none; }
 .acm-newphase input{ flex:1; min-width:0; font:14px 'Courier Prime',monospace; padding:8px 10px; border:1px solid #cbbd94; border-radius:0; background:#fff; color:#1c1608; text-transform:none; letter-spacing:0; }
 .acm-newphase button{ font:11px 'Special Elite',monospace; letter-spacing:.1em; text-transform:uppercase; padding:0 12px; background:#1c1608; color:#f4eed8; border:0; border-radius:0; cursor:pointer; }
+/* The combat mat (2026-11-17): fills the room between the bars. */
+body.acm .acm-mat{ position:fixed; left:0; right:0; top:var(--acm-top,56px); bottom:calc(var(--acm-foot,66px) + 16px); z-index:5; }
+.acm-mat .mt-ed{ height:100%; }
+/* Sideways, the mat's frame takes the whole screen (over the bars) until Exit. */
+@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse){
+  body.acm .acm-mat:not(:has(.mt-nofull)){ top:0; bottom:0; z-index:200; }
+}

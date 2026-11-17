@@ -7513,3 +7513,33 @@ still replaced the list, and with it its scroll position. Now
 list's scroll and the search box's focus and caret back. Test:
 `test_acell_mobile_cells_add` (scroll kept across both kinds of redraw;
 fails on the old code). `sw.js` `CACHE_NAME` v330.
+
+## The combat mat on phones (v3.21.0, PR #109)
+
+Requested 2026-11-17 ("I don't see the battle map on my phone, not even
+in landscape"); built from the approved mock-up. Two fixes came with it:
+- **A phone turned sideways became the computer's A-Cell.** The phone
+  layout switched on at `max-width: 760px`; a phone in landscape is
+  wider, so it got the desk -- where the mat was put away, so nothing
+  showed. The query now also takes a short touch screen
+  (`(max-height: 500px) and (pointer: coarse)`); tablets are taller.
+- **The first finger of a pinch placed a token** (found by the new pinch
+  test): tokens, the eraser and text acted on `pointerdown`. They act on
+  the lift now, and a second finger calls the first one's action off.
+Tests: `test_acell_mobile_mat`, `test_notebook_mat_phone`;
+`test_acell_mobile_play` updated for the tab bar. `sw.js` `CACHE_NAME` v331.
+
+## Tracks skipped after about three seconds (v3.21.0)
+
+Reported 2026-11-17, twenty minutes before a session. Caused by
+v3.19.2's clock-based tape step (issue #103): it measured a track's
+time from `started_at`, which is written with the clock of whichever
+device started it. A device whose clock ran ahead by more than a track's
+length read every track as finished and stepped on as soon as the
+2.5-second guard allowed. The step now counts only the time this device
+has itself seen the track play (and needs a length of 5 s or more); a
+tab opened mid-track waits one track length at most. Workaround before
+it shipped: Auto-advance off in the Music console. Test:
+`test_acell_tape_steps_by_clock` (a start far back on another clock
+doesn't skip; a track watched for its length still steps).
+`sw.js` `CACHE_NAME` v332.

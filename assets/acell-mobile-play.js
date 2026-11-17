@@ -282,6 +282,41 @@
     }
   });
 
+  /* ── The combat mat (2026-11-17): the Cell's mat, the phone's way
+     (assets/acell-mat.js in phone mode: a tool strip, a tokens sheet, ⋯;
+     sideways it takes the whole screen). Kept across redraws. ── */
+  function matMembers() {
+    var s = A.session(), R = window.dgAcellRoster;
+    return (s ? A.members(s.cell_id) : []).map(function (a) {
+      var brief = (R && R.briefs && R.briefs()[a.code]) || {};
+      var url = (window.dgMainPhoto ? window.dgMainPhoto(brief) : '') || brief.face_plate_url || '';
+      return { code: a.code, name: a.name, photo: /^(https?:|data:)/.test(url) ? url : '' };
+    });
+  }
+  var matEd = null;
+  C.screen('mat', {
+    mode: 'play', tab: 'mat',
+    render: function () {
+      var s = A.session();
+      if (!s || !window.dgMat) return { bar: { title: 'Combat mat' }, html: '<div class="acm-fold"><p class="acm-none">' + (s ? 'The mat isn\'t loaded.' : 'Choose a session first: the mat is its Cell\'s.') + '</p></div>' };
+      return {
+        bar: { title: 'Combat mat', sub: (A.cell(s.cell_id) || {}).name || s.cell_id },
+        keep: true,
+        html: '<div class="acm-mat" data-cell="' + esc(s.cell_id) + '"></div>',
+        update: function (el) {
+          var box = el.querySelector('.acm-mat');
+          if (box && box.getAttribute('data-cell') !== s.cell_id) { if (matEd) matEd.destroy(); box.setAttribute('data-cell', s.cell_id); matEd = window.dgMat.editor(box, { cellId: s.cell_id, members: matMembers, phone: true }); }
+          else if (matEd) matEd.refreshAgents();
+        },
+        after: function (el) {
+          if (matEd) matEd.destroy();
+          matEd = window.dgMat.editor(el.querySelector('.acm-mat'), { cellId: s.cell_id, members: matMembers, phone: true });
+          return function () { if (matEd) { matEd.destroy(); matEd = null; } };
+        }
+      };
+    }
+  });
+
   /* ── Dice ── */
   C.screen('dice', {
     mode: 'play', tab: 'dice',
