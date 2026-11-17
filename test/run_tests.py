@@ -4607,6 +4607,95 @@ def test_acell_mobile_cells_add(p):
     record("acell-mobile", "no JS errors (phone Cells add)", not errs, str(errs))
     page.close()
 
+def _pinch(page, sel, spread):
+    """Two touch pointers on an element, moved apart (spread > 0) or together."""
+    page.evaluate("""(a) => { const el = document.querySelector(a[0]), r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const ev = (t, id, x) => el.dispatchEvent(new PointerEvent(t, { pointerId: id, pointerType: 'touch', clientX: x, clientY: cy, bubbles: true, isPrimary: id === 11 }));
+      ev('pointerdown', 11, cx - 40); ev('pointerdown', 12, cx + 40);
+      for (let i = 1; i <= 5; i++) { ev('pointermove', 11, cx - 40 - a[1] * i / 5); ev('pointermove', 12, cx + 40 + a[1] * i / 5); }
+      ev('pointerup', 11, cx - 40 - a[1]); ev('pointerup', 12, cx + 40 + a[1]); }""", [sel, spread])
+
+def test_acell_mobile_mat(p):
+    """2026-11-17, the combat mat on A-Cell's phone layout: Play's tab bar
+    has Mat (Dice moved under +); the mat in phone mode -- Shown, Undo, the
+    rest under ⋯, a tool strip, Tokens as a sheet; a token placed with
+    taps; pinch to zoom; sideways it takes the screen (still the phone
+    layout) and Exit gives the bars back."""
+    page, errs = open_phone(p, mode="play")
+    tabs = page.evaluate("() => [...document.querySelectorAll('#acm-tabs .acm-tab')].map(t => t.textContent.trim())")
+    record("acell-mobile", "Play's tab bar: Pads, Initiative, Mat, Evidence (Dice under +)", tabs == ["Pads", "Initiative", "Mat", "Evidence"], str(tabs))
+    page.click("#acm-fab")
+    record("acell-mobile", "Dice is a post-it under +", page.locator("#acm-layer [data-add=dice]").count() == 1, "")
+    page.click("#acm-layer [data-add=dice]")
+    wait_for_condition(lambda: page.evaluate("() => document.body.dataset.acmScreen") == "dice", timeout_ms=3000)
+    page.click("#acm-tabs .acm-tab:has-text('Mat')")
+    wait_for_condition(lambda: any(l.get("path") == "mats/cell_osiris" for l in page.evaluate("() => window.__dgFirestoreListeners || []")) or None, timeout_ms=6000)
+    push_firestore_doc_snapshot(page, "mats/cell_osiris", True, {"title": "The pier", "scale": 1, "shown": False, "items": []})
+    page.wait_for_timeout(300)
+    record("acell-mobile", "the Mat tab opens the Cell's mat in phone mode (Shown, Undo, ⋯ on top; a tool strip at the foot)",
+           page.locator(".acm-mat .mt-ed.mt-phone").count() == 1 and page.is_visible(".mt-bar [data-mt=more]") and page.is_visible(".mt-tools .mt-tool[data-tool=marker]")
+           and not page.is_visible(".mt-bar [data-mt=clear]") and not page.is_visible(".mt-bar [data-mt=exit]"), "")
+    page.click(".mt-bar [data-mt=more]")
+    record("acell-mobile", "⋯ shows the rest (Fit, Clear, the photo, the name)", page.is_visible(".mt-bar [data-mt=clear]") and page.is_visible(".mt-bar .mt-name"), "")
+    page.click(".mt-bar [data-mt=more]")
+    page.click(".mt-tools [data-mt=kit]")
+    record("acell-mobile", "Tokens opens the tokens, Agents, colour and width as a sheet", page.is_visible(".mt-kit .mt-tok[data-tool='tok:crate']") and page.is_visible(".mt-kit .mt-agents"), "")
+    page.click(".mt-kit .mt-tok[data-tool='tok:crate']")
+    box = page.locator(".mt-stage").bounding_box()
+    page.mouse.click(box["x"] + box["width"] * .5, box["y"] + 40)
+    wait_for_condition(lambda: any(i.get("tok") == "crate" for i in (fs_doc(page, "mats/cell_osiris") or {}).get("items") or []), timeout_ms=4000)
+    record("acell-mobile", "a token is placed with two taps, the sheet still open for the next", any(i.get("tok") == "crate" for i in (fs_doc(page, "mats/cell_osiris") or {}).get("items") or []) and page.is_visible(".mt-kit"), "")
+    page.click(".mt-kit .mt-kith [data-mt=kit]")
+    w0 = page.evaluate("() => +document.querySelector('.acm-mat .mt-svg').getAttribute('viewBox').split(' ')[2]")
+    _pinch(page, ".acm-mat .mt-svg", 80)
+    w1 = page.evaluate("() => +document.querySelector('.acm-mat .mt-svg').getAttribute('viewBox').split(' ')[2]")
+    record("acell-mobile", "two fingers apart zoom in (the view narrows), nothing drawn", w1 < w0 * .8 and len((fs_doc(page, "mats/cell_osiris") or {}).get("items") or []) == 1, str((w0, w1)))
+    page.set_viewport_size({"width": 844, "height": 390})
+    page.wait_for_timeout(600)
+    full = page.evaluate("() => { const r = document.querySelector('.acm-mat .mt-ed').getBoundingClientRect(); return [document.body.classList.contains('acm'), Math.round(r.top), Math.round(r.height)]; }")
+    record("acell-mobile", "sideways a phone stays the phone layout and the mat takes the whole screen, tools as a rail",
+           full[0] is True and full[1] == 0 and full[2] == 390 and page.is_visible(".mt-bar [data-mt=exit]"), str(full))
+    page.click(".mt-bar [data-mt=exit]")
+    page.wait_for_timeout(300)
+    record("acell-mobile", "Exit gives the bars back", page.evaluate("() => document.querySelector('.acm-mat').getBoundingClientRect().top") > 20 and page.is_visible("#acm-tabs"), "")
+    record("acell-mobile", "no JS errors (phone mat)", not errs, str(errs))
+    page.close()
+
+def test_notebook_mat_phone(p):
+    """2026-11-17, the Agents' Mat tab on a phone: pinch to zoom; sideways
+    the mat leaves the notebook for the whole screen, Exit puts it back."""
+    fd = _field_notes_docs()
+    fd[f"mats/{FN_CELL}"] = {"title": "The pier", "scale": 1, "shown": True, "items": [{"id": "t", "t": "token", "tok": "sedan", "x": 2, "y": 2, "w": 2, "h": 4.5},
+                            {"id": "a1", "t": "agent", "code": FN_CODE, "name": "Mara Voss", "photo": "", "x": 5, "y": 6, "w": 1.2, "h": 1.2}]}
+    ctx = p.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+    page = ctx.new_page(); page.set_default_timeout(10000)
+    errs = collect_errors(page)
+    _block_fonts(page); route_apps_script_ok(page); install_firestore_backend(page, fd)
+    roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "codename": "PARADE", "player_name": "fn tester", "saved_at": 5}}
+    page.add_init_script("try{sessionStorage.setItem('dg_boot_seen','1');localStorage.setItem('dg_agent_roster',%s);localStorage.setItem('dg_cover_identity','fn tester');localStorage.setItem('dg_tours_off','1');}catch(e){}" % json.dumps(json.dumps(roster)))
+    page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    page.evaluate("() => window.dgFieldNotes.open('mat')")
+    wait_for_condition(lambda: any(l.get("path") == f"mats/{FN_CELL}" for l in page.evaluate("() => window.__dgFirestoreListeners || []")) or None, timeout_ms=8000)
+    push_firestore_doc_snapshot(page, f"mats/{FN_CELL}", True, fd[f"mats/{FN_CELL}"])
+    page.wait_for_selector(".mt-pview .mt-svg [data-id=t]", state="attached", timeout=6000)
+    w0 = page.evaluate("() => +document.querySelector('.mt-pview .mt-svg').getAttribute('viewBox').split(' ')[2]")
+    _pinch(page, ".mt-pview .mt-svg", 80)
+    w1 = page.evaluate("() => +document.querySelector('.mt-pview .mt-svg').getAttribute('viewBox').split(' ')[2]")
+    record("notebook-mat", "on a phone, two fingers apart zoom the mat in", w1 < w0 * .8, str((w0, w1)))
+    page.set_viewport_size({"width": 844, "height": 390})
+    page.wait_for_timeout(700)
+    push_firestore_doc_snapshot(page, f"mats/{FN_CELL}", True, fd[f"mats/{FN_CELL}"])
+    page.wait_for_timeout(500)
+    r = page.evaluate("() => { const v = document.querySelector('.mt-pview.mt-portal'); if (!v) return null; const b = v.getBoundingClientRect(); return [v.parentNode === document.body, Math.round(b.width), Math.round(b.height)]; }")
+    record("notebook-mat", "sideways the mat takes the whole screen", r is not None and r[0] and r[1] == 844 and r[2] == 390 and page.is_visible(".mt-pview [data-mv=exit]"), str(r))
+    page.click(".mt-pview [data-mv=exit]")
+    page.wait_for_timeout(300)
+    back = page.evaluate("() => { const v = document.querySelector('.mt-pview'); return !!v && !v.classList.contains('mt-portal') && !!v.closest('#fn-root'); }")
+    record("notebook-mat", "Exit puts it back in the notebook", back, "")
+    record("notebook-mat", "no JS errors (phone mat)", not errs, str(errs))
+    ctx.close()
+
 def test_acell_combat_mat(p):
     """2026-11-17, the combat mat on the Play desk (assets/acell-mat.js):
     the Combat layout brings it out; the marker, a rectangle, tokens and
@@ -4970,7 +5059,7 @@ def test_acell_mobile_play(p):
     if wait_for_condition(lambda: page.evaluate("() => (window.__dgFirestoreListeners || []).some(l => l.path === 'tracks')"), timeout_ms=3000):
         push_collection(page, "tracks")
     tabs = page.eval_on_selector_all("#acm-tabs .acm-tab", "els => els.map(e => e.textContent.trim())")
-    record("acell-mobile-play", "Play's tabs: Pads · Initiative · Evidence · Dice", tabs == ["Pads", "Initiative", "Evidence", "Dice"], str(tabs))
+    record("acell-mobile-play", "Play's tabs: Pads · Initiative · Mat · Evidence (Dice under +, since the combat mat)", tabs == ["Pads", "Initiative", "Mat", "Evidence"], str(tabs))
     wait_for_condition(lambda: bool((_sess(page) or {}).get("start")), timeout_ms=4000)
     record("acell-mobile-play", "entering Play notes the Agents' vitals for the debrief", bool((_sess(page) or {}).get("start")), "")
     record("acell-mobile-play", "Pads: the session's, then every effect (not just nine)", page.locator(".acm-pad").count() > 9, str(page.locator(".acm-pad").count()))
@@ -5012,11 +5101,11 @@ def test_acell_mobile_play(p):
     page.click("#acm-fab")
     page.click(".acm-addsheet [data-add=notes]")
     record("acell-mobile-play", "Notes: the session note by scene", "Scene 4 · The keeper's log" in page.inner_text(".acm-scenetabs"), "")
-    page.click("#acm-tabs [data-acm-go=dice]")
+    page.click("#acm-fab"); page.click("#acm-layer [data-add=dice]")
     record("acell-mobile-play", "Dice: the Dice Roller's Live Rolls", "DICE ROLLER" in page.inner_text(".acm-drp") and page.locator(".acm-drsel").count() == 1, "")
     page.click("#acm-fab")
     play_add = page.eval_on_selector_all(".acm-pi b", "els => els.map(e => e.textContent)")
-    record("acell-mobile-play", "the add button in Play: quick note, Add evidence, Release evidence, NPC, Agent, Tape, Session notes, End the game", play_add == ["Quick note", "Add evidence", "Release evidence", "NPC", "Agent", "Tape", "Session notes", "End the game"], str(play_add))
+    record("acell-mobile-play", "the add button in Play: quick note, Add evidence, Release evidence, NPC, Agent, Tape, Session notes, Dice, End the game", play_add == ["Quick note", "Add evidence", "Release evidence", "NPC", "Agent", "Tape", "Session notes", "Dice", "End the game"], str(play_add))
     page.click(".acm-pi[data-add=qnote]")
     page.click(".acm-qform [data-who='TOMA-RY02']")
     page.fill(".acm-qform input[name=t]", "Lied about the boat")
@@ -15318,6 +15407,8 @@ def main():
         safe(test_acell_play_layouts, browser, area="acell-layouts")
         safe(test_acell_combat_mat, browser, area="acell-mat")
         safe(test_acell_mobile_cells_add, browser, area="acell-mobile")
+        safe(test_acell_mobile_mat, browser, area="acell-mobile")
+        safe(test_notebook_mat_phone, browser, area="notebook-mat")
         safe(test_notebook_mat, browser, area="notebook-mat")
         safe(test_table_radio_loop_mid_track, browser, area="radio")
         safe(test_acell_in_shell, browser, area="acell-shell-hub")

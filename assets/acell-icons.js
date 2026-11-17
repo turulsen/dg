@@ -16,6 +16,7 @@
     pads: '<circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><circle cx="8" cy="16" r="3"/><circle cx="16" cy="16" r="3"/>',
     initiative: '<rect x="8" y="4" width="12" height="9"/><path d="M5 8v11h12"/><path d="M11 8h6"/>',
     notes: '<rect x="6" y="3" width="13" height="18"/><path d="M3.5 7h4M3.5 12h4M3.5 17h4M10 8h6M10 12h6M10 16h4"/>',
+    map: '<rect x="3" y="4" width="18" height="16"/><circle class="f" cx="7" cy="8" r="1"/><circle class="f" cx="12" cy="8" r="1"/><circle class="f" cx="17" cy="8" r="1"/><circle class="f" cx="7" cy="12" r="1"/><circle class="f" cx="17" cy="12" r="1"/><circle class="f" cx="7" cy="16" r="1"/><circle class="f" cx="12" cy="16" r="1"/><circle class="f" cx="17" cy="16" r="1"/><circle cx="12" cy="12" r="2.2"/>',
     dice: '<rect x="4" y="4" width="16" height="16"/><rect class="f" x="7" y="7" width="2.6" height="2.6"/><rect class="f" x="10.7" y="10.7" width="2.6" height="2.6"/><rect class="f" x="14.4" y="14.4" width="2.6" height="2.6"/>',
     tape: '<rect x="2.5" y="5.5" width="19" height="13"/><circle cx="8.5" cy="11" r="2"/><circle cx="15.5" cy="11" r="2"/><path d="M6.5 18.5l1.5-3h8l1.5 3"/>',
     play: '<path class="f" d="M8 5l11 7-11 7z"/>',

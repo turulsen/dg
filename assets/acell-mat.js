@@ -110,6 +110,42 @@
     this.local = null;   // this screen's own ruler
     this.extra = '';     // the editor's overlays (selection, drafts)
     // Pan with a drag on empty mat (the editor decides when), zoom with the wheel.
+    // Two fingers: pinch to zoom, drag to pan (a phone). A tool's own
+    // one-finger action is called off (onMulti) when the second lands.
+    this.ptrs = {}; this.multi = null;
+    var svg = this.svg;
+    function cnt() { return Object.keys(self.ptrs).length; }
+    function pair() { var k = Object.keys(self.ptrs); return [self.ptrs[k[0]], self.ptrs[k[1]]]; }
+    svg.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'mouse') return;
+      self.ptrs[e.pointerId] = [e.clientX, e.clientY];
+      if (cnt() === 2) {
+        var pr = pair(), r = svg.getBoundingClientRect();
+        var mid = [(pr[0][0] + pr[1][0]) / 2, (pr[0][1] + pr[1][1]) / 2];
+        var v = self.view;
+        self.multi = { v: clone(v), d: Math.max(10, dist(pr[0], pr[1])), mid: mid, wp: [v.x + (mid[0] - r.left) / r.width * v.w, v.y + (mid[1] - r.top) / r.height * v.h] };
+        if (self.onMulti) self.onMulti();
+        e.stopImmediatePropagation();
+      } else if (self.multi) e.stopImmediatePropagation();
+    }, true);
+    svg.addEventListener('pointermove', function (e) {
+      if (!self.ptrs[e.pointerId]) return;
+      self.ptrs[e.pointerId] = [e.clientX, e.clientY];
+      if (!self.multi || cnt() < 2) return;
+      e.stopImmediatePropagation();
+      var m = self.multi, pr = pair(), r = svg.getBoundingClientRect();
+      var mid = [(pr[0][0] + pr[1][0]) / 2, (pr[0][1] + pr[1][1]) / 2];
+      var k = m.d / Math.max(10, dist(pr[0], pr[1])), w = Math.max(6, Math.min(400, m.v.w * k)), h = m.v.h * (w / m.v.w);
+      self.view = { x: m.wp[0] - (mid[0] - r.left) / r.width * w, y: m.wp[1] - (mid[1] - r.top) / r.height * h, w: w, h: h };
+      self.draw();
+    }, true);
+    function lift(e) {
+      if (!self.ptrs[e.pointerId]) return;
+      delete self.ptrs[e.pointerId];
+      if (self.multi) { e.stopImmediatePropagation(); if (!cnt()) self.multi = null; }
+    }
+    svg.addEventListener('pointerup', lift, true);
+    svg.addEventListener('pointercancel', lift, true);
     this.svg.addEventListener('wheel', function (e) {
       e.preventDefault();
       var p = self.pt(e), f = e.deltaY > 0 ? 1.12 : 1 / 1.12;
@@ -168,7 +204,7 @@
   function view(host, opts) {
     host.innerHTML = '<div class="mt-pview"><div class="mt-pbar"><span class="mt-live"><i></i>LIVE</span><b class="mt-title"></b><span class="mt-sp"></span>' +
       '<button type="button" class="mt-pb" data-mv="out" aria-label="Zoom out">−</button><button type="button" class="mt-pb" data-mv="in" aria-label="Zoom in">+</button>' +
-      '<button type="button" class="mt-pb" data-mv="fit">Fit</button><button type="button" class="mt-pb" data-mv="ruler">Ruler</button></div>' +
+      '<button type="button" class="mt-pb" data-mv="fit">Fit</button><button type="button" class="mt-pb" data-mv="ruler">Ruler</button><button type="button" class="mt-pb mt-exit" data-mv="exit">Exit</button></div>' +
       '<div class="mt-host"></div><div class="mt-none" hidden>No map on the table.</div></div>';
     var root = host.firstChild, bh = root.querySelector('.mt-host');
     var b = new Board(bh, { readOnly: true, code: opts.code, uid: 'p' });
@@ -179,7 +215,19 @@
       var a = k.getAttribute('data-mv'), v = b.view, c = [v.x + v.w / 2, v.y + v.h / 2];
       if (a === 'in') b.zoomAt(c, 1 / 1.25); else if (a === 'out') b.zoomAt(c, 1.25); else if (a === 'fit') b.fit();
       else if (a === 'ruler') { ruler = !ruler; k.classList.toggle('on', ruler); if (!ruler) { b.local = null; b.draw(); } }
+      else if (a === 'exit') { root.classList.add('mt-nofull'); portal(); }
     });
+    // Sideways on a phone the mat leaves the notebook for the whole screen
+    // (the notebook's frame would keep a fixed element inside it); Exit,
+    // or the phone upright again, puts it back.
+    var home = null, mq = window.matchMedia(FULL_MQ);
+    function portal() {
+      var full = mq.matches && !root.classList.contains('mt-nofull');
+      if (full && !root.classList.contains('mt-portal')) { home = root.parentNode; document.body.appendChild(root); root.classList.add('mt-portal'); }
+      else if (!full && root.classList.contains('mt-portal')) { root.classList.remove('mt-portal'); if (home && home.isConnected) home.appendChild(root); else if (root.parentNode) root.parentNode.removeChild(root); }
+      setTimeout(function () { b.fit(); }, 120);
+    }
+    var stopRot = fullScreenRotate(root, b, portal);
     b.svg.addEventListener('pointerdown', function (e) {
       var p = b.pt(e);
       drag = { p: p, cx: e.clientX, cy: e.clientY, v: clone(b.view), ruler: ruler };
@@ -205,17 +253,37 @@
     try {
       unsub = matRef(opts.cellId).onSnapshot(function (snap) { apply(snap.exists ? snap.data() : null); }, function () { apply(null); });
     } catch (e) { apply(null); }
-    return { destroy: function () { if (unsub) unsub(); unsub = null; host.innerHTML = ''; }, board: b };
+    return { destroy: function () { stopRot(); if (unsub) unsub(); unsub = null; if (root.parentNode) root.parentNode.removeChild(root); host.innerHTML = ''; }, board: b };
+  }
+  // Sideways on a phone the mat takes the screen (CSS); Exit leaves that
+  // until the phone is turned upright again. The board redraws for its
+  // new shape either way.
+  var FULL_MQ = '(orientation: landscape) and (max-height: 520px) and (pointer: coarse)';
+  function fullScreenRotate(root, b, after) {
+    var land = null;
+    function on() {
+      var l = window.innerWidth > window.innerHeight;
+      var turned = land !== null && l !== land;
+      if (turned && !l) root.classList.remove('mt-nofull');
+      land = l;
+      // Turned: the map refits its new shape; resized otherwise: just redrawn.
+      if (after) { after(); return; }
+      setTimeout(function () { if (turned) b.fit(); else b.draw(); }, 120);
+    }
+    on();
+    window.addEventListener('resize', on);
+    return function () { window.removeEventListener('resize', on); };
   }
 
   /* ── The Handler's editor ── */
   function editor(host, opts) {
     var cellId = opts.cellId;
-    host.innerHTML = '<div class="mt-ed">' +
+    host.innerHTML = '<div class="mt-ed' + (opts.phone ? ' mt-phone' : '') + '">' +
       '<div class="mt-bar">' +
+        '<button type="button" class="mt-ph mt-exit" data-mt="exit">Exit</button>' +
         '<span class="mt-lab">Map</span><input class="mt-name" type="text" maxlength="60" placeholder="Name this map">' +
         '<span class="mt-sep"></span><label class="mt-sw"><input type="checkbox" data-mt="shown"> Shown to the Agents</label>' +
-        '<span class="mt-sep"></span><button type="button" data-mt="undo">Undo</button><button type="button" data-mt="redo">Redo</button>' +
+        '<span class="mt-sep"></span><button type="button" data-mt="undo">Undo</button><button type="button" class="mt-ph" data-mt="more" aria-label="More">⋯</button><button type="button" data-mt="redo">Redo</button>' +
         '<button type="button" data-mt="fit">Fit</button><button type="button" class="mt-red" data-mt="clear">Clear the mat</button>' +
         '<span class="mt-sep"></span><span class="mt-lab">Background</span><label class="mt-btn">Upload photo…<input type="file" accept="image/*" hidden data-mt="bgfile"></label>' +
         '<span class="mt-bgctl" hidden><span class="mt-lab">Fade</span><input type="range" min="10" max="100" value="60" data-mt="bgop">' +
@@ -228,13 +296,15 @@
         [['select', 'Select / move'], ['marker', 'Marker'], ['rect', 'Rectangle'], ['circle', 'Circle'], ['text', 'Text label'], ['ruler', 'Ruler'], ['eraser', 'Eraser']].map(function (t) {
           return '<button type="button" class="mt-tool" data-mt="tool" data-tool="' + t[0] + '">' + t[1] + '</button>';
         }).join('') +
+        '<button type="button" class="mt-tool mt-ph" data-mt="kit">Tokens</button>' +
+        '<div class="mt-kit"><div class="mt-kith mt-ph"><b>Tokens &amp; pen</b><button type="button" data-mt="kit">✕</button></div>' +
         '<span class="mt-lab">Colour</span><div class="mt-sws">' + COLORS.map(function (c, i) { return '<button type="button" class="mt-col" data-mt="col" data-i="' + i + '" style="background:' + c + '" aria-label="Colour ' + (i + 1) + '"></button>'; }).join('') + '</div>' +
         '<span class="mt-lab">Width</span><div class="mt-sws">' + WIDTHS.map(function (w, i) { return '<button type="button" class="mt-wid" data-mt="wid" data-i="' + i + '" aria-label="Width ' + (i + 1) + '"><i style="height:' + [2, 4, 8, 13][i] + 'px"></i></button>'; }).join('') + '</div>' +
         '<span class="mt-lab">Tokens</span><div class="mt-tray">' + Object.keys(TOKENS).map(function (k) {
           var T = TOKENS[k], s = Math.max(T.w, T.h);
           return '<button type="button" class="mt-tok" data-mt="tool" data-tool="tok:' + k + '" title="' + esc(T.name) + '"><svg viewBox="' + (-(s - T.w) / 2 - .1) + ' ' + (-(s - T.h) / 2 - .1) + ' ' + (s + .2) + ' ' + (s + .2) + '">' + T.draw(T.w, T.h) + '</svg><small>' + esc(T.name) + '</small></button>';
         }).join('') + '</div>' +
-        '<span class="mt-lab">Agents</span><div class="mt-tray mt-agents"></div>' +
+        '<span class="mt-lab">Agents</span><div class="mt-tray mt-agents"></div></div>' +
       '</div><div class="mt-stage"></div></div>' +
       '<div class="mt-sel" hidden></div><div class="mt-ask" hidden></div></div>';
     var root = host.firstChild, stage = root.querySelector('.mt-stage');
@@ -346,19 +416,28 @@
       }
     }
 
+    b.onMulti = function () {
+      var d = st.drag;
+      if (!d) return;
+      st.drag = null;
+      if (d.kind === 'move' || d.kind === 'size' || d.kind === 'bg') { var u = st.undo.pop(); if (u && d.moved !== false) { b.doc.items = u.items; b.doc.bg = u.bg; } }
+      if (d.kind === 'ruler') sendRuler(null);
+      b.local = null; b.extra = ''; redraw();
+    };
+    var stopRot = fullScreenRotate(root, b);
     // Pointer: what each tool does.
     b.svg.addEventListener('pointerdown', function (e) {
       if (e.button && e.button !== 0) return;
       var p = b.pt(e), tool = st.tool, id = hitItem(e);
       try { b.svg.setPointerCapture(e.pointerId); } catch (err) { /* old Safari */ }
-      if (tool.indexOf('tok:') === 0 || tool.indexOf('ag:') === 0) { place(tool, p); if (tool.indexOf('ag:') === 0) st.tool = 'select'; marks(); return; }
-      if (tool === 'eraser') { if (id) change(function () { b.doc.items = b.doc.items.filter(function (x) { return x.id !== id; }); if (st.sel === id) st.sel = ''; }); return; }
+      // Placing, erasing and text happen when the finger lifts (a tap), so
+      // the first finger of a pinch never places or erases anything.
+      if (tool.indexOf('tok:') === 0 || tool.indexOf('ag:') === 0 || tool === 'eraser' || tool === 'text') { st.drag = { kind: 'tap', tool: tool, p: p, id: id, cx: e.clientX, cy: e.clientY }; return; }
       if (tool === 'ruler') { st.drag = { kind: 'ruler', a: p }; b.local = { a: p, b: p }; b.draw(); return; }
       if (tool === 'scale') { st.drag = { kind: 'scale', a: p }; b.local = { a: p, b: p }; b.draw(); return; }
       if (tool === 'bgmove') { var bg = b.doc.bg; if (bg && !bg.locked) { st.undo.push(snapshot()); st.drag = { kind: 'bg', p: p, x: bg.x, y: bg.y }; } return; }
       if (tool === 'marker') { st.drag = { kind: 'path', it: { id: uid(), t: 'path', c: COLORS[st.col], sw: WIDTHS[st.wid], pts: [[r2(p[0]), r2(p[1])]] } }; return; }
       if (tool === 'rect' || tool === 'circle') { st.drag = { kind: 'box', a: [snap(p[0]), snap(p[1])], it: { id: uid(), t: tool, c: COLORS[st.col], sw: WIDTHS[Math.min(st.wid, 1)], x: snap(p[0]), y: snap(p[1]), w: 0, h: 0 } }; return; }
-      if (tool === 'text') { askText(p); return; }
       // select: the yellow handle sizes; an item moves; empty mat pans.
       if (e.target.classList && e.target.classList.contains('mt-handle')) { var s0 = selected(); if (s0) { st.undo.push(snapshot()); st.drag = { kind: 'size', it: s0 }; } return; }
       if (id) {
@@ -392,9 +471,17 @@
         drawSel(); b.draw();
       }
     });
-    b.svg.addEventListener('pointerup', function () {
+    b.svg.addEventListener('pointerup', function (e) {
       var d = st.drag; st.drag = null;
       if (!d) return;
+      if (d.kind === 'tap') {
+        if (Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) > 12) return;
+        var t = d.tool, id0 = d.id;
+        if (t === 'eraser') { if (id0) change(function () { b.doc.items = b.doc.items.filter(function (x) { return x.id !== id0; }); if (st.sel === id0) st.sel = ''; }); }
+        else if (t === 'text') askText(d.p);
+        else { place(t, d.p); if (t.indexOf('ag:') === 0) st.tool = 'select'; marks(); }
+        return;
+      }
       if (d.kind === 'ruler') { b.local = null; b.draw(); sendRuler(null); return; }
       if (d.kind === 'scale') { askScale(b.local.a, b.local.b); return; }
       if (d.kind === 'bg') { redraw(); save(); return; }
@@ -455,7 +542,10 @@
       else if (a === 'wid') { st.wid = +k.getAttribute('data-i'); marks(); }
       else if (a === 'undo') { if (st.undo.length) { st.redo.push(snapshot()); var u = st.undo.pop(); b.doc.items = u.items; b.doc.bg = u.bg; st.sel = ''; redraw(); save(); } }
       else if (a === 'redo') { if (st.redo.length) { st.undo.push(snapshot()); var r = st.redo.pop(); b.doc.items = r.items; b.doc.bg = r.bg; st.sel = ''; redraw(); save(); } }
-      else if (a === 'fit') b.fit();
+      else if (a === 'fit') { b.fit(); root.classList.remove('mt-more'); }
+      else if (a === 'more') root.classList.toggle('mt-more');
+      else if (a === 'kit') root.classList.toggle('mt-kit-open');
+      else if (a === 'exit') { root.classList.add('mt-nofull'); setTimeout(function () { b.draw(); }, 50); }
       else if (a === 'clear') {
         var go = window.dgAc && window.dgAc.ask ? window.dgAc.ask('Clear everything off the mat? The photo stays. (Undo brings it back.)', 'Clear it', 'Keep it') : Promise.resolve(window.confirm('Clear the mat?'));
         go.then(function (ok) { if (ok) change(function () { b.doc.items = []; st.sel = ''; }); });
@@ -520,7 +610,7 @@
     }).catch(function (e) { apply(null); status('Not signed in as Handler: ' + ((e && e.message) || e)); });
     drawScale(); redraw();
     return {
-      destroy: function () { if (unsub) unsub(); unsub = null; clearTimeout(saveT); if (st.dirty) save(); host.innerHTML = ''; },
+      destroy: function () { stopRot(); if (unsub) unsub(); unsub = null; clearTimeout(saveT); if (st.dirty) save(); host.innerHTML = ''; },
       board: b, state: st, refreshAgents: drawAgentsTray
     };
   }

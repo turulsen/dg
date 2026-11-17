@@ -3,7 +3,7 @@
    and one round add button -- instead of the folder and its index tabs.
 
      PREP   Session · Agents · (+) · Evidence · More
-     PLAY   Pads · Initiative · (+) · Notes · Dice
+     PLAY   Pads · Initiative · (+) · Mat · Evidence (Dice under +)
 
    Screens drawn here (and in acell-mobile-play.js / -agents.js, which
    register through window.dgAcm.screen) sit in #acm-view; the rest are
@@ -26,7 +26,10 @@
   var A = window.dgAc;
   if (!A || window.dgAcm) return;
   var esc = A.esc;
-  var MQ = window.matchMedia('(max-width: 760px)');
+  // A phone on its side stays a phone (2026-11-17: sideways it turned into
+  // the computer's desk, and the combat mat went with it). Tablets are
+  // taller than 500px either way.
+  var MQ = window.matchMedia('(max-width: 760px), (max-height: 500px) and (pointer: coarse)');
   function I(n, c) { return window.dgIcons ? window.dgIcons.svg(n, c) : ''; }
   function S() { return window.dgSessions; }
   function V() { return window.dgVault; }
@@ -62,7 +65,8 @@
 
   var TABS = {
     prep: [['session', 'Session', 'session'], ['agents', 'Agents', 'agents'], null, ['evidence', 'Evidence', 'evidence'], ['more', 'More', '@more']],
-    play: [['pads', 'Pads', 'pads'], ['initiative', 'Initiative', 'initiative'], null, ['evidence', 'Evidence', 'evidence'], ['dice', 'Dice', 'dice']]
+    // The combat mat took Dice's place (2026-11-17); Dice is under +.
+    play: [['pads', 'Pads', 'pads'], ['initiative', 'Initiative', 'initiative'], null, ['map', 'Mat', 'mat'], ['evidence', 'Evidence', 'evidence']]
   };
   function drawTabs() {
     var def = SCREENS[st.name] || {}, cur = def.tab || st.name;
@@ -890,7 +894,7 @@
     ['anote', 'Agent Notes', 'into an Agent\'s file', 'pk'], ['snote', 'Session Notes', 'vault notes, Docs, pages for Play', 'or'], ['npc', 'NPCs', 'DEX · HP · WP · SAN', 'pu'],
     ['tape', 'Tape', 'Soundtrack (for session)', 'wh'], ['sess', 'New Session', 'blank, template or a copy', 'y']];
   var PLAY_ADD = [['qnote', 'Quick note', 'the session or an Agent', 'y'], ['qev', 'Add evidence', 'quickly, to the Cell and operation', 'gr'], ['rel', 'Release evidence', 'hand it to the players', 'or'], ['npc', 'NPC', 'into initiative', 'pu'],
-    ['agent', 'Agent', 'their sheet, read only', 'pk'], ['console', 'Tape', 'the console: decks, tracks, loops', 'bl'], ['notes', 'Session notes', 'the notes for this game', 'gr'], ['end', 'End the game', 'to Debrief', 'wh']];
+    ['agent', 'Agent', 'their sheet, read only', 'pk'], ['console', 'Tape', 'the console: decks, tracks, loops', 'bl'], ['notes', 'Session notes', 'the notes for this game', 'gr'], ['dice', 'Dice', 'live rolls', 'y'], ['end', 'End the game', 'to Debrief', 'wh']];
   var ADD_ACTIONS = {};
   function addSheet() {
     var set = st.mode === 'play' ? PLAY_ADD : PREP_ADD;
@@ -923,6 +927,7 @@
   ADD_ACTIONS.sess = function () { go('new-session'); };
   ADD_ACTIONS.end = function () { setMode('debrief'); };
   ADD_ACTIONS.pads = function () { go('pads'); };
+  ADD_ACTIONS.dice = function () { go('dice'); };
   // Tape (Play, 2026-10-30): the Music tab, at the console.
   ADD_ACTIONS.console = function () {
     go('music');

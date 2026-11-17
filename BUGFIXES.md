@@ -7513,3 +7513,18 @@ still replaced the list, and with it its scroll position. Now
 list's scroll and the search box's focus and caret back. Test:
 `test_acell_mobile_cells_add` (scroll kept across both kinds of redraw;
 fails on the old code). `sw.js` `CACHE_NAME` v330.
+
+## The combat mat on phones (v3.21.0, PR #109)
+
+Requested 2026-11-17 ("I don't see the battle map on my phone, not even
+in landscape"); built from the approved mock-up. Two fixes came with it:
+- **A phone turned sideways became the computer's A-Cell.** The phone
+  layout switched on at `max-width: 760px`; a phone in landscape is
+  wider, so it got the desk -- where the mat was put away, so nothing
+  showed. The query now also takes a short touch screen
+  (`(max-height: 500px) and (pointer: coarse)`); tablets are taller.
+- **The first finger of a pinch placed a token** (found by the new pinch
+  test): tokens, the eraser and text acted on `pointerdown`. They act on
+  the lift now, and a second finger calls the first one's action off.
+Tests: `test_acell_mobile_mat`, `test_notebook_mat_phone`;
+`test_acell_mobile_play` updated for the tab bar. `sw.js` `CACHE_NAME` v331.

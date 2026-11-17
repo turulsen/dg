@@ -925,6 +925,17 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   notebook's **Mat** tab (`pageMat()` in `assets/field-notes.js`, both
   pages on a desktop): live and read-only, the Cell's mat when it's
   Shown, zoom, pan, Fit and a ruler of their own; their own token ringed.
+  On phones (v3.21.0): A-Cell's phone Play has a **Mat** tab (Dice moved
+  under +) with the editor in phone mode (`editor(host, { phone: true })`:
+  Shown, Undo and ⋯ on top, a tool strip, Tokens as a sheet, the
+  selection's actions from the bottom); two fingers pinch to zoom and pan
+  on both sides (placing, erasing and text act on the lift, so a pinch
+  never adds or deletes); sideways (`(orientation: landscape) and
+  (max-height: 520px) and (pointer: coarse)`) the mat takes the whole
+  screen -- the Handler's with the tools as a rail, the Agents' moved out
+  of the notebook to `document.body` -- and Exit gives the screen back.
+  A phone on its side now stays A-Cell's phone layout (its media query
+  also matches a short touch screen).
 - **Arranging Play** (`assets/acell-play.js`, since v3.19.3): the
   Arrange bar has five layouts (Session, Investigation, Action, Music,
   Compact; what one doesn't use is put away), "Mine" (layouts saved
