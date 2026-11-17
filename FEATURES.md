@@ -1007,7 +1007,9 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   cassette per operation or Cell with its tracks (library tracks and
   links), the loops under them and its effect pads. Putting one in a
   channel's deck makes its tracks the cue list (auto-advance on, back
-  to track 1 after the last) and names it on `radio/{ch}.tape`. A
+  to track 1 after the last) -- since v3.19.2 it steps by the broadcast's clock too (the track's
+  length from the preview, the tape's `dur` or a metadata probe), so it
+  moves on when A-Cell's own preview isn't playing and names it on `radio/{ch}.tape`. A
   finished track steps the tape once, by transaction from that exact
   broadcast.
 - **The console** (`assets/acell-console.js`): channels, on air, the

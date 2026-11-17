@@ -5015,6 +5015,71 @@ def test_acell_tape_steps_once(p):
     record("acell-tapes", "no JS errors (tape steps)", not errs, str(errs))
     page.close()
 
+def test_table_radio_loop_mid_track(p):
+    """Issue #104 (2026-11-16): Loop switched on while a tape's track was
+    playing did nothing at the table -- the player only reacted to a new
+    track or a pause, so the track still ended and stopped. A Loop change
+    now reaches the playing <audio> in place, without restarting it."""
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    page.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    page.route("**/fonts.gstatic.com/**", lambda r: r.abort())
+    page.add_init_script("try { sessionStorage.setItem('dg_boot_seen', '1'); localStorage.setItem('dg_radio_channel', '1'); localStorage.setItem('dg_cover_identity', 'Gergo'); } catch (e) {}")
+    install_radio_firestore_stub(page)
+    page.goto(f"{BASE}/hub.html", wait_until="domcontentloaded", timeout=15000)
+    clips = sorted(os.listdir(os.path.join(HERE, "..", "assets", "stingers")))
+    track = f"{BASE}/assets/stingers/{clips[0]}"
+    np = {"channel": "1", "track_url": track, "track_title": "Abyss", "started_at": 1700000000000,
+          "track_volume": 50, "ambient_volume": 100, "track_kind": "audio", "loop": False}
+    push_radio_now_playing(page, "1", np)
+    _pump_until(page, lambda: page.evaluate("() => !!document.getElementById('dg-radio-audio')"), timeout_ms=6000)
+    page.evaluate("() => { window.__el = document.getElementById('dg-radio-audio'); }")
+    before = page.evaluate("() => window.__el.loop")
+    push_radio_now_playing(page, "1", dict(np, loop=True))
+    page.wait_for_timeout(400)
+    after = page.evaluate("() => { const a = document.getElementById('dg-radio-audio'); return { same: a === window.__el, loop: a.loop }; }")
+    record("radio", "Loop switched on mid-track reaches the playing track in place", before is False and after["same"] and after["loop"], str((before, after)))
+    push_radio_now_playing(page, "1", dict(np, loop=False))
+    page.wait_for_timeout(400)
+    off = page.evaluate("() => document.getElementById('dg-radio-audio').loop")
+    record("radio", "...and switched off again", off is False, str(off))
+    record("radio", "no JS errors (loop mid-track)", not errs, str(errs))
+    page.close()
+
+def test_acell_tape_steps_by_clock(p):
+    """Issue #103 (2026-11-16): a tape's music still didn't move on. The
+    step waited for this tab's preview <audio> to end, which often never
+    plays (a phone, a background tab). Once the live track has run its
+    length (the tape knows it), the tape steps on by the clock -- and
+    not while Loop is on."""
+    import time as _t
+    page, errs = open_acell_shell(p)
+    page.click("#acell-tab-strip .tw[data-tab=music]")
+    push_collection(page, "tracks")
+    page.evaluate("() => window.dgTapes.insert('tape_dread')")
+    wait_for_condition(lambda: any(l.get("isDoc") and l["path"].startswith("radio/") for l in page.evaluate("() => window.__dgFirestoreListeners || []")) or None, timeout_ms=5000)
+    ch = page.evaluate("() => window.dgAcellMusic.channel()")
+    path = "radio/" + ch
+    url1 = page.evaluate("() => window.dgAcellMusic.cueList()[0].url")
+    url2 = page.evaluate("() => window.dgAcellMusic.cueList()[1].url")
+    def deliver(d):
+        page.evaluate("(a) => { window.__dgFirestoreDocs[a[0]] = Object.assign({}, window.__dgFirestoreDocs[a[0]] || {}, a[1]); }", [path, d])
+        push_firestore_doc_snapshot(page, path, True, fs_doc(page, path))
+        page.wait_for_timeout(150)
+    def track(): return (fs_doc(page, path) or {}).get("track_url")
+    now = int(_t.time() * 1000)
+    # Track 1 (381 s on the tape) looping, its time long up: stays.
+    deliver({"track_url": url1, "track_title": "Lighthouse at Dusk", "track_kind": "audio", "started_at": now - 390000, "paused": False, "paused_at": "", "loop": True})
+    page.wait_for_timeout(2500)
+    record("acell-tapes", "Loop on: the track's time up doesn't step the tape", track() == url1, str(track())[:60])
+    # Loop off, its time up, no 'ended' from the preview: steps by the clock.
+    deliver({"loop": False})
+    wait_for_condition(lambda: track() == url2, timeout_ms=5000)
+    record("acell-tapes", "a track whose time is up steps the tape on with no 'ended' (the preview never played)", track() == url2, str(track())[:60])
+    record("acell-tapes", "no JS errors (tape by the clock)", not errs, str(errs))
+    page.close()
+
 def test_acell_session_notes_desk(p):
     """2026-10-30, the computer layout: Prep's Notes panel lists every note
     the session keeps (vault, Google Doc, uploaded page), adds a Google Doc
@@ -15028,6 +15093,8 @@ def main():
         safe(test_acell_mobile_decks, browser, area="acell-mobile")
         safe(test_acell_session_notes_desk, browser, area="acell-notes")
         safe(test_acell_tape_steps_once, browser, area="acell-tapes")
+        safe(test_acell_tape_steps_by_clock, browser, area="acell-tapes")
+        safe(test_table_radio_loop_mid_track, browser, area="radio")
         safe(test_acell_in_shell, browser, area="acell-shell-hub")
         safe(test_player_pages_never_get_the_handler_feed, browser, area="dice")
         safe(test_handler_rolls_filter_by_cell, browser, area="dice")

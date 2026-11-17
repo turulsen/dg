@@ -7434,3 +7434,30 @@ lasting damage to the vault. Root causes, in the order they surfaced:
 
 Tests: `test/vault_sync_test.js` (45 checks, each case from the reports)
 and the handler harness.
+
+## Tapes: no auto-advance, Loop doing nothing (v3.19.2, PR #105)
+
+Reported 2026-11-16 during a live session (issues #103, #104).
+
+**A tape's music didn't move on to the next track.** This finishes the
+v3.13.0 fix ("A tape of two tracks flipped between them"), which made
+the step safe but left it waiting for one signal: A-Cell's own preview
+`<audio>` firing `ended`. That preview often never plays: on a phone
+(iOS won't start it without a tap there), in a background tab, after a
+failed load. So the track finished at the table and nothing stepped.
+A-Cell now also watches the broadcast's clock: once the live track has
+run its length (from the preview, the tape's track list -- tape cues
+carry `dur` now -- or a metadata-only probe), it steps through the same
+once-only transaction, at most one try per 15 s per track. Left as it
+is: an A-Cell that isn't running at all (a locked phone, no open tab)
+can't step anything; there is no server-side radio. Test:
+`test_acell_tape_steps_by_clock` (fails on the old code).
+
+**Loop did nothing on a tape's track.** Loop switched on during a track
+wrote `loop: true`, but the players' Table Radio only reacted to a new
+track (`started_at`) or a pause, so the playing `<audio>` never heard of
+it; the track ended and stopped, and A-Cell rightly didn't step because
+Loop was on -- silence. A Loop change now reaches the playing `<audio>`
+in place (YouTube, SoundCloud or an ended track are rebuilt at the live
+position). Test: `test_table_radio_loop_mid_track` (fails on the old
+code). `sw.js` `CACHE_NAME` v326.

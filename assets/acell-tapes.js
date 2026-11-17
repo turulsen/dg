@@ -100,7 +100,7 @@
   function insert(id) {
     var t = get(id), m = M();
     if (!t || !m) return Promise.reject(new Error('No such tape.'));
-    var cues = t.tracks.map(function (x) { return { url: urlOf(x), title: x.title, kind: x.kind === 'track' ? 'audio' : '' }; }).filter(function (c) { return c.url; });
+    var cues = t.tracks.map(function (x) { return { url: urlOf(x), title: x.title, kind: x.kind === 'track' ? 'audio' : '', dur: +x.dur || 0 }; }).filter(function (c) { return c.url; });
     m.setTape({ id: t.id, name: t.name, color: t.color }, cues);
     m.autoAdvance(true);
     var want = {}; t.loops.forEach(function (l) { want[l] = true; });
