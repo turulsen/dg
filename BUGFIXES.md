@@ -7461,3 +7461,23 @@ Loop was on -- silence. A Loop change now reaches the playing `<audio>`
 in place (YouTube, SoundCloud or an ended track are rebuilt at the live
 position). Test: `test_table_radio_loop_mid_track` (fails on the old
 code). `sw.js` `CACHE_NAME` v326.
+
+## The Play desk grew into a long scroll (v3.19.3, PR #106)
+
+Reported 2026-11-16 during a live session (issue #102). An object
+dropped onto another kept its place and `settle()` pushed whatever it
+covered, and everything below that, straight down; nothing ever moved
+back up, so every rearrangement left gaps and the desk kept growing.
+Now (`assets/acell-play.js`):
+- gaps close by themselves after each move (`compact()`: every object
+  up as far as it fits, column, size and order kept; a switch in the
+  Arrange bar, on by default), and **Close the gaps** does it by hand;
+  a desk arranged before is tidied once on load (`gaps1`);
+- an object dropped mostly onto one of about its size trades places with
+  it; otherwise what it covers goes to the nearest free place, beside
+  first, then lower (`freeSpot()`), not down the whole column.
+Added on the same request: five ready-made layouts (Session,
+Investigation, Action, Music, Compact) and the Handler's own saved
+layouts ("Mine", kept on the device). Test: `test_acell_play_layouts`;
+`test_acell_play_desk`'s exact-placement checks run with the automatic
+tidy-up off. `sw.js` `CACHE_NAME` v327.

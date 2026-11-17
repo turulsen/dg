@@ -332,3 +332,15 @@ body.acm .acm-cxbox [data-cc=live] .cc-mini{ min-height:34px; min-width:38px; }
 .pd-evacts{ display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
 .pd-evacts .ac-btn:disabled{ opacity:.4; }
 @media (max-width:640px){ .pd-evv{ grid-template-columns:1fr; } .pd-evph{ min-height:180px; } }
+/* Layouts (2026-11-17, issue #102) */
+.pd-layouts .pd-lab{ color:#b8a878; letter-spacing:.12em; text-transform:uppercase; font-size:10.5px; }
+.pd-back.on{ background:#f2d98a; outline:2px solid #a3221c; }
+.pd-back.pd-close{ background:#a3221c; color:#fff; }
+.pd-back.pd-dark{ background:transparent; color:#e9dfbf; border:1px solid #b8a878; }
+.pd-sep{ width:1px; align-self:stretch; background:#6b5a3a; }
+.pd-auto{ cursor:pointer; }
+.pd-auto input{ accent-color:#7fd1a4; margin:0; }
+.pd-mine{ display:inline-flex; }
+.pd-mx{ font:inherit; font-size:11px; background:transparent; color:#e9dfbf; border:1px solid #b8a878; border-left:0; padding:0 6px; cursor:pointer; }
+.pd-save{ display:inline-flex; gap:6px; align-items:center; }
+.pd-savename{ font:inherit; font-size:12px; padding:4px 7px; border:1px solid #b8a878; background:#f6efd8; color:#2a2418; width:150px; }

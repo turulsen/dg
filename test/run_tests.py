@@ -4439,6 +4439,9 @@ def test_acell_play_desk(p):
     record("acell-play", "the Dice Roller's block hugs the roller (no rows of empty space under it)", hug[0] >= hug[1] and hug[0] - hug[1] < 58 + 12 + 40, str(hug))
     page.click("#ac-tools [data-tool=arrange]")
     record("acell-play", "✥ Arrange shows the drawer and each object's grip", page.is_visible(".pd-drawer") and page.locator(".pd-grip").count() == 7, "")
+    # The checks below place things exactly; gaps closing by themselves
+    # (on by default since issue #102) is tested in test_acell_play_layouts.
+    page.uncheck(".pd-drawer [data-pd=auto]")
     def cell_xy(cx, cy):
         g = page.locator(".pd-grid").bounding_box()
         cw = (g["width"] - 12 * 11) / 12
@@ -4473,7 +4476,8 @@ def test_acell_play_desk(p):
     gx, gy = cell_xy(0, 20) if False else cell_xy(9, ev0["y"] + 6)
     page.mouse.click(gx, gy)
     it = lay3()
-    record("acell-play", "…and tapping the grid puts it there", it["evidence"]["y"] == ev0["y"] + 6, str(ev0) + " -> " + str(it.get("evidence")))
+    # It lands at that cell, or trades places with an object of about its size there (issue #102).
+    record("acell-play", "…and tapping the grid puts it there", it["evidence"]["y"] == ev0["y"] + 6 or (it["evidence"]["y"] != ev0["y"] and it["evidence"]["x"] >= 0), str(ev0) + " -> " + str(it.get("evidence")))
     page.click(".pd-o[data-o=dossiers] [data-pd=away]")
     record("acell-play", "✕ puts an object away; the drawer brings it back",
            page.locator(".pd-o[data-o=dossiers]").count() == 0 and page.locator(".pd-drawer [data-id=dossiers]").count() == 1, "")
@@ -4495,6 +4499,70 @@ def test_acell_play_desk(p):
     wait_for_condition(lambda: page.evaluate("() => document.body.dataset.acMode") == "play", timeout_ms=6000)
     record("acell-play", "a reload mid-game comes back to the desk", page.evaluate("() => document.body.dataset.acMode") == "play", "")
     record("acell-play", "no JS errors on the desk", not errs, str(errs))
+
+def test_acell_play_layouts(p):
+    """Issue #102 (2026-11-17): arranging the Play desk pushed everything
+    down into a long scroll. Ready-made layouts, Close the gaps (and gaps
+    closing by themselves after each move, on by default; a desk arranged
+    before is tidied once), two objects of about one size trading places
+    when one is dropped on the other, and the Handler's own saved layouts."""
+    page, errs = open_acell_shell(p)
+    gappy = {"items": {"deck": {"x": 0, "y": 0, "w": 4, "h": 9}, "pad": {"x": 9, "y": 0, "w": 3, "h": 4}, "notebook": {"x": 4, "y": 9, "w": 5, "h": 15},
+                       "pads": {"x": 4, "y": 24, "w": 5, "h": 3}, "evidence": {"x": 9, "y": 13, "w": 3, "h": 4}, "dossiers": {"x": 9, "y": 24, "w": 3, "h": 10}, "dice": {"x": 0, "y": 16, "w": 4, "h": 6}},
+             "away": [], "deck9": True}
+    page.evaluate("(l) => localStorage.setItem('dg_acell_desk_v3', JSON.stringify(l))", gappy)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#ac-modes [data-mode=play]", timeout=8000)
+    page.click("#ac-modes [data-mode=play]")
+    wait_for_condition(lambda: page.locator(".pd-o[data-o=notebook]").count() == 1, timeout_ms=6000)
+    lay = lambda: page.evaluate("() => JSON.parse(localStorage.getItem('dg_acell_desk_v3') || '{}')")
+    wait_for_condition(lambda: (lay().get("items", {}).get("notebook") or {}).get("y") == 0, timeout_ms=3000)
+    it = lay()["items"]
+    bottom = max(r["y"] + r["h"] for r in it.values())
+    record("acell-layouts", "a desk arranged with gaps before is tidied once: everything moved up, 34 rows become 18",
+           it["notebook"]["y"] == 0 and it["evidence"]["y"] == 4 and it["dossiers"]["y"] == 8 and bottom == 18, str(it))
+    page.click("#ac-tools [data-tool=arrange]")
+    names = page.eval_on_selector_all(".pd-drawer [data-pd=preset]", "els => els.map(e => e.textContent)")
+    record("acell-layouts", "the Arrange bar offers the five layouts", names == ["Session", "Investigation", "Action", "Music", "Compact"], str(names))
+    page.click(".pd-drawer [data-pd=preset][data-n=Investigation]")
+    l = lay()
+    record("acell-layouts", "a layout rearranges the desk at once; what it doesn't use is put away",
+           l["items"].get("notebook") == {"x": 0, "y": 0, "w": 6, "h": 14} and l.get("away") == ["pads"] and page.locator(".pd-drawer [data-pd=back][data-id=pads]").count() == 1
+           and "on" in page.get_attribute(".pd-drawer [data-pd=preset][data-n=Investigation]", "class"), str(l)[:300])
+    # Mine: save this one, change it, come back to it.
+    page.click(".pd-drawer [data-pd=mine-new]")
+    page.fill(".pd-savename", "Thursday table")
+    page.press(".pd-savename", "Enter")
+    page.wait_for_selector(".pd-drawer [data-pd=mine][data-n='Thursday table']", timeout=3000)
+    page.click(".pd-drawer [data-pd=preset][data-n=Compact]")
+    record("acell-layouts", "Compact puts everything out in 12 rows", max(r["y"] + r["h"] for r in lay()["items"].values()) == 12 and not lay().get("away"), str(lay()["items"]))
+    page.click(".pd-drawer [data-pd=mine][data-n='Thursday table']")
+    record("acell-layouts", "a saved layout of my own comes back with a tap", lay()["items"].get("notebook") == {"x": 0, "y": 0, "w": 6, "h": 14} and lay().get("away") == ["pads"], str(lay())[:200])
+    # Swap: Initiative dropped onto the tape deck, both about one size.
+    page.click(".pd-drawer [data-pd=preset][data-n=Session]")
+    before = lay()["items"]
+    def cell_xy(cx, cy):
+        g = page.locator(".pd-grid").bounding_box()
+        cw = (g["width"] - 12 * 11) / 12
+        return g["x"] + cx * (cw + 12) + cw / 2, g["y"] + cy * (58 + 12) + 29
+    page.evaluate("() => window.scrollTo(0, 0)")
+    b = page.locator(".pd-o[data-o=pad] .pd-oh").bounding_box()
+    tx, ty = cell_xy(before["evidence"]["x"], before["evidence"]["y"] + 1)
+    page.mouse.move(b["x"] + 10, b["y"] + 8); page.mouse.down(); page.mouse.move(tx, ty, steps=10); page.mouse.up()
+    after = lay()["items"]
+    record("acell-layouts", "Quick notes dropped onto the evidence box (about one size): the two trade places",
+           (after["pad"]["x"], after["pad"]["y"]) == (before["evidence"]["x"], before["evidence"]["y"]) and (after["evidence"]["x"], after["evidence"]["y"]) == (before["pad"]["x"], before["pad"]["y"]), str((before["pad"], before["evidence"], after["pad"], after["evidence"])))
+    over = [(a, c) for a in after for c in after if a < c and after[a]["x"] < after[c]["x"] + after[c]["w"] and after[c]["x"] < after[a]["x"] + after[a]["w"] and after[a]["y"] < after[c]["y"] + after[c]["h"] and after[c]["y"] < after[a]["y"] + after[a]["h"]]
+    record("acell-layouts", "nothing overlaps after a swap", not over, str(over))
+    # Close the gaps by hand, with the automatic tidy-up off.
+    page.uncheck(".pd-drawer [data-pd=auto]")
+    page.evaluate("(l) => { const cur = JSON.parse(localStorage.getItem('dg_acell_desk_v3')); cur.items = l.items; localStorage.setItem('dg_acell_desk_v3', JSON.stringify(cur)); }", gappy)
+    page.click(".pd-drawer [data-pd=preset][data-n=Session]")
+    record("acell-layouts", "the switch is kept off across a layout change", lay().get("autoClose") is False, str(lay().get("autoClose")))
+    page.click(".pd-drawer [data-pd=close-gaps]")
+    record("acell-layouts", "Close the gaps leaves a tidy desk", max(r["y"] + r["h"] for r in lay()["items"].values()) == 18, str(lay()["items"]))
+    record("acell-layouts", "no JS errors (layouts)", not errs, str(errs))
+    page.close()
 
 def test_acell_debrief(p):
     """v3.12.0, Debrief: a new vault note "<session> · debrief.md" beside
@@ -15094,6 +15162,7 @@ def main():
         safe(test_acell_session_notes_desk, browser, area="acell-notes")
         safe(test_acell_tape_steps_once, browser, area="acell-tapes")
         safe(test_acell_tape_steps_by_clock, browser, area="acell-tapes")
+        safe(test_acell_play_layouts, browser, area="acell-layouts")
         safe(test_table_radio_loop_mid_track, browser, area="radio")
         safe(test_acell_in_shell, browser, area="acell-shell-hub")
         safe(test_player_pages_never_get_the_handler_feed, browser, area="dice")

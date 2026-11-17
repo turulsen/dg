@@ -35,7 +35,7 @@
   // Kept on this device (dg_acell_desk_v3); objects put away sit in `away`.
   var KEY3 = 'dg_acell_desk_v3', COLS = 12, ROW = 58, GAP = 12;
   var MIN = { dossiers: [3, 4], dice: [2, 2], notebook: [3, 4], deck: [3, 7], pad: [2, 2], evidence: [2, 2], pads: [2, 2] };
-  var DEFAULT = { items: {
+  var DEFAULT = { gaps1: true, items: {
     deck: { x: 0, y: 0, w: 4, h: 9 }, pads: { x: 4, y: 0, w: 5, h: 3 }, pad: { x: 9, y: 0, w: 3, h: 4 },
     notebook: { x: 4, y: 3, w: 5, h: 15 }, evidence: { x: 9, y: 4, w: 3, h: 4 }, dossiers: { x: 9, y: 8, w: 3, h: 10 }, dice: { x: 0, y: 9, w: 4, h: 6 }
   }, away: [] };
@@ -51,6 +51,9 @@
     // deck smaller than the player's least grows, what it covers moves down.
     if (l.items.deck && !l.deck9) { if (l.items.deck.h >= 13) l.items.deck.h = 9; l.deck9 = true; }
     if (l.items.deck) setTimeout(function () { settle('deck'); save(); }, 0);
+    // A desk arranged before gaps closed by themselves (issue #102) is
+    // tidied once.
+    if (!l.gaps1) setTimeout(function () { if (L.autoClose !== false) compact(); L.gaps1 = true; save(); }, 0);
     return l;
   })();
   function fit(r, id) {
@@ -62,6 +65,49 @@
     return r;
   }
   function overlap(a, b) { return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h; }
+  // Ready-made arrangements (2026-11-17, issue #102). What one doesn't use
+  // goes under Put away.
+  var PRESETS = {
+    Session: DEFAULT.items,
+    Investigation: { notebook: { x: 0, y: 0, w: 6, h: 14 }, evidence: { x: 6, y: 0, w: 6, h: 7 }, pad: { x: 6, y: 7, w: 3, h: 4 }, dice: { x: 9, y: 7, w: 3, h: 4 }, deck: { x: 6, y: 11, w: 3, h: 7 }, dossiers: { x: 9, y: 11, w: 3, h: 7 } },
+    Action: { dossiers: { x: 0, y: 0, w: 4, h: 10 }, dice: { x: 4, y: 0, w: 4, h: 5 }, pads: { x: 8, y: 0, w: 4, h: 5 }, notebook: { x: 4, y: 5, w: 8, h: 9 }, deck: { x: 0, y: 10, w: 4, h: 7 } },
+    Music: { deck: { x: 0, y: 0, w: 5, h: 9 }, pads: { x: 5, y: 0, w: 7, h: 5 }, pad: { x: 5, y: 5, w: 3, h: 4 }, evidence: { x: 8, y: 5, w: 4, h: 4 }, notebook: { x: 0, y: 9, w: 12, h: 8 } },
+    Compact: { deck: { x: 0, y: 0, w: 3, h: 9 }, notebook: { x: 3, y: 0, w: 5, h: 12 }, dossiers: { x: 8, y: 0, w: 4, h: 6 }, evidence: { x: 8, y: 6, w: 2, h: 3 }, pad: { x: 10, y: 6, w: 2, h: 3 }, dice: { x: 8, y: 9, w: 4, h: 3 }, pads: { x: 0, y: 9, w: 3, h: 3 } }
+  };
+  var MINE_KEY = 'dg_acell_desk_mine';
+  function useLayout(items) {
+    L.items = {};
+    Object.keys(items).forEach(function (id) { if (OBJ[id]) L.items[id] = fit(clone(items[id]), id); });
+    L.away = Object.keys(OBJ).filter(function (id) { return !L.items[id]; });
+    settle(null);
+  }
+  function autoClose() { return L.autoClose !== false; }
+  // Close the gaps: every object moves up as far as it fits, keeping its
+  // column, size and order (top to bottom).
+  function compact() {
+    var ids = Object.keys(L.items).sort(function (a, b) { return L.items[a].y - L.items[b].y || L.items[a].x - L.items[b].x; });
+    var placed = [];
+    ids.forEach(function (k) {
+      var r = L.items[k];
+      while (r.y > 0 && !placed.some(function (p) { return overlap(p, { x: r.x, y: r.y - 1, w: r.w, h: r.h }); })) r.y -= 1;
+      placed.push(r);
+    });
+  }
+  // The nearest free place for r among `placed`: beside it first (same
+  // rows), then lower down -- never pushing a whole column.
+  function freeSpot(r, placed) {
+    var best = null, bestCost = Infinity;
+    for (var y = r.y; y <= r.y + 40; y++) {
+      for (var x = 0; x <= COLS - r.w; x++) {
+        var c = { x: x, y: y, w: r.w, h: r.h };
+        if (placed.some(function (p) { return overlap(p, c); })) continue;
+        var cost = (y - r.y) * 3 + Math.abs(x - r.x);
+        if (cost < bestCost) { best = c; bestCost = cost; }
+      }
+      if (best && bestCost <= (y - r.y) * 3) break;
+    }
+    return best || { x: r.x, y: r.y + 40, w: r.w, h: r.h };
+  }
   // The object just moved or sized keeps its place; whatever it now covers
   // moves down until it's clear.
   function settle(fixedId) {
@@ -79,7 +125,7 @@
 
   /* ── Building the desk ── */
   function place(id) { var r = L.items[id]; return 'grid-column:' + (r.x + 1) + ' / span ' + r.w + ';grid-row:' + (r.y + 1) + ' / span ' + r.h; }
-  function builtKey() { var s = A.session(); return (s ? s.id : '') + '|' + JSON.stringify(L) + '|' + st.arrange; }
+  function builtKey() { var s = A.session(); return (s ? s.id : '') + '|' + JSON.stringify(L) + '|' + st.arrange + '|' + !!st.saving + '|' + (st.arrange ? JSON.stringify(A.store(MINE_KEY, {})) : ''); }
   // The Dice Roller's block is as tall as the roller (2026-11-03: it kept
   // its rows when the roller was shorter). Not while arranging.
   function hugDice(px) {
@@ -121,7 +167,16 @@
     drawAll();
   }
   function drawerHtml() {
-    return '<div class="pd-drawer"><span class="pd-dl">✥ Drag a title bar anywhere on the grid · ◢ drag the yellow corner to size it · or tap a bar, then tap where it goes</span><span class="pd-dl pd-pickt"></span>' +
+    var mine = A.store(MINE_KEY, {});
+    return '<div class="pd-drawer pd-layouts"><span class="pd-dl pd-lab">Layout</span>' +
+      Object.keys(PRESETS).map(function (n) { return '<button type="button" class="pd-back' + (L.preset === n ? ' on' : '') + '" data-pd="preset" data-n="' + n + '">' + n + '</button>'; }).join('') +
+      '<span class="pd-sep"></span><button type="button" class="pd-back pd-close" data-pd="close-gaps">Close the gaps</button>' +
+      '<label class="pd-dl pd-auto"><input type="checkbox" data-pd="auto"' + (autoClose() ? ' checked' : '') + '> Close gaps after each move</label>' +
+      '<span class="pd-sep"></span><span class="pd-dl pd-lab">Mine</span>' +
+      Object.keys(mine).map(function (n) { return '<span class="pd-mine"><button type="button" class="pd-back pd-dark' + (L.preset === '*' + n ? ' on' : '') + '" data-pd="mine" data-n="' + esc(n) + '">' + esc(n) + '</button><button type="button" class="pd-mx" data-pd="mine-del" data-n="' + esc(n) + '" aria-label="Forget ' + esc(n) + '">✕</button></span>'; }).join('') +
+      (st.saving ? '<span class="pd-save"><input type="text" class="pd-savename" placeholder="Name it" maxlength="40"><button type="button" class="pd-back" data-pd="mine-ok">Save</button><button type="button" class="pd-back pd-dark" data-pd="mine-x">Cancel</button></span>'
+        : '<button type="button" class="pd-back pd-dark" data-pd="mine-new">+ Save this layout…</button>') + '</div>' +
+      '<div class="pd-drawer"><span class="pd-dl">✥ Drag a title bar anywhere on the grid · ◢ drag the yellow corner to size it · or tap a bar, then tap where it goes · dropped on one of about its size, the two trade places</span><span class="pd-dl pd-pickt"></span>' +
       (L.away.length ? '<span class="pd-dl">Put away:</span>' + L.away.map(function (id) { return '<button type="button" class="pd-back" data-pd="back" data-id="' + id + '">+ ' + esc(OBJ[id]) + '</button>'; }).join('') : '') +
       '<button type="button" class="pd-back" data-pd="reset">Reset layout</button></div>';
   }
@@ -646,11 +701,29 @@
         L.items[bid] = fit(Object.assign(clone(DEFAULT.items[bid]), { x: 0, y: bottom }), bid);
         save(); build(); return;
       }
-      case 'reset': L = clone(DEFAULT); save(); build(); return;
+      case 'reset': L = clone(DEFAULT); L.preset = 'Session'; save(); build(); return;
+      case 'preset': { var pn = b.getAttribute('data-n'); var keepAuto = L.autoClose; useLayout(PRESETS[pn]); L.autoClose = keepAuto; L.preset = pn; st.pick = ''; save(); build(); return; }
+      case 'close-gaps': compact(); save(); build(); return;
+      case 'auto': L.autoClose = !!b.checked; if (b.checked) compact(); save(); build(); return;
+      case 'mine': { var mn = b.getAttribute('data-n'), mm = A.store(MINE_KEY, {})[mn]; if (!mm) return; var ka = L.autoClose; useLayout(mm.items); L.autoClose = ka; L.preset = '*' + mn; save(); build(); return; }
+      case 'mine-del': { var md = A.store(MINE_KEY, {}); delete md[b.getAttribute('data-n')]; A.keep(MINE_KEY, md); build(); return; }
+      case 'mine-new': st.saving = true; build(); setTimeout(function () { var i = panel.querySelector('.pd-savename'); if (i) i.focus(); }, 30); return;
+      case 'mine-x': st.saving = false; build(); return;
+      case 'mine-ok': {
+        var nm = ((panel.querySelector('.pd-savename') || {}).value || '').trim();
+        if (!nm) return;
+        var mv = A.store(MINE_KEY, {}); mv[nm] = { items: clone(L.items) }; A.keep(MINE_KEY, mv);
+        st.saving = false; L.preset = '*' + nm; save(); build(); return;
+      }
     }
   });
   panel.addEventListener('keydown', function (e) {
     var t = e.target;
+    if (t.classList && t.classList.contains('pd-savename')) {
+      if (e.key === 'Enter') { e.preventDefault(); var ok = panel.querySelector('[data-pd="mine-ok"]'); if (ok) ok.click(); }
+      else if (e.key === 'Escape') { st.saving = false; build(); }
+      return;
+    }
     if (!t.hasAttribute || !t.hasAttribute('data-jot')) return;
     if (e.key === 'Escape') { st.jot = ''; drawDossiers(A.session()); return; }
     if (e.key !== 'Enter') return;
@@ -679,9 +752,38 @@
     gh.style.gridRow = (rect.y + 1) + ' / span ' + rect.h;
     gh.textContent = rect.w + ' × ' + rect.h;
   }
-  function apply(id, rect) {
-    L.items[id] = fit(rect, id);
-    settle(id);
+  function apply(id, rect, sizing) {
+    var from = clone(L.items[id]), to = fit(rect, id);
+    // The object it mostly landed on (by covered area), if it covers a
+    // good part of either.
+    var area = function (a, b) { return Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)); };
+    var hit = [], most = 0;
+    if (!sizing) Object.keys(L.items).forEach(function (k) {
+      if (k === id) return;
+      var o = area(L.items[k], to);
+      if (o > most) { most = o; hit = [k]; }
+    });
+    var t = hit.length && most >= 0.4 * Math.min(to.w * to.h, L.items[hit[0]].w * L.items[hit[0]].h) ? L.items[hit[0]] : null;
+    // Dropped onto one object of about its size: the two trade places,
+    // each fitted to the other's slot (2026-11-17, issue #102).
+    if (t && Math.abs(t.w - from.w) <= 2 && Math.max(t.h, from.h) <= Math.min(t.h, from.h) * 1.6 + 1) {
+      L.items[id] = fit({ x: t.x, y: t.y, w: t.w, h: t.h }, id);
+      L.items[hit[0]] = fit({ x: from.x, y: from.y, w: from.w, h: from.h }, hit[0]);
+      settle(id);
+    } else {
+      L.items[id] = to;
+      // What it now covers goes to the nearest free place, not down the column.
+      var placed = [L.items[id]];
+      Object.keys(L.items).filter(function (k) { return k !== id; })
+        .sort(function (a, b) { return L.items[a].y - L.items[b].y || L.items[a].x - L.items[b].x; })
+        .forEach(function (k) {
+          var r = L.items[k];
+          if (placed.some(function (p) { return overlap(p, r); })) L.items[k] = r = freeSpot(r, placed);
+          placed.push(r);
+        });
+    }
+    if (autoClose()) compact();
+    delete L.preset;
     st.pick = '';
     save(); build();
   }
@@ -710,7 +812,7 @@
       var d = drag; drag = null;
       d.el.classList.remove('pd-lift');
       ghost(null);
-      if (d.moved) { if (d.rect) apply(d.id, d.rect); return; }
+      if (d.moved) { if (d.rect) apply(d.id, d.rect, d.size); return; }
       if (d.size) return;
       // A tap on a bar: pick it up (tap it again to put it down) …
       st.pick = st.pick === d.id ? '' : d.id;
