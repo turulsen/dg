@@ -7481,3 +7481,10 @@ Investigation, Action, Music, Compact) and the Handler's own saved
 layouts ("Mine", kept on the device). Test: `test_acell_play_layouts`;
 `test_acell_play_desk`'s exact-placement checks run with the automatic
 tidy-up off. `sw.js` `CACHE_NAME` v327.
+
+## The combat mat (v3.20.0, PR #107)
+
+Not a bug: a request (2026-11-17). Found while building it: a mat
+fitted to a tall notebook page sat at its top with the room below it
+empty; `fit()` now centres the map in the spare room. No other fixes
+shipped in this release.

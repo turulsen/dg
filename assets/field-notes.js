@@ -383,10 +383,10 @@
   /* ── DOM ── */
   var TRI = url('assets/delta-green-triangle.png');
   var TABS = [
-    { view: 'notes', label: 'Notes' }, { view: 'evidence', label: 'Evidences' },
+    { view: 'notes', label: 'Notes' }, { view: 'evidence', label: 'Evidences' }, { view: 'mat', label: 'Mat' },
     { view: 'rules', label: 'Rules' }, { view: 'settings', label: 'Settings' }
   ];
-  var VIEWS = ['agentfile', 'fieldid', 'req', 'dice', 'notes', 'evidence', 'rules', 'settings'];
+  var VIEWS = ['agentfile', 'fieldid', 'req', 'dice', 'notes', 'evidence', 'mat', 'rules', 'settings'];
 
   // The Agent File paper (assets/agent-sheet.js + .css) is shared with
   // the Agent Hub roster; pages that don't load it get it from here,
@@ -977,9 +977,37 @@
     if (splitOn() && view === 'notes') return ''; // Split: Notes on the right page
     if (view === 'notes' && state.notesMode === 'spread') return 'notes';
     if (view === 'fieldid' && state.fieldIdMode === 'fab') return 'fab';
+    if (view === 'mat' && !splitOn()) return 'mat';   // the mat across both pages
     return '';
   }
+  // The combat mat (2026-11-17): the Cell's mat, live and read-only, drawn
+  // by the Handler in A-Cell (assets/acell-mat.js). Unsubscribed when the
+  // page changes.
+  var matView = null;
+  function pageMat(body) {
+    var a = needAgent(body, 'The mat');
+    if (!a) return;
+    loadingThen(body, function () {
+      var cellId = cellIdFor(a);
+      body.innerHTML = '<p class="fn-muted">Unrolling the mat…</p>';
+      if (!document.querySelector('link[data-dg-mat]')) {
+        var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = url('assets/acell-mat.css'); l.setAttribute('data-dg-mat', '1'); document.head.appendChild(l);
+      }
+      window.dgStore.signInAgent(a.code).then(function () {
+        return loadScriptOnce(url('assets/acell-mat.js'), function () { return !!window.dgMat; });
+      }).then(function () {
+        if (!state.open || state.view !== 'mat') return;
+        if (matView) matView.destroy();
+        body.innerHTML = '<div class="fn-mat"></div>';
+        matView = window.dgMat.view(body.firstChild, { cellId: cellId, code: a.code });
+      }).catch(function (e) {
+        body.innerHTML = '<p class="fn-p">The mat could not be opened: ' + esc((e && e.message) || e) + '</p>';
+      });
+    });
+  }
+
   function render() {
+    if (matView && state.view !== 'mat') { matView.destroy(); matView = null; }
     if (!state.open) return;
     if (splitOn() && state.view === 'agentfile') state.view = state.splitView;
     var view = state.view;
@@ -1003,10 +1031,11 @@
     var body = slot('body');
     if (!persistentSlot) { body.innerHTML = ''; body.scrollTop = 0; body.onclick = null; }
     if (kind === 'notes') { pageNotesSpread(); return; }
+    if (kind === 'mat') { var sp = slot('spread'); sp.innerHTML = '<div class="fn-mat-spread"></div>'; pageMat(sp.firstChild); return; }
     if (kind === 'fab' || persistentSlot === 'embed-fab') { pageFabricator(spread ? slot('spread') : slot('embed-fab'), spread); return; }
     var fn = {
       agentfile: pageAgentFile, fieldid: pageFieldId, req: pageRequisition, dice: pageDice,
-      notes: pageQuickNotes, evidence: pageEvidence, rules: pageRules, settings: pageSettings
+      notes: pageQuickNotes, evidence: pageEvidence, mat: pageMat, rules: pageRules, settings: pageSettings
     }[view];
     if (fn) fn(body);
   }

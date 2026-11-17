@@ -39,6 +39,7 @@
 <link rel="stylesheet" href="assets/acell-vault.css">
 <link rel="stylesheet" href="assets/acell-shell.css">
 <link rel="stylesheet" href="assets/acell-play.css">
+<link rel="stylesheet" href="assets/acell-mat.css">
 <link rel="stylesheet" href="assets/acell-mobile.css">
 <style>
   :root{ --term-green:#3ef07a; --term-green-dim:#1e7a42; }
@@ -2010,6 +2011,8 @@
         return null;
       });
     },
+    // The Handler's signed-in Firebase, Firestore only (the combat mat).
+    signedIn: function () { return ensureHandlerSignedIn().then(function () { return window.firebase; }); },
     // The Handler's signed-in Firebase (v3.9.0: the ID Creator's uploads),
     // with Storage loaded.
     handler: function () {
@@ -7911,6 +7914,7 @@
 <script src="assets/acell-library.js"></script>
 <script src="assets/acell-console.js"></script>
 <script src="assets/acell-players.js"></script>
+<script src="assets/acell-mat.js"></script>
 <script src="assets/acell-play.js"></script>
 <script src="assets/acell-debrief.js"></script>
 <script src="assets/acell-mobile.js"></script>

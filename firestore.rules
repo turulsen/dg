@@ -214,6 +214,15 @@ service cloud.firestore {
     // radio/{channel} -- mirrors RadioChannels (Now Playing). Read is
     // public (every player's Table Radio listens with no auth); only
     // the Handler sets/pauses/resumes/loops a channel.
+    // mats/{cellId} -- the combat mat (2026-11-17): the Handler draws it
+    // in A-Cell, the Cell's Agents watch it in the notebook's Mat tab.
+    // Read like radio/{channel} (a map of the table, nothing private);
+    // only the Handler writes.
+    match /mats/{cellId} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
     match /radio/{channel} {
       allow read: if true;
       allow write: if isHandler();

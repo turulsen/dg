@@ -1,0 +1,63 @@
+/* The combat mat (assets/acell-mat.js): A-Cell's editor and the
+   notebook's Mat tab. Square corners throughout. */
+.mt-board{ position:relative; width:100%; height:100%; min-height:240px; background:#efe6cc; overflow:hidden; }
+.mt-svg{ display:block; width:100%; height:100%; touch-action:none; user-select:none; -webkit-user-select:none; }
+.mt-scale{ position:absolute; right:8px; bottom:8px; background:#1c120a; color:#f2d98a; font:700 12px 'Courier Prime',monospace; padding:4px 8px; pointer-events:auto; }
+.mt-scale input{ width:52px; font:inherit; background:#efe6cc; color:#2a2418; border:0; padding:1px 4px; margin:0 2px; }
+
+/* The Handler's editor */
+.mt-ed{ display:flex; flex-direction:column; height:100%; min-height:0; font-family:'Courier Prime',monospace; color:#e9dfbf; background:#2a1c10; }
+.mt-bar{ display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; padding:6px 8px; font-size:12px; border-bottom:1px solid #6b5a3a; }
+.mt-bar button, .mt-btn, .mt-sel button, .mt-ask button{ font:inherit; font-size:11.5px; background:#e9dfbf; color:#2a2418; border:0; padding:4px 8px; cursor:pointer; border-radius:0; }
+.mt-btn{ display:inline-block; }
+.mt-bar button.on, .mt-tools button.on{ background:#f2d98a; outline:2px solid #a3221c; outline-offset:-2px; }
+.mt-red{ background:#a3221c !important; color:#fff !important; }
+.mt-lab{ color:#b8a878; letter-spacing:.12em; text-transform:uppercase; font-size:10px; }
+.mt-sep{ width:1px; align-self:stretch; background:#6b5a3a; }
+.mt-sw{ display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+.mt-sw input{ accent-color:#7fd1a4; margin:0; }
+.mt-name{ font:inherit; font-size:12px; background:#efe6cc; color:#2a2418; border:0; padding:4px 6px; width:170px; }
+.mt-bgctl{ display:inline-flex; gap:6px; align-items:center; }
+.mt-bgctl[hidden], .mt-sel[hidden], .mt-ask[hidden]{ display:none; }
+.mt-bgctl input[type=range]{ width:90px; accent-color:#f2d98a; }
+.mt-status{ color:#f2d98a; font-size:11.5px; }
+.mt-row{ flex:1; min-height:0; display:flex; }
+.mt-tools{ width:150px; flex:none; display:flex; flex-direction:column; gap:4px; padding:8px; overflow:auto; border-right:1px solid #6b5a3a; }
+.mt-tools .mt-tool{ font:inherit; font-size:11.5px; background:#e9dfbf; color:#2a2418; border:0; padding:4px 7px; text-align:left; cursor:pointer; }
+.mt-tools .mt-lab{ margin-top:6px; }
+.mt-sws{ display:flex; gap:4px; flex-wrap:wrap; }
+.mt-col{ width:18px; height:18px; border:1px solid #1c120a; padding:0; cursor:pointer; }
+.mt-col.on, .mt-wid.on{ outline:2px solid #f2d98a; outline-offset:1px; }
+.mt-wid{ width:26px; height:20px; background:#e9dfbf; border:0; padding:0 4px; display:flex; align-items:center; cursor:pointer; }
+.mt-wid i{ display:block; width:100%; background:#2a2418; }
+.mt-tray{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:3px; }
+.mt-tok, .mt-ag{ background:#e9dfbf; border:0; padding:3px 1px 2px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:1px; min-width:0; color:#2a2418; font:inherit; }
+.mt-tok svg{ width:24px; height:24px; }
+.mt-tok small, .mt-ag small{ font-size:8.5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mt-tok.on, .mt-ag.on{ outline:2px solid #a3221c; outline-offset:-2px; }
+.mt-ag img, .mt-ag b{ width:26px; height:26px; border-radius:50% !important; object-fit:cover; display:flex; align-items:center; justify-content:center; background:#2f6b8f; color:#fff; font-size:11px; border:2px solid #2f6b8f; }
+.mt-ag.on img, .mt-ag.on b{ border-color:#c9a227; }
+.mt-none2{ font-size:11px; color:#b8a878; grid-column:1 / -1; }
+.mt-stage{ flex:1; min-width:0; min-height:0; position:relative; }
+.mt-stage.mt-t-select .mt-svg{ cursor:grab; }
+.mt-stage.mt-t-marker .mt-svg, .mt-stage.mt-t-rect .mt-svg, .mt-stage.mt-t-circle .mt-svg, .mt-stage.mt-t-ruler .mt-svg, .mt-stage.mt-t-scale .mt-svg, .mt-stage.mt-t-tok .mt-svg, .mt-stage.mt-t-ag .mt-svg{ cursor:crosshair; }
+.mt-stage.mt-t-text .mt-svg{ cursor:text; }
+.mt-stage.mt-t-eraser .mt-svg{ cursor:not-allowed; }
+.mt-stage.mt-t-bgmove .mt-svg{ cursor:move; }
+.mt-sel, .mt-ask{ display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; padding:6px 8px; font-size:12px; border-top:1px solid #6b5a3a; }
+.mt-sel b{ font-family:'Special Elite',monospace; font-weight:400; color:#f2d98a; font-size:14px; }
+.mt-sel input, .mt-ask input{ font:inherit; font-size:12px; background:#efe6cc; color:#2a2418; border:0; padding:3px 6px; width:150px; }
+.mt-ask{ background:#1c120a; }
+
+/* The Agents' view */
+.mt-pview{ display:flex; flex-direction:column; height:100%; min-height:420px; }
+.mt-pbar{ display:flex; gap:6px; align-items:center; padding:4px 0 8px; font-family:'Courier Prime',monospace; font-size:12px; color:#2a2418; }
+.mt-title{ font-family:'Special Elite',monospace; font-weight:400; font-size:17px; }
+.mt-sp{ flex:1; }
+.mt-live{ display:inline-flex; align-items:center; gap:5px; color:#a3221c; letter-spacing:.12em; font-size:10.5px; }
+.mt-live i{ width:8px; height:8px; background:#a3221c; display:inline-block; }
+.mt-pb{ font:inherit; font-size:12px; background:#2a2418; color:#f4ead2; border:0; padding:4px 9px; cursor:pointer; border-radius:0; }
+.mt-pb.on{ background:#a3221c; }
+.mt-host{ flex:1; min-height:360px; position:relative; border:1px solid #b8a878; }
+.mt-host[hidden]{ display:none; }
+.mt-none{ padding:30px 10px; text-align:center; color:#6b5a3a; font-family:'Courier Prime',monospace; }
