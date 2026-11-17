@@ -908,6 +908,14 @@ same tab lists and uploads the stock (file names as in the pack:
 PR #94).** The tabs above still exist, but A-Cell now works in three
 modes: **Prep** (a folder with index tabs, *Session prep* first),
 **Play** (a desk you arrange on a 12-column grid) and **Debrief**.
+- **Arranging Play** (`assets/acell-play.js`, since v3.19.3): the
+  Arrange bar has five layouts (Session, Investigation, Action, Music,
+  Compact; what one doesn't use is put away), "Mine" (layouts saved
+  under a name, `dg_acell_desk_mine` on the device), **Close the gaps**
+  and a switch to close them after each move (on by default,
+  `autoClose` in `dg_acell_desk_v3`). An object dropped mostly onto one
+  of about its size trades places with it; otherwise what it covers goes
+  to the nearest free place.
 - **Sessions** (`assets/acell-sessions.js`, Firestore `sessions/{id}`,
   Handler-only): Cell, operation, date, the evidence and NPCs for the
   night, quick notes, the Agents' vitals when Play began, the debrief.
