@@ -4587,6 +4587,19 @@ def test_acell_mobile_cells_add(p):
     page.wait_for_timeout(700)
     record("acell-mobile", "on a phone, a tick in the Cell's add list survives the panel redrawing (a vault sync)",
            page.is_checked(f"[data-add-select] input[value='{first}']"), "")
+    # Scrolled down the list, the panel redraws: the list stays where it was
+    # (2026-11-17: it jumped back to the top) -- whether the redraw changes
+    # nothing (a vault sync) or something (a tick changed what it shows).
+    page.evaluate("() => { const l = document.querySelector('[data-add-select]'); l.scrollTop = 200; }")
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('dg-vault'))")
+    page.wait_for_timeout(700)
+    st1 = page.evaluate("() => document.querySelector('[data-add-select]').scrollTop")
+    page.evaluate("() => { const l = document.querySelector('[data-add-select]'); const b = [...l.querySelectorAll('input')][6]; b.click(); }")
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('dg-tapes'))")
+    page.wait_for_timeout(300)
+    st2 = page.evaluate("() => document.querySelector('[data-add-select]').scrollTop")
+    record("acell-mobile", "the add list keeps its scroll when the panel redraws", st1 >= 190 and st2 >= 190, str((st1, st2)))
+    page.evaluate("() => { const l = document.querySelector('[data-add-select]'); const b = [...l.querySelectorAll('input')][6]; b.click(); }")
     page.locator("[data-add-btn]").first.scroll_into_view_if_needed()
     page.tap("[data-add-btn] >> nth=0")
     wait_for_condition(lambda: first in ((fs_doc(page, "cells/cell_osiris") or {}).get("member_codes") or []), timeout_ms=5000)

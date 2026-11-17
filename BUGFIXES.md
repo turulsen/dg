@@ -7499,3 +7499,17 @@ now (Agents first, then Friendlies, with a search box), and what's
 ticked and the search are kept per Cell (`addPick`) across redraws.
 Tests: `test_acell_mobile_cells_add` (fails on the old code),
 `test_acell_cells` updated. `sw.js` `CACHE_NAME` v329.
+
+## The Cell's add list jumped back to its top (v3.20.1)
+
+Reported 2026-11-17 from an iPhone, right after v3.20.0: the tick list
+for adding Agents to a Cell (v3.20.0's fix for the closing iPhone
+picker) kept its ticks, but scrolled back to the top while being
+scrolled. That fix was partial: it kept what was ticked across the
+Cells panel's redraws (a vault sync, a tape loading), but each redraw
+still replaced the list, and with it its scroll position. Now
+`renderGroups()` leaves the panel alone when nothing it shows changed
+(the usual case for a vault sync), and when it does redraw it puts each
+list's scroll and the search box's focus and caret back. Test:
+`test_acell_mobile_cells_add` (scroll kept across both kinds of redraw;
+fails on the old code). `sw.js` `CACHE_NAME` v330.

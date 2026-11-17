@@ -3453,6 +3453,7 @@
   });
 
   var addPick = {};   // per Cell: { codes: { code: true }, q } -- survives redraws
+  var lastGroupsHtml = '';
   function renderGroups() {
     // dgTapes loads once (its promise is kept); its dg-tapes event redraws.
     if (window.dgTapes && window.dgTapes.load) window.dgTapes.load().catch(function () {});
@@ -3460,7 +3461,7 @@
       groupsEl.innerHTML = '<div class="cells-empty-note">No Cells yet -- click "+ Create Cell" to start one.</div>';
       return;
     }
-    groupsEl.innerHTML = cells.map(function (c, i) {
+    var html = cells.map(function (c, i) {
       var members = c.member_codes.map(function (code, mi) {
         var nm = agentName(code);
         return '<div class="cell-member-row"><span class="cmr-ph" aria-hidden="true">' + escapeHtml(String(nm).split(/\s+/).map(function (w) { return w.charAt(0); }).join('').slice(0, 2).toUpperCase()) + '</span><span class="cmr-name">' + escapeHtml(nm) + '</span>' +
@@ -3508,6 +3509,16 @@
           : '') +
         '</div>';
     }).join('');
+    // Nothing it shows changed (a vault sync, a tape loading usually):
+    // leave it be, so a list being scrolled or a box being typed in stays
+    // put (2026-11-17, an iPhone: the add list jumped back to its top).
+    if (html === lastGroupsHtml && groupsEl.querySelector('.cell-card')) return;
+    lastGroupsHtml = html;
+    var keep = {}, act = document.activeElement, actQ = act && act.getAttribute && act.getAttribute('data-add-q'), caret = actQ != null ? act.selectionStart : null;
+    Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-add-select]'), function (l) { keep[l.getAttribute('data-add-select')] = l.scrollTop; });
+    groupsEl.innerHTML = html;
+    Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-add-select]'), function (l) { var k = l.getAttribute('data-add-select'); if (keep[k]) l.scrollTop = keep[k]; });
+    if (actQ != null) { var q2 = groupsEl.querySelector('[data-add-q="' + actQ + '"]'); if (q2) { q2.focus(); try { q2.setSelectionRange(caret, caret); } catch (e) { /* not a text box */ } } }
 
     Array.prototype.forEach.call(groupsEl.querySelectorAll('[data-cell-ch]'), function (btn) {
       btn.addEventListener('click', function () {
