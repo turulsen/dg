@@ -2781,7 +2781,7 @@ def test_acell_cells(p):
     # includes every NOT-yet-added Agent's name, so a plain "is Owen's
     # name anywhere in this card" check is already true before the add
     # even happens (he's sitting right there as an unselected option).
-    page.select_option('[data-add-select="0"]', "OWEN-CS12")
+    page.check('[data-add-select="0"] input[value="OWEN-CS12"]')
     page.click('[data-add-btn="0"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == alpha_id
                         and set(b.get("member_codes", [])) == {"OWEN-CS12"})
@@ -2801,7 +2801,7 @@ def test_acell_cells(p):
     page.click("#cells-new-confirm")
     bravo_id = wait_cell_write_and_sync(lambda w: w["data"].get("name") == "Cell Bravo")
     wait_for_condition(lambda: page.locator('.cell-card[data-i="1"]').count() > 0)
-    page.select_option('[data-add-select="1"]', "OWEN-CS12")
+    page.check('[data-add-select="1"] input[value="OWEN-CS12"]')
     page.click('[data-add-btn="1"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == bravo_id
                         and set(b.get("member_codes", [])) == {"OWEN-CS12"})
@@ -2825,10 +2825,18 @@ def test_acell_cells(p):
     # Bulk add: Cell Bravo currently only has Owen -- select both Priya
     # and Marcus at once and confirm one Add Selected click sends both
     # codes in a single update_cell_members call, not two.
-    add_select = page.locator('[data-add-select="1"]')
-    record("acell", "the Add row is a multi-select, not one Agent at a time",
-           add_select.evaluate("el => el.multiple") is True, "")
-    add_select.select_option(["PRIY-AN34", "MARC-9XQ2"])
+    record("acell", "the Add row is a tick list (more than one at a time), not a <select> (2026-11-17: an iPhone picker closed mid-scroll)",
+           page.locator('[data-add-select="1"] input[type=checkbox]').count() >= 2 and page.locator('select[data-add-select]').count() == 0, "")
+    page.check('[data-add-select="1"] input[value="PRIY-AN34"]')
+    # A redraw (a vault sync, a tape loading) keeps what's ticked.
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('dg-tapes'))")
+    page.wait_for_timeout(200)
+    record("acell", "what's ticked survives the panel redrawing", page.is_checked('[data-add-select="1"] input[value="PRIY-AN34"]')
+           and "(1)" in page.inner_text('[data-add-btn="1"]'), page.inner_text('[data-add-btn="1"]'))
+    page.fill('[data-add-q="1"]', "marc")
+    shown = page.eval_on_selector_all('[data-add-select="1"] .cell-pick-row:not([hidden])', "els => els.map(e => e.querySelector('input').value)")
+    record("acell", "the search narrows the list (what's ticked stays in view)", "MARC-9XQ2" in shown and "PRIY-AN34" in shown and len(shown) == 2, str(shown))
+    page.check('[data-add-select="1"] input[value="MARC-9XQ2"]')
     page.click('[data-add-btn="1"]')
     wait_post_and_sync(lambda b: b.get("action") == "update_cell_members" and b.get("cell_id") == bravo_id
                         and set(b.get("member_codes", [])) == {"OWEN-CS12", "PRIY-AN34", "MARC-9XQ2"})
@@ -4562,6 +4570,28 @@ def test_acell_play_layouts(p):
     page.click(".pd-drawer [data-pd=close-gaps]")
     record("acell-layouts", "Close the gaps leaves a tidy desk", max(r["y"] + r["h"] for r in lay()["items"].values()) == 18, str(lay()["items"]))
     record("acell-layouts", "no JS errors (layouts)", not errs, str(errs))
+    page.close()
+
+def test_acell_mobile_cells_add(p):
+    """2026-11-17, on an iPhone: adding a player to a Cell failed -- the
+    multi-select opened iOS's picker, which closed mid-scroll and showed 0
+    chosen (the Cells panel redraws on a vault sync or a tape loading).
+    It's a tick list now; a redraw keeps the ticks; one tap adds them."""
+    page, errs = open_phone(p)
+    page.evaluate("() => dgAcm.go('cells')")
+    page.wait_for_selector("[data-add-select] input[type=checkbox]", state="attached", timeout=6000)
+    first = page.eval_on_selector("[data-add-select] input[type=checkbox]", "e => e.value")
+    page.locator(f"[data-add-select] input[value='{first}']").scroll_into_view_if_needed()
+    page.tap(f"[data-add-select] input[value='{first}']")
+    page.evaluate("() => document.dispatchEvent(new CustomEvent('dg-vault'))")
+    page.wait_for_timeout(700)
+    record("acell-mobile", "on a phone, a tick in the Cell's add list survives the panel redrawing (a vault sync)",
+           page.is_checked(f"[data-add-select] input[value='{first}']"), "")
+    page.locator("[data-add-btn]").first.scroll_into_view_if_needed()
+    page.tap("[data-add-btn] >> nth=0")
+    wait_for_condition(lambda: first in ((fs_doc(page, "cells/cell_osiris") or {}).get("member_codes") or []), timeout_ms=5000)
+    record("acell-mobile", "...and Add Selected adds them to the Cell", first in ((fs_doc(page, "cells/cell_osiris") or {}).get("member_codes") or []), str(fs_doc(page, "cells/cell_osiris")))
+    record("acell-mobile", "no JS errors (phone Cells add)", not errs, str(errs))
     page.close()
 
 def test_acell_combat_mat(p):
@@ -15274,6 +15304,7 @@ def main():
         safe(test_acell_tape_steps_by_clock, browser, area="acell-tapes")
         safe(test_acell_play_layouts, browser, area="acell-layouts")
         safe(test_acell_combat_mat, browser, area="acell-mat")
+        safe(test_acell_mobile_cells_add, browser, area="acell-mobile")
         safe(test_notebook_mat, browser, area="notebook-mat")
         safe(test_table_radio_loop_mid_track, browser, area="radio")
         safe(test_acell_in_shell, browser, area="acell-shell-hub")
