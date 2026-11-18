@@ -206,7 +206,7 @@
     if (st.mat && st.matHost === host && st.matCell === s.cell_id) { st.mat.refreshAgents(); return; }
     if (st.mat) st.mat.destroy();
     st.matHost = host; st.matCell = s.cell_id;
-    st.mat = window.dgMat.editor(host, { cellId: s.cell_id, members: matMembers });
+    st.mat = window.dgMat.editor(host, { cellId: s.cell_id, members: matMembers, npcs: function () { return window.dgMat.npcsOf(A.session()); } });
   }
 
   /* ── Initiative: the phone's post-its on the desk (2026-11-02, replacing

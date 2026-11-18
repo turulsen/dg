@@ -293,6 +293,7 @@
       return { code: a.code, name: a.name, photo: /^(https?:|data:)/.test(url) ? url : '' };
     });
   }
+  function matNpcs() { return window.dgMat.npcsOf(A.session()); }
   var matEd = null;
   C.screen('mat', {
     mode: 'play', tab: 'mat',
@@ -305,12 +306,12 @@
         html: '<div class="acm-mat" data-cell="' + esc(s.cell_id) + '"></div>',
         update: function (el) {
           var box = el.querySelector('.acm-mat');
-          if (box && box.getAttribute('data-cell') !== s.cell_id) { if (matEd) matEd.destroy(); box.setAttribute('data-cell', s.cell_id); matEd = window.dgMat.editor(box, { cellId: s.cell_id, members: matMembers, phone: true }); }
+          if (box && box.getAttribute('data-cell') !== s.cell_id) { if (matEd) matEd.destroy(); box.setAttribute('data-cell', s.cell_id); matEd = window.dgMat.editor(box, { cellId: s.cell_id, members: matMembers, npcs: matNpcs, phone: true }); }
           else if (matEd) matEd.refreshAgents();
         },
         after: function (el) {
           if (matEd) matEd.destroy();
-          matEd = window.dgMat.editor(el.querySelector('.acm-mat'), { cellId: s.cell_id, members: matMembers, phone: true });
+          matEd = window.dgMat.editor(el.querySelector('.acm-mat'), { cellId: s.cell_id, members: matMembers, npcs: matNpcs, phone: true });
           return function () { if (matEd) { matEd.destroy(); matEd = null; } };
         }
       };

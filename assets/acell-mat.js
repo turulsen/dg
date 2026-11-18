@@ -2,11 +2,20 @@
 
    One mat per Cell, mats/{cellId} in Firestore (Handler writes, anyone
    reads, like radio/{channel}):
-     { title, scale (metres per dot), shown, items: [...], bg, ruler, updated_at }
+     { title, scale (metres per dot), shown, items: [...], bg, ruler,
+       dots: 'black'|'white', agents_move (false: the Agents can't move
+       their tokens), updated_at }
+   and mats/{cellId}/moves/{agentCode}: { x, y, at } -- where an Agent
+   dragged their own token in the notebook (2026-11-18). It overrides the
+   token's spot on both sides until the Handler moves that token again
+   (which deletes it).
    Everything is in dots (map units): an item is
      { id, t: 'path'|'rect'|'circle'|'text'|'token'|'agent', x, y, w, h,
        r (degrees), c (colour), sw (line width), pts: [[x, y], ...] (path),
-       text, tok (token kind), code, name, photo (agent), label }
+       text, tok (token kind), code, name, photo (agent), label;
+       an NPC from the session's Initiative (t: 'npc'): key (their name,
+       lower case), name, photo, hid (hidden: the Handler's eyes only),
+       out (down, or out of the order: greyed) }
    bg: { url, x, y, w, h, op (0..1), locked }.
 
    window.dgMat.editor(host, { cellId, members: [{ code, name, photo }] })
@@ -55,6 +64,18 @@
   function fb() { return window.firebase; }
   function signedIn() { var A = window.dgAcellApi; return A && A.signedIn ? A.signedIn() : A.handler(); }
   function matRef(cellId) { return fb().firestore().collection('mats').doc(cellId); }
+  function movesRef(cellId) { return matRef(cellId).collection('moves'); }
+  var DOTS = { black: '#1c120a', white: '#ffffff' };
+  function readMoves(snap) {
+    var out = {};
+    snap.forEach(function (d) { var v = d.data() || {}; if (typeof v.x === 'number' && typeof v.y === 'number') out[d.id] = { x: v.x, y: v.y, at: v.at || 0 }; });
+    return out;
+  }
+  // An Agent's token where they last dragged it (moves/{code}), if they did.
+  function placed(it, moves) {
+    var m = it.t === 'agent' && moves && moves[it.code];
+    return m ? Object.assign({}, it, { x: m.x, y: m.y }) : it;
+  }
 
   /* ── Drawing the mat (both sides) ── */
   function itemSvg(it, opts) {
@@ -75,6 +96,15 @@
       return '<g' + data + ' transform="translate(' + it.x + ' ' + it.y + ')' + (it.r ? ' rotate(' + it.r + ' ' + it.w / 2 + ' ' + it.h / 2 + ')' : '') + '">' + T.draw(it.w, it.h) +
         '<rect x="0" y="0" width="' + it.w + '" height="' + it.h + '" fill="transparent"/></g>' +
         (it.label ? '<text x="' + (it.x + it.w / 2) + '" y="' + (it.y + it.h + .75) + '" text-anchor="middle" font-size=".6" font-family="Courier Prime,monospace" fill="#2a2418" paint-order="stroke" stroke="#efe6cc" stroke-width=".15">' + esc(it.label) + '</text>' : '');
+    }
+    if (it.t === 'npc') {
+      var nx = it.x + it.w / 2, ny = it.y + it.h / 2, nr = Math.min(it.w, it.h) / 2, nclip = 'cl' + it.id;
+      var col = it.out ? '#7a7a7a' : '#a3221c';
+      var nface = /^(https?:|data:)/.test(it.photo || '') && !it.hid
+        ? '<clipPath id="' + nclip + '"><circle cx="' + nx + '" cy="' + ny + '" r="' + nr * .9 + '"/></clipPath><image href="' + esc(it.photo) + '" x="' + (nx - nr) + '" y="' + (ny - nr) + '" width="' + nr * 2 + '" height="' + nr * 2 + '" preserveAspectRatio="xMidYMid slice" clip-path="url(#' + nclip + ')"' + (it.out ? ' opacity=".5"' : '') + '/>'
+        : '<text x="' + nx + '" y="' + (ny + nr * .3) + '" text-anchor="middle" font-size="' + nr * .8 + '" font-family="Courier Prime,monospace" font-weight="700" fill="' + (it.hid ? col : '#fff') + '">' + esc(initials(it.name)) + '</text>';
+      return '<g' + data + ' class="mt-npc' + (it.hid ? ' mt-hid' : '') + (it.out ? ' mt-out' : '') + '"' + (it.out ? ' opacity=".7"' : '') + '><circle cx="' + nx + '" cy="' + ny + '" r="' + nr + '" fill="' + (it.hid ? 'rgba(239,230,204,.6)' : col) + '" stroke="' + col + '" stroke-width="' + nr * .2 + '"' + (it.hid ? ' stroke-dasharray="' + nr * .35 + ' ' + nr * .25 + '"' : '') + '/>' + nface +
+        '<text x="' + nx + '" y="' + (ny + nr + .7) + '" text-anchor="middle" font-size=".55" font-family="Courier Prime,monospace" fill="#2a2418" paint-order="stroke" stroke="#efe6cc" stroke-width=".15">' + esc(it.name || '') + '</text></g>';
     }
     if (it.t === 'agent') {
       var cx = it.x + it.w / 2, cy = it.y + it.h / 2, rr = Math.min(it.w, it.h) / 2, clip = 'cl' + it.id;
@@ -103,6 +133,7 @@
     var self = this;
     this.host = host; this.opts = opts || {};
     this.doc = { scale: 1, items: [], bg: null, shown: false };
+    this.moves = {};     // mats/{cell}/moves: where the Agents put their tokens
     this.view = { x: -1, y: -1, w: 40, h: 26 };
     host.innerHTML = '<div class="mt-board"><svg class="mt-svg" xmlns="' + NS + '"></svg><div class="mt-scale"></div></div>';
     this.svg = host.querySelector('.mt-svg');
@@ -167,9 +198,10 @@
   Board.prototype.fit = function () {
     var xs = [], ys = [];
     (this.doc.items || []).forEach(function (it) {
+      it = placed(it, this.moves);
       if (it.pts) it.pts.forEach(function (p) { xs.push(p[0]); ys.push(p[1]); });
       else { xs.push(it.x, it.x + (it.w || 0)); ys.push(it.y, it.y + (it.h || 0)); }
-    });
+    }, this);
     var bg = this.doc.bg;
     if (bg && bg.url) { xs.push(bg.x, bg.x + bg.w); ys.push(bg.y, bg.y + bg.h); }
     var r = this.svg.getBoundingClientRect(), asp = r.width && r.height ? r.height / r.width : .65;
@@ -186,12 +218,13 @@
     var r = this.svg.getBoundingClientRect();
     if (r.width && r.height) v.h = v.w * r.height / r.width;
     this.svg.setAttribute('viewBox', v.x + ' ' + v.y + ' ' + v.w + ' ' + v.h);
-    var s = '<defs><pattern id="mtdots' + (o.uid || '') + '" width="1" height="1" patternUnits="userSpaceOnUse"><circle cx=".5" cy=".5" r=".055" fill="' + (d.bg && d.bg.url ? '#ffffff' : '#8a7a55') + '"/></pattern></defs>';
+    var s = '<defs><pattern id="mtdots' + (o.uid || '') + '" width="1" height="1" patternUnits="userSpaceOnUse"><circle cx=".5" cy=".5" r=".055" fill="' + (DOTS[d.dots] || DOTS.black) + '"/></pattern></defs>';
     s += '<rect x="' + (v.x - 2) + '" y="' + (v.y - 2) + '" width="' + (v.w + 4) + '" height="' + (v.h + 4) + '" fill="#efe6cc"/>';
     if (d.bg && d.bg.url) s += '<image class="mt-bg" href="' + esc(d.bg.url) + '" x="' + d.bg.x + '" y="' + d.bg.y + '" width="' + d.bg.w + '" height="' + d.bg.h + '" preserveAspectRatio="none" opacity="' + (d.bg.op == null ? .6 : d.bg.op) + '"/>';
     s += '<rect x="' + (v.x - 2) + '" y="' + (v.y - 2) + '" width="' + (v.w + 4) + '" height="' + (v.h + 4) + '" fill="url(#mtdots' + (o.uid || '') + ')" pointer-events="none"/>';
-    var items = (d.items || []).filter(function (it) { return !(o.readOnly && it.hid); });
-    var order = { path: 0, rect: 1, circle: 1, text: 2, token: 3, agent: 4 };
+    var mv = this.moves;
+    var items = (d.items || []).filter(function (it) { return !(o.readOnly && it.hid); }).map(function (it) { return placed(it, mv); });
+    var order = { path: 0, rect: 1, circle: 1, text: 2, token: 3, npc: 4, agent: 4 };
     items.slice().sort(function (a, b) { return (order[a.t] || 0) - (order[b.t] || 0); }).forEach(function (it) { s += itemSvg(it, o); });
     if (d.ruler && d.ruler.a) s += rulerSvg(d.ruler.a, d.ruler.b, d.scale || 1);
     if (this.local) s += rulerSvg(this.local.a, this.local.b, d.scale || 1, '#2f6b8f');
@@ -205,10 +238,25 @@
     host.innerHTML = '<div class="mt-pview"><div class="mt-pbar"><span class="mt-live"><i></i>LIVE</span><b class="mt-title"></b><span class="mt-sp"></span>' +
       '<button type="button" class="mt-pb" data-mv="out" aria-label="Zoom out">−</button><button type="button" class="mt-pb" data-mv="in" aria-label="Zoom in">+</button>' +
       '<button type="button" class="mt-pb" data-mv="fit">Fit</button><button type="button" class="mt-pb" data-mv="ruler">Ruler</button><button type="button" class="mt-pb mt-exit" data-mv="exit">Exit</button></div>' +
+      '<div class="mt-hint" hidden>Drag your token (ringed) to move it.</div>' +
       '<div class="mt-host"></div><div class="mt-none" hidden>No map on the table.</div></div>';
     var root = host.firstChild, bh = root.querySelector('.mt-host');
     var b = new Board(bh, { readOnly: true, code: opts.code, uid: 'p' });
-    var ruler = false, drag = null, fitted = false, unsub = null;
+    var ruler = false, drag = null, fitted = false, unsub = null, unsubM = null, sendT = null, lastSent = 0;
+    // Their own token: on the mat, and the Handler lets them move it.
+    function mine() { return (b.doc.items || []).filter(function (it) { return it.t === 'agent' && it.code === opts.code; })[0] || null; }
+    function canMove() { return !!(opts.code && b.doc.shown && b.doc.agents_move !== false && mine()); }
+    function hint() { root.querySelector('.mt-hint').hidden = !canMove(); }
+    // Sent while dragging (a few times a second, so the table sees it move)
+    // and once more where it lands.
+    function sendMove(x, y, now) {
+      clearTimeout(sendT);
+      var go = function () {
+        lastSent = Date.now();
+        try { movesRef(opts.cellId).doc(opts.code).set({ x: x, y: y, at: lastSent }).catch(function () { /* the Handler turned it off */ }); } catch (e) { /* offline */ }
+      };
+      if (now || Date.now() - lastSent > 180) go(); else sendT = setTimeout(go, 180);
+    }
     root.addEventListener('click', function (e) {
       var k = e.target.closest('[data-mv]');
       if (!k) return;
@@ -229,31 +277,60 @@
     }
     var stopRot = fullScreenRotate(root, b, portal);
     b.svg.addEventListener('pointerdown', function (e) {
-      var p = b.pt(e);
+      var p = b.pt(e), own = !ruler && canMove() && e.target.closest && e.target.closest('.mt-mine');
+      if (own) {
+        var at = placed(mine(), b.moves);
+        drag = { tok: true, off: [p[0] - at.x, p[1] - at.y] };
+        try { b.svg.setPointerCapture(e.pointerId); } catch (err) { /* old Safari */ }
+        return;
+      }
       drag = { p: p, cx: e.clientX, cy: e.clientY, v: clone(b.view), ruler: ruler };
       if (ruler) b.local = { a: p, b: p };
       try { b.svg.setPointerCapture(e.pointerId); } catch (err) { /* old Safari */ }
     });
     b.svg.addEventListener('pointermove', function (e) {
       if (!drag) return;
+      if (drag.tok) {
+        var q = b.pt(e), nx = r2(q[0] - drag.off[0]), ny = r2(q[1] - drag.off[1]);
+        b.moves[opts.code] = { x: nx, y: ny, at: Date.now() }; b.draw();
+        sendMove(nx, ny);
+        return;
+      }
       if (drag.ruler) { b.local.b = b.pt(e); b.draw(); return; }
       var r = b.svg.getBoundingClientRect(), k = drag.v.w / r.width;
       b.view.x = drag.v.x - (e.clientX - drag.cx) * k; b.view.y = drag.v.y - (e.clientY - drag.cy) * k; b.draw();
     });
-    b.svg.addEventListener('pointerup', function () { drag = null; });
+    b.svg.addEventListener('pointerup', function () {
+      var d = drag; drag = null;
+      if (d && d.tok && b.moves[opts.code]) {
+        // It lands on the nearest half-dot.
+        var m = b.moves[opts.code], sx = Math.round(m.x * 2) / 2, sy = Math.round(m.y * 2) / 2;
+        b.moves[opts.code] = { x: sx, y: sy, at: Date.now() }; b.draw();
+        sendMove(sx, sy, true);
+      }
+    });
+    b.svg.addEventListener('pointercancel', function () { drag = null; });
     function apply(d) {
       var none = !d || !d.shown;
       root.querySelector('.mt-none').hidden = !none;
       bh.hidden = none;
-      if (none) return;
+      if (none) { b.doc = d || b.doc; hint(); return; }
       b.doc = d;
+      if (drag && drag.tok && !canMove()) drag = null;
+      hint();
       root.querySelector('.mt-title').textContent = d.title || 'The mat';
       if (!fitted) { fitted = true; setTimeout(function () { b.fit(); }, 0); } else b.draw();
     }
     try {
       unsub = matRef(opts.cellId).onSnapshot(function (snap) { apply(snap.exists ? snap.data() : null); }, function () { apply(null); });
+      unsubM = movesRef(opts.cellId).onSnapshot(function (snap) {
+        var m = readMoves(snap);
+        // Mid-drag, this screen's own token stays under the finger.
+        if (drag && drag.tok && b.moves[opts.code]) m[opts.code] = b.moves[opts.code];
+        b.moves = m; if (b.doc && b.doc.shown) b.draw();
+      }, function () { /* moves are extra; the mat still shows */ });
     } catch (e) { apply(null); }
-    return { destroy: function () { stopRot(); if (unsub) unsub(); unsub = null; if (root.parentNode) root.parentNode.removeChild(root); host.innerHTML = ''; }, board: b };
+    return { destroy: function () { stopRot(); clearTimeout(sendT); if (unsub) unsub(); if (unsubM) unsubM(); unsub = unsubM = null; if (root.parentNode) root.parentNode.removeChild(root); host.innerHTML = ''; }, board: b };
   }
   // Sideways on a phone the mat takes the screen (CSS); Exit leaves that
   // until the phone is turned upright again. The board redraws for its
@@ -283,6 +360,8 @@
         '<button type="button" class="mt-ph mt-exit" data-mt="exit">Exit</button>' +
         '<span class="mt-lab">Map</span><input class="mt-name" type="text" maxlength="60" placeholder="Name this map">' +
         '<span class="mt-sep"></span><label class="mt-sw"><input type="checkbox" data-mt="shown"> Shown to the Agents</label>' +
+        '<span class="mt-sep"></span><span class="mt-dots"><span class="mt-lab">Dots</span><span class="mt-seg"><button type="button" data-mt="dots" data-v="black">Black</button><button type="button" data-mt="dots" data-v="white">White</button></span></span>' +
+        '<label class="mt-sw mt-sw2"><input type="checkbox" data-mt="amove"> Agents move their own tokens</label>' +
         '<span class="mt-sep"></span><button type="button" data-mt="undo">Undo</button><button type="button" class="mt-ph" data-mt="more" aria-label="More">⋯</button><button type="button" data-mt="redo">Redo</button>' +
         '<button type="button" data-mt="fit">Fit</button><button type="button" class="mt-red" data-mt="clear">Clear the mat</button>' +
         '<span class="mt-sep"></span><span class="mt-lab">Background</span><label class="mt-btn">Upload photo…<input type="file" accept="image/*" hidden data-mt="bgfile"></label>' +
@@ -304,15 +383,60 @@
           var T = TOKENS[k], s = Math.max(T.w, T.h);
           return '<button type="button" class="mt-tok" data-mt="tool" data-tool="tok:' + k + '" title="' + esc(T.name) + '"><svg viewBox="' + (-(s - T.w) / 2 - .1) + ' ' + (-(s - T.h) / 2 - .1) + ' ' + (s + .2) + ' ' + (s + .2) + '">' + T.draw(T.w, T.h) + '</svg><small>' + esc(T.name) + '</small></button>';
         }).join('') + '</div>' +
-        '<span class="mt-lab">Agents</span><div class="mt-tray mt-agents"></div></div>' +
+        '<span class="mt-lab">Agents</span><div class="mt-tray mt-agents"></div>' +
+        '<span class="mt-lab">NPCs · this session\'s Initiative</span><div class="mt-npcs"></div></div>' +
       '</div><div class="mt-stage"></div></div>' +
       '<div class="mt-sel" hidden></div><div class="mt-ask" hidden></div></div>';
     var root = host.firstChild, stage = root.querySelector('.mt-stage');
     var b = new Board(stage, { uid: 'h' + Math.random().toString(36).slice(2, 6), editScale: true });
     var st = { tool: 'select', col: 0, wid: 1, sel: '', drag: null, undo: [], redo: [], dirty: false, lastWrite: 0, fitted: false, pending: null };
-    var unsub = null, saveT = null, rulerT = null;
+    var unsub = null, unsubM = null, saveT = null, rulerT = null;
 
     function members() { return (opts.members && opts.members()) || []; }
+    // The session's NPCs: [{ key, name, photo, dex, hidden, out, down }].
+    function npcs() { return (opts.npcs && opts.npcs()) || []; }
+    function drawNpcTray() {
+      var box = root.querySelector('.mt-npcs');
+      box.innerHTML = npcs().map(function (n) {
+        var on = (b.doc.items || []).some(function (it) { return it.t === 'npc' && it.key === n.key; });
+        var face = /^(https?:|data:)/.test(n.photo || '') ? '<img src="' + esc(n.photo) + '" alt="">' : '<b>' + esc(initials(n.name)) + '</b>';
+        var note = on ? 'on the mat' : n.hidden ? 'hidden' : n.down ? 'down' : n.out ? 'not in the order' : n.dex ? 'DEX ' + n.dex : '';
+        return '<button type="button" class="mt-npc' + (n.hidden ? ' hid' : '') + (n.out || n.down ? ' out' : '') + '" data-mt="tool" data-tool="npc:' + esc(n.key) + '" title="' + esc(n.name) + (on ? ' (on the mat: tap, then tap where they go)' : '') + '">' + face + '<span>' + esc(n.name) + '</span><small>' + esc(note) + '</small></button>';
+      }).join('') || '<span class="mt-none2">No NPCs in this session.</span>';
+    }
+    // An NPC's token follows Initiative: hidden there, hidden from the
+    // Agents here; down or out of the order, greyed.
+    function syncNpcs() {
+      var list = npcs(), by = {}, changed = false;
+      if (!list.length) return;
+      list.forEach(function (n) { by[n.key] = n; });
+      (b.doc.items || []).forEach(function (it) {
+        var n = it.t === 'npc' && by[it.key];
+        if (!n) return;
+        var hid = !!n.hidden, out = !!(n.out || n.down), photo = n.photo || '';
+        if (!!it.hid !== hid || !!it.out !== out || (it.photo || '') !== photo || it.name !== n.name) { it.hid = hid; it.out = out; it.photo = photo; it.name = n.name; changed = true; }
+      });
+      // Saved once the mat is loaded (or already edited here), so a mat
+      // not yet in can't be overwritten.
+      if (changed) { redraw(); if (st.loaded) save(); }
+    }
+    // The Agents' own moves (mats/{cell}/moves/{code}) end when the Handler
+    // moves or removes that token.
+    function dropMoves(codes) {
+      codes.forEach(function (code) {
+        if (!b.moves[code]) return;
+        delete b.moves[code];
+        signedIn().then(function () { return movesRef(cellId).doc(code).delete(); }).catch(function () { /* already gone */ });
+      });
+    }
+    function agentCodes(items) { return (items || []).filter(function (x) { return x.t === 'agent'; }).map(function (x) { return x.code; }); }
+    // Folds an Agent's own move into the token before the Handler handles it.
+    function settle(it) {
+      var m = it && it.t === 'agent' && b.moves[it.code];
+      if (!m) return;
+      it.x = m.x; it.y = m.y;
+      dropMoves([it.code]);
+    }
     function drawAgentsTray() {
       root.querySelector('.mt-agents').innerHTML = members().map(function (m) {
         var on = (b.doc.items || []).some(function (it) { return it.t === 'agent' && it.code === m.code; });
@@ -336,6 +460,8 @@
         root.querySelector('[data-mt="bglock"]').textContent = bg.locked ? 'Unlock' : 'Lock';
       }
       root.querySelector('[data-mt="shown"]').checked = !!b.doc.shown;
+      root.querySelector('[data-mt="amove"]').checked = b.doc.agents_move !== false;
+      Array.prototype.forEach.call(root.querySelectorAll('[data-mt="dots"]'), function (x) { x.classList.toggle('on', x.getAttribute('data-v') === (b.doc.dots || 'black')); });
       var nm = root.querySelector('.mt-name');
       if (document.activeElement !== nm) nm.value = b.doc.title || '';
       stage.className = 'mt-stage mt-t-' + st.tool.split(':')[0];
@@ -345,10 +471,10 @@
       var it = selected(), box = root.querySelector('.mt-sel');
       b.extra = '';
       if (!it) { box.hidden = true; return; }
-      var bb = it.t === 'path' ? bounds(it.pts) : { x: it.x, y: it.y, w: it.w || 1, h: it.h || 1 };
+      var pl = placed(it, b.moves), bb = it.t === 'path' ? bounds(it.pts) : { x: pl.x, y: pl.y, w: it.w || 1, h: it.h || 1 };
       b.extra = '<rect x="' + (bb.x - .3) + '" y="' + (bb.y - .3) + '" width="' + (bb.w + .6) + '" height="' + (bb.h + .6) + '" fill="none" stroke="#2f6b8f" stroke-width=".1" stroke-dasharray=".35 .2" pointer-events="none"/>' +
-        (it.t !== 'path' && it.t !== 'text' && it.t !== 'agent' ? '<rect class="mt-handle" x="' + (bb.x + bb.w - .1) + '" y="' + (bb.y + bb.h - .1) + '" width=".7" height=".7" fill="#c9a227" stroke="#1c120a" stroke-width=".06"/>' : '');
-      var name = it.t === 'token' ? (TOKENS[it.tok] || {}).name : it.t === 'agent' ? it.name : { path: 'Marker line', rect: 'Rectangle', circle: 'Circle', text: 'Text' }[it.t];
+        (it.t !== 'path' && it.t !== 'text' && it.t !== 'agent' && it.t !== 'npc' ? '<rect class="mt-handle" x="' + (bb.x + bb.w - .1) + '" y="' + (bb.y + bb.h - .1) + '" width=".7" height=".7" fill="#c9a227" stroke="#1c120a" stroke-width=".06"/>' : '');
+      var name = it.t === 'token' ? (TOKENS[it.tok] || {}).name : it.t === 'agent' || it.t === 'npc' ? it.name : { path: 'Marker line', rect: 'Rectangle', circle: 'Circle', text: 'Text' }[it.t];
       var sc = b.doc.scale || 1;
       box.hidden = false;
       box.innerHTML = '<b>' + esc(name) + '</b>' +
@@ -356,7 +482,7 @@
         (it.t === 'token' || it.t === 'rect' || it.t === 'circle' ? '<input type="text" maxlength="40" placeholder="Label" data-mt="label" value="' + esc(it.label || '') + '">' : '') +
         (it.t === 'text' ? '<input type="text" maxlength="80" data-mt="text" value="' + esc(it.text || '') + '">' : '') +
         (it.t === 'token' || it.t === 'rect' || it.t === 'text' ? '<button type="button" data-mt="rot" data-d="-90">⟲ 90°</button><button type="button" data-mt="rot" data-d="90">⟳ 90°</button>' : '') +
-        (it.t !== 'agent' ? '<button type="button" data-mt="recol">Use this colour</button>' : '') +
+        (it.t !== 'agent' && it.t !== 'npc' ? '<button type="button" data-mt="recol">Use this colour</button>' : '') +
         '<button type="button" data-mt="front">Bring to front</button><button type="button" class="mt-red" data-mt="del">Delete</button>';
     }
     function bounds(pts) {
@@ -364,7 +490,7 @@
       var x = Math.min.apply(null, xs), y = Math.min.apply(null, ys);
       return { x: x, y: y, w: Math.max.apply(null, xs) - x, h: Math.max.apply(null, ys) - y };
     }
-    function redraw() { drawSel(); b.draw(); marks(); drawAgentsTray(); }
+    function redraw() { drawSel(); b.draw(); marks(); drawAgentsTray(); drawNpcTray(); }
     function status(t) { root.querySelector('.mt-status').textContent = t || ''; }
 
     // Every change: undo point, draw, save (debounced).
@@ -375,12 +501,12 @@
       redraw(); save();
     }
     function save() {
-      st.dirty = true;
+      st.dirty = true; st.loaded = true;
       clearTimeout(saveT);
       saveT = setTimeout(function () {
         var d = b.doc, now = Date.now();
         st.lastWrite = now;
-        var out = { title: d.title || '', scale: d.scale || 1, shown: !!d.shown, items: d.items || [], bg: d.bg || null, updated_at: now };
+        var out = { title: d.title || '', scale: d.scale || 1, shown: !!d.shown, items: d.items || [], bg: d.bg || null, dots: d.dots || 'black', agents_move: d.agents_move !== false, updated_at: now };
         signedIn().then(function () { return matRef(cellId).set(out, { merge: true }); })
           .then(function () { st.dirty = false; status(''); })
           .catch(function (e) { status('Not saved: ' + ((e && e.message) || e)); });
@@ -405,10 +531,21 @@
         change(function () { b.doc.items.push({ id: uid(), t: 'token', tok: k, x: r2(snap(p[0] - w / 2)), y: r2(snap(p[1] - h / 2)), w: r2(w), h: r2(h), r: 0 }); });
         return;
       }
+      if (kind.indexOf('npc:') === 0) {
+        var key = kind.slice(4), n = npcs().filter(function (x) { return x.key === key; })[0] || { key: key, name: key };
+        var nex = b.doc.items.filter(function (x) { return x.t === 'npc' && x.key === key; })[0];
+        var nsz = Math.max(1.2, 1.4 / (b.doc.scale || 1));
+        change(function () {
+          if (nex) { nex.x = r2(snap(p[0] - nex.w / 2)); nex.y = r2(snap(p[1] - nex.h / 2)); }
+          else b.doc.items.push({ id: uid(), t: 'npc', key: key, name: n.name || key, photo: n.photo || '', hid: !!n.hidden, out: !!(n.out || n.down), x: r2(snap(p[0] - nsz / 2)), y: r2(snap(p[1] - nsz / 2)), w: nsz, h: nsz });
+        });
+        return;
+      }
       if (kind.indexOf('ag:') === 0) {
         var code = kind.slice(3), m = members().filter(function (x) { return x.code === code; })[0] || { code: code, name: code };
         var ex = b.doc.items.filter(function (x) { return x.t === 'agent' && x.code === code; })[0];
         var sz = Math.max(1.2, 1.4 / (b.doc.scale || 1));
+        dropMoves([code]);
         change(function () {
           if (ex) { ex.x = r2(snap(p[0] - ex.w / 2)); ex.y = r2(snap(p[1] - ex.h / 2)); ex.photo = m.photo || ex.photo || ''; ex.name = m.name || ex.name; }
           else b.doc.items.push({ id: uid(), t: 'agent', code: code, name: m.name || code, photo: m.photo || '', x: r2(snap(p[0] - sz / 2)), y: r2(snap(p[1] - sz / 2)), w: sz, h: sz });
@@ -432,7 +569,7 @@
       try { b.svg.setPointerCapture(e.pointerId); } catch (err) { /* old Safari */ }
       // Placing, erasing and text happen when the finger lifts (a tap), so
       // the first finger of a pinch never places or erases anything.
-      if (tool.indexOf('tok:') === 0 || tool.indexOf('ag:') === 0 || tool === 'eraser' || tool === 'text') { st.drag = { kind: 'tap', tool: tool, p: p, id: id, cx: e.clientX, cy: e.clientY }; return; }
+      if (tool.indexOf('tok:') === 0 || tool.indexOf('ag:') === 0 || tool.indexOf('npc:') === 0 || tool === 'eraser' || tool === 'text') { st.drag = { kind: 'tap', tool: tool, p: p, id: id, cx: e.clientX, cy: e.clientY }; return; }
       if (tool === 'ruler') { st.drag = { kind: 'ruler', a: p }; b.local = { a: p, b: p }; b.draw(); return; }
       if (tool === 'scale') { st.drag = { kind: 'scale', a: p }; b.local = { a: p, b: p }; b.draw(); return; }
       if (tool === 'bgmove') { var bg = b.doc.bg; if (bg && !bg.locked) { st.undo.push(snapshot()); st.drag = { kind: 'bg', p: p, x: bg.x, y: bg.y }; } return; }
@@ -443,6 +580,7 @@
       if (id) {
         st.sel = id; var it = selected();
         st.undo.push(snapshot()); st.redo = [];
+        settle(it);
         st.drag = { kind: 'move', it: it, p: p, moved: false, o: it.t === 'path' ? clone(it.pts) : [it.x, it.y] };
         redraw(); return;
       }
@@ -477,9 +615,9 @@
       if (d.kind === 'tap') {
         if (Math.abs(e.clientX - d.cx) + Math.abs(e.clientY - d.cy) > 12) return;
         var t = d.tool, id0 = d.id;
-        if (t === 'eraser') { if (id0) change(function () { b.doc.items = b.doc.items.filter(function (x) { return x.id !== id0; }); if (st.sel === id0) st.sel = ''; }); }
+        if (t === 'eraser') { if (id0) change(function () { dropMoves(agentCodes(b.doc.items.filter(function (x) { return x.id === id0; }))); b.doc.items = b.doc.items.filter(function (x) { return x.id !== id0; }); if (st.sel === id0) st.sel = ''; }); }
         else if (t === 'text') askText(d.p);
-        else { place(t, d.p); if (t.indexOf('ag:') === 0) st.tool = 'select'; marks(); }
+        else { place(t, d.p); if (t.indexOf('ag:') === 0 || t.indexOf('npc:') === 0) st.tool = 'select'; marks(); }
         return;
       }
       if (d.kind === 'ruler') { b.local = null; b.draw(); sendRuler(null); return; }
@@ -548,18 +686,20 @@
       else if (a === 'exit') { root.classList.add('mt-nofull'); setTimeout(function () { b.draw(); }, 50); }
       else if (a === 'clear') {
         var go = window.dgAc && window.dgAc.ask ? window.dgAc.ask('Clear everything off the mat? The photo stays. (Undo brings it back.)', 'Clear it', 'Keep it') : Promise.resolve(window.confirm('Clear the mat?'));
-        go.then(function (ok) { if (ok) change(function () { b.doc.items = []; st.sel = ''; }); });
+        go.then(function (ok) { if (ok) change(function () { dropMoves(agentCodes(b.doc.items)); b.doc.items = []; st.sel = ''; }); });
       }
       else if (a === 'bglock') change(function () { b.doc.bg.locked = !b.doc.bg.locked; if (b.doc.bg.locked && st.tool === 'bgmove') st.tool = 'select'; });
       else if (a === 'bgdel') change(function () { b.doc.bg = null; st.tool = 'select'; });
       else if (a === 'rot' && it) change(function () { it.r = ((it.r || 0) + +k.getAttribute('data-d') + 360) % 360; });
       else if (a === 'recol' && it) change(function () { it.c = COLORS[st.col]; });
       else if (a === 'front' && it) change(function () { b.doc.items = b.doc.items.filter(function (x) { return x !== it; }).concat([it]); });
-      else if (a === 'del' && it) change(function () { b.doc.items = b.doc.items.filter(function (x) { return x !== it; }); st.sel = ''; });
+      else if (a === 'dots') { b.doc.dots = k.getAttribute('data-v'); redraw(); save(); }
+      else if (a === 'del' && it) change(function () { dropMoves(agentCodes([it])); b.doc.items = b.doc.items.filter(function (x) { return x !== it; }); st.sel = ''; });
     });
     root.addEventListener('change', function (e) {
       var k = e.target.getAttribute && e.target.getAttribute('data-mt'), it = selected();
       if (k === 'shown') { b.doc.shown = !!e.target.checked; save(); }
+      else if (k === 'amove') { b.doc.agents_move = !!e.target.checked; save(); }
       else if (k === 'bgop' && b.doc.bg) { b.doc.bg.op = (+e.target.value || 60) / 100; b.draw(); save(); }
       else if (k === 'scale') { var v = parseFloat(e.target.value); if (v > 0) { b.doc.scale = v; redraw(); drawScale(); save(); } }
       else if (k === 'label' && it) change(function () { it.label = e.target.value.trim(); });
@@ -571,7 +711,7 @@
       else if (e.target.getAttribute('data-mt') === 'bgop' && b.doc.bg) { b.doc.bg.op = (+e.target.value || 60) / 100; b.draw(); }
     });
     root.addEventListener('keydown', function (e) {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && st.sel && !/INPUT|TEXTAREA/.test((e.target.tagName || ''))) { e.preventDefault(); var it = selected(); if (it) change(function () { b.doc.items = b.doc.items.filter(function (x) { return x !== it; }); st.sel = ''; }); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && st.sel && !/INPUT|TEXTAREA/.test((e.target.tagName || ''))) { e.preventDefault(); var it = selected(); if (it) change(function () { dropMoves(agentCodes([it])); b.doc.items = b.doc.items.filter(function (x) { return x !== it; }); st.sel = ''; }); }
     });
     root.tabIndex = -1;
 
@@ -600,20 +740,44 @@
     function apply(d) {
       d = d || {};
       if (st.dirty || st.drag) return;
-      b.doc = { title: d.title || '', scale: d.scale || 1, shown: !!d.shown, items: Array.isArray(d.items) ? d.items : [], bg: d.bg || null, ruler: null };
+      b.doc = { title: d.title || '', scale: d.scale || 1, shown: !!d.shown, items: Array.isArray(d.items) ? d.items : [], bg: d.bg || null, ruler: null, dots: d.dots === 'white' ? 'white' : 'black', agents_move: d.agents_move !== false };
       if (st.sel && !selected()) st.sel = '';
+      st.loaded = true; syncNpcs();
       drawScale();
       if (!st.fitted) { st.fitted = true; setTimeout(function () { b.fit(); redraw(); }, 0); } else redraw();
     }
     signedIn().then(function () {
       unsub = matRef(cellId).onSnapshot(function (snap) { apply(snap.exists ? snap.data() : null); }, function (e) { status('Could not load the mat: ' + ((e && e.message) || e)); });
+      // The Agents moving their own tokens: shown here as they drag, with
+      // a word in the bar about who moved.
+      unsubM = movesRef(cellId).onSnapshot(function (snap) {
+        var m = readMoves(snap), who = [];
+        Object.keys(m).forEach(function (c) { var o = b.moves[c]; if (!o || o.x !== m[c].x || o.y !== m[c].y) who.push(c); });
+        b.moves = m;
+        if (st.drag && st.drag.kind === 'move') return;
+        drawSel(); b.draw();
+        if (who.length) {
+          var names = who.map(function (c) { var t = (b.doc.items || []).filter(function (x) { return x.t === 'agent' && x.code === c; })[0]; return t ? String(t.name || c).split(/\s+/)[0] : ''; }).filter(Boolean);
+          if (names.length) { status(names.join(', ') + ' moved.'); clearTimeout(st.movedT); st.movedT = setTimeout(function () { status(''); }, 4000); }
+        }
+      }, function () { /* moves are extra */ });
     }).catch(function (e) { apply(null); status('Not signed in as Handler: ' + ((e && e.message) || e)); });
     drawScale(); redraw();
     return {
-      destroy: function () { stopRot(); if (unsub) unsub(); unsub = null; clearTimeout(saveT); if (st.dirty) save(); host.innerHTML = ''; },
-      board: b, state: st, refreshAgents: drawAgentsTray
+      destroy: function () { stopRot(); if (unsub) unsub(); if (unsubM) unsubM(); unsub = unsubM = null; clearTimeout(saveT); clearTimeout(st.movedT); if (st.dirty) save(); host.innerHTML = ''; },
+      board: b, state: st,
+      // The desk redraws: the Agents and the session's NPCs (and their
+      // Initiative state on the mat).
+      refreshAgents: function () { drawAgentsTray(); drawNpcTray(); syncNpcs(); }
     };
   }
 
-  window.dgMat = { editor: editor, view: view, tokens: TOKENS, itemSvg: itemSvg };
+  // A session's NPCs as the mat's NPC tray lists them (keyed by name).
+  function npcsOf(s) {
+    return ((s && s.npcs) || []).filter(function (n) { return n && String(n.name || '').trim(); }).map(function (n) {
+      return { key: String(n.name).trim().toLowerCase(), name: String(n.name).trim(), photo: /^(https?:|data:)/.test(n.photo || '') ? n.photo : '', dex: n.dex || '',
+        hidden: !!n.hidden, out: n.init === false, down: n.hp != null && n.hp !== '' && +n.hp <= 0 };
+    });
+  }
+  window.dgMat = { editor: editor, view: view, tokens: TOKENS, itemSvg: itemSvg, npcsOf: npcsOf };
 })();
