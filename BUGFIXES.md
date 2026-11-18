@@ -7629,3 +7629,16 @@ moment before (the operations list catches up a beat later); it now gets
 at least the Cell and operation, and waits for a just-made operation.
 Tests: `test_acell_vault_held_move`, `test_acell_vault_layout`.
 `sw.js` `CACHE_NAME` v338.
+
+## Appearance from a reference photo (v3.26.0, PR #115)
+
+Requested 2026-11-18 ("add the reference photo first, from that it fills
+out the fields and after the player can edit ... The info from the
+character sheet though would still remain"; clothes not from the photo,
+and the whole thing optional). Built from the approved mock-up. New
+Cloud Function `describeReferencePhoto` (deploy `functions`), parsing
+only the allowed fields from the reply, so clothes or anything else the
+model adds are dropped. Also: on a phone "Appearance & photos" (v3.24.0)
+ran out of its 112px button column; it wraps onto two lines now.
+Tests: `test_appearance_from_photo`, `test_agent_hub_drop_buttons_phone`.
+`sw.js` `CACHE_NAME` v340.

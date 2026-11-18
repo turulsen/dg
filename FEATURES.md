@@ -594,6 +594,19 @@ testing found the one long paper hard to read, so it's grouped:
   the era page's prompts are folded under Prompts. The remake tick
   redrafts the first era's prompts and develops new photos after an edit;
   Edit re-enables Submit within the same visit.
+  **v3.26.0: Start from a photo.** The Reference Image box moved to the
+  top of Appearance (outside `#dg-form`, same ids, still the Face Plate's
+  likeness reference). Choosing a photo, or **Fill in from this photo**,
+  runs `afReadPhoto_()`: the photo shrunk to 1024px JPEG, sent to the new
+  `describeReferencePhoto` function (`dgStore.describeReferencePhoto`;
+  Claude; the prompts' 10-per-10-minutes limit; never who the person is),
+  which returns only `AF_PHOTO_FIELDS` (age_range and sex from fixed
+  lists, the face, hair, posture, marks and expression as short phrases).
+  `afFillFromPhoto_()` fills them (class `af-from-photo`, green); never
+  the clothes, name, nationality or build; sex and age only when blank,
+  the character sheet's locked ones marked `af-from-sheet` (blue); a mark
+  goes when the field is edited. The green terminal shows the read, a
+  summary line what was filled and kept; a failure changes nothing.
 - A narrow paper (the notebook page) stacks the two-column parts and puts
   the statistics in rows of three (a container query on `.as-paper.ap`).
 
