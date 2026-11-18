@@ -313,3 +313,35 @@
 .af-root .paper-stack .paper-rules, .af-root .paper-stack .paper-margin, .af-root .paper-stack .holes{ display:none; }
 .af-root .paper-stack .paper-content{ padding:0; }
 .af-root .af-retry{ margin-left:6px; font-family:'Special Elite',monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--red); background:transparent; border:1px solid var(--red); padding:3px 9px; cursor:pointer; }
+
+/* Appearance & photos (2026-11-18): the era question, the remake tick,
+   the darkroom terminal (all green), New photos and folded prompts. */
+.af-root .af-era-q{ margin-top:var(--s4); }
+.af-root .af-era-q[hidden], .af-root .af-remake[hidden], .af-root .af-darkroom[hidden]{ display:none; }
+.af-root .af-era-pick{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
+.af-root .af-era-pick label{ position:relative; border:1.5px solid var(--rule); background:rgba(255,255,255,.35); padding:8px 4px; text-align:center; cursor:pointer; }
+.af-root .af-era-pick input{ position:absolute; opacity:0; pointer-events:none; }
+.af-root .af-era-pick b{ display:block; font-family:'Special Elite',monospace; font-weight:400; font-size:16px; color:var(--ink); }
+.af-root .af-era-pick small{ display:block; font-family:'Courier Prime',monospace; font-size:8.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+.af-root .af-era-pick label:has(input:checked){ background:#1c1608; border-color:#1c1608; outline:2px solid #8b1a1a; outline-offset:-3px; }
+.af-root .af-era-pick label:has(input:checked) b{ color:#f4eed8; }
+.af-root .af-era-pick label:has(input:checked) small{ color:#d8cba4; }
+.af-root .af-era-pick label:has(input:focus-visible){ outline:2px solid #2f6b8f; }
+.af-root .af-era-hint{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); margin:6px 0 0; }
+.af-root .af-remake{ display:flex; gap:8px; align-items:center; margin-top:var(--s4); font-family:'Courier Prime',monospace; font-size:12px; color:var(--ink); cursor:pointer; }
+@media (max-width:560px){ .af-root .af-era-pick{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.af-root .af-darkroom{ background:#0d1a10; color:#7fd1a4; font-family:'Courier Prime',monospace; font-size:11.5px; line-height:1.9; padding:10px 12px; margin:6px 0 12px; overflow-x:auto; white-space:nowrap; }
+.af-root .af-dr-ok{ color:#7fd1a4; }
+.af-root .af-dr-now{ color:#c8f7d6; }
+.af-root .af-dr-now i{ font-style:normal; animation:afBlink 1s steps(1) infinite; }
+.af-root .af-dr-dim{ color:#4f8a63; }
+.af-root .af-dr-fail{ color:#b9f5c8; font-weight:700; white-space:normal; }
+.af-root .af-dr-note{ white-space:normal; line-height:1.5; margin-top:4px; }
+.af-root .af-dr-btn{ font:inherit; background:transparent; color:#7fd1a4; border:0; padding:2px 0; cursor:pointer; margin-right:12px; }
+.af-root .af-dr-btn:hover{ color:#c8f7d6; }
+@keyframes afBlink{ 50%{ opacity:0; } }
+.af-root .af-era-acts{ display:flex; gap:8px; margin:-6px 0 14px; }
+.af-root .af-era-new{ font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; background:transparent; color:#8b1a1a; border:1px solid rgba(139,26,26,.45); padding:5px 10px; cursor:pointer; }
+.af-root .af-prompts{ margin-bottom:18px; }
+.af-root .af-prompts > summary{ font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:#4a3f28; cursor:pointer; margin-bottom:10px; }
+.af-root .af-era-limit{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); margin:8px 0 0; }
