@@ -7589,3 +7589,26 @@ now; the buttons work as before). The image limit stays at 3 per Agent
 every 10 minutes, said where an era is added and by the terminal when
 hit. Tests: `test_appearance_and_photos` (new); helpers open the merged
 drop-down and the folded Prompts. `sw.js` `CACHE_NAME` v335.
+
+## A session in a new operation offered other operations' evidence (v3.25.0, PR #113)
+
+Reported 2026-11-18 ("When an empty operation is added evidence is
+loaded in from others"). Session prep's Evidence panel suggests what to
+load in: unreleased (or unseen) items, filtered only by the session's
+Cell. A session in a new, empty operation therefore listed every other
+operation's evidence in that Cell. Nothing was added to the session by
+itself; it was the suggestion list. The same filter was in the phone's
+prep Evidence tab and Play's Release evidence sheet. All three now leave
+out items filed under a different operation; the Cell's evidence filed
+under none still shows. Test: `test_acell_shell` (another operation's
+item isn't offered). `sw.js` `CACHE_NAME` v336.
+
+## New Cell and new operation from the New session form (v3.25.0, PR #113)
+
+Reported the same day ("I still cannot add a new operation when I add a
+new session. I also want to add a new cell there ... I don't have the
+players yet"). The form only listed existing Cells and operations;
+making either meant leaving the form (the Cells tab, or the phone's New
+operation, which also needed an existing Cell). Built from the approved
+mock-up: "+ New Cell…" and "+ New operation…" at the end of the lists.
+Test: `test_acell_new_session_new_cell_op`. `sw.js` `CACHE_NAME` v337.

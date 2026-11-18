@@ -4246,6 +4246,43 @@ def test_acell_shell(p):
     record("acell-shell", "PREP goes back to the tab you left", page.is_visible("#panel-session") and page.is_visible("#acell-tab-strip"), "")
     record("acell-shell", "no JS errors in Prep", not errs, str(errs))
 
+def test_acell_new_session_new_cell_op(p):
+    """2026-11-18: the New session form makes a new Cell (no Agents yet) and
+    a new operation in it, from "+ New Cell…" / "+ New operation…" at the
+    end of its lists; both are selected and the session is made in them.
+    An operation needs a Cell first."""
+    page, errs = open_acell_shell(p)
+    page.select_option("[data-ac=pick-session]", "__new")
+    page.wait_for_selector(".ac-form", timeout=4000)
+    page.fill(".ac-form input[name=name]", "Session 1 — The night ferry")
+    page.select_option(".ac-form select[name=cell]", "")
+    page.select_option(".ac-form select[name=op]", "__newop")
+    record("new-session", "+ New operation… with no Cell picked asks for the Cell first",
+           page.eval_on_selector(".ac-form select[name=op]", "el => el.value") != "__newop" and page.is_hidden(".ac-form [data-newin=op]"), "")
+    page.select_option(".ac-form select[name=cell]", "__newcell")
+    page.fill(".ac-form [data-newin=cell] input", "Cell Kestrel")
+    page.click(".ac-form [data-newin=cell] button")
+    cell = lambda: [k for k, v in (page.evaluate("() => window.__dgFirestoreDocs") or {}).items() if k.startswith("cells/") and (v or {}).get("name") == "Cell Kestrel"]
+    wait_for_condition(lambda: cell(), timeout_ms=4000)
+    cid = cell()[0].split("/")[1]
+    cdoc = fs_doc(page, "cells/" + cid) or {}
+    record("new-session", "+ New Cell… makes the Cell with no Agents yet and selects it",
+           cdoc.get("member_codes") == [] and page.eval_on_selector(".ac-form select[name=cell]", "el => el.value") == cid and "no Agents yet" in page.inner_text(".ac-form"), str(cdoc))
+    page.select_option(".ac-form select[name=op]", "__newop")
+    page.fill(".ac-form [data-newin=op] input", "Black Water")
+    page.click(".ac-form [data-newin=op] button")
+    op = lambda: [v for k, v in (page.evaluate("() => window.__dgFirestoreDocs") or {}).items() if k.startswith("operations/") and (v or {}).get("name") == "Black Water"]
+    wait_for_condition(lambda: op() and page.eval_on_selector(".ac-form select[name=op]", "el => el.value") not in ("", "__newop"), timeout_ms=5000)
+    record("new-session", "+ New operation… makes it in the new Cell and selects it",
+           bool(op()) and op()[0].get("cell_id") == cid and page.eval_on_selector(".ac-form select[name=op]", "el => el.value") == op()[0].get("operation_id"), str(op()))
+    page.click(".ac-form button[type=submit]")
+    wait_for_condition(lambda: "night ferry" in page.inner_text("#ac-session-pill"), timeout_ms=4000)
+    new = [w for w in fs_writes(page, "sessions/") if (w.get("data") or {}).get("name") == "Session 1 — The night ferry"]
+    record("new-session", "Create makes the session in the new Cell and operation",
+           bool(new) and new[0]["data"].get("cell_id") == cid and new[0]["data"].get("operation_id") == (op() or [{}])[0].get("operation_id"), str(new[:1]))
+    record("new-session", "no JS errors (new Cell / operation)", not errs, str(errs))
+    page.close()
+
 def test_acell_library(p):
     """v3.12.0, the Prep libraries: Evidence's filters (Not released / Not
     seen yet / Released) and + Add to session; the Music tab's tape shelf
@@ -15621,6 +15658,7 @@ def main():
         safe(test_acell_tape_steps_once, browser, area="acell-tapes")
         safe(test_acell_tape_steps_by_clock, browser, area="acell-tapes")
         safe(test_acell_play_layouts, browser, area="acell-layouts")
+        safe(test_acell_new_session_new_cell_op, browser, area="new-session")
         safe(test_acell_combat_mat, browser, area="acell-mat")
         safe(test_acell_token_library, browser, area="token-library")
         safe(test_acell_mobile_cells_add, browser, area="acell-mobile")

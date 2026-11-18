@@ -1034,7 +1034,16 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   Index keep the older layout. Since v3.18.0 the Phase select ends with
   **+ New phase…** (`makePhase`): a name, then the phase's folder with
   its note (the operation's properties, tag `phase`), a link in the
-  Index's `phases:`, and the new phase selected. **Following the vault**: an operation's
+  Index's `phases:`, and the new phase selected. Since v3.25.0 the session
+  forms' Cell and Operation selects end with **+ New Cell…** and **+ New
+  operation…** (`dgAcm.newOpts(form)`, shared by the computer's form in
+  `acell-shell.js` and the phone's New session screen): a name and Add
+  make a Cell with no Agents (`makeCell`, `cells/{id}` with the most used
+  Handler name) or an operation in the Cell picked above
+  (`createOperation`; with no Cell picked it asks for one), and select it;
+  `dgAcm.newVal(select)` reads the selects on submit. Session prep's
+  Evidence suggestions (and the phone's prep tab and Release evidence)
+  leave out items filed under another operation. **Following the vault**: an operation's
   folder follows its Index note, or (emptied) the folder now holding its
   notes; session note, NPC and debrief paths that are gone point to the
   note's new place; a new operation uses a same-named folder instead of

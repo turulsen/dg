@@ -255,12 +255,15 @@
     var f = w.querySelector('form');
     setTimeout(function () { f.name.focus(); }, 0);
     function phases() { if (window.dgAcm && window.dgAcm.phaseOpts) window.dgAcm.phaseOpts(f); }
+    // + New Cell… / + New operation… (2026-11-18), shared with the phone's form.
+    if (window.dgAcm && window.dgAcm.newOpts) window.dgAcm.newOpts(f);
+    function val(sel) { return window.dgAcm && window.dgAcm.newVal ? window.dgAcm.newVal(sel) : sel.value; }
     phases();
     f.op.addEventListener('change', phases);
     if (window.dgVault) window.dgVault.load().then(phases, function () {});
     f.addEventListener('submit', function (e) {
       e.preventDefault();
-      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value, phase: f.phase.value === '__new' ? '' : f.phase.value };
+      var fields = { name: f.name.value.trim() || 'Untitled session', date: f.date.value, cell_id: val(f.cell), operation_id: val(f.op), phase: f.phase.value === '__new' ? '' : f.phase.value };
       w.remove();
       if (s) S().update(s.id, fields); else S().create(fields);
     });

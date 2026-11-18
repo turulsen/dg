@@ -426,3 +426,6 @@ body.acm .cc-desk .cc-air{ font-size:9.5px; padding:3px 6px; white-space:nowrap;
 .acm-newphase[hidden]{ display:none; }
 .acm-newphase input{ flex:1; min-width:0; font:14px 'Courier Prime',monospace; padding:8px 10px; border:1px solid #cbbd94; border-radius:0; background:#fff; color:#1c1608; text-transform:none; letter-spacing:0; }
 .acm-newphase button{ font:11px 'Special Elite',monospace; letter-spacing:.1em; text-transform:uppercase; padding:0 12px; background:#1c1608; color:#f4eed8; border:0; border-radius:0; cursor:pointer; }
+/* + New Cell / + New operation in a session form (2026-11-18) */
+.acm-newin small{ display:none; }
+.acm-newnote{ display:block; color:#2f7a4a; font-size:11.5px; margin-top:4px; text-transform:none; letter-spacing:0; }
