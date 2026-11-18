@@ -7543,3 +7543,20 @@ it shipped: Auto-advance off in the Music console. Test:
 `test_acell_tape_steps_by_clock` (a start far back on another clock
 doesn't skip; a track watched for its length still steps).
 `sw.js` `CACHE_NAME` v332.
+
+## The mat: dots, NPCs, the Agents moving their tokens (v3.22.0, PR #110)
+
+Requested 2026-11-17 ("change dots to black/white", players moving
+their tokens, NPCs from Initiative); moving by Initiative turn was
+dropped by the Handler ("they need to move when they are not in
+initiative as well"). Built from the approved mock-up. The dots were
+`#8a7a55`, or white under a photo by themselves; now the Handler picks.
+One thing found while building: an NPC's Initiative change before the
+mat had loaded from Firestore changed the token but never redrew it;
+it redraws at once now, and is saved once the mat is in (or already
+edited on that screen), so a mat not yet loaded can't be overwritten.
+New rule: `mats/{cellId}/moves/{code}` (deploy `firestore:rules`).
+Tests: `test_acell_combat_mat`, `test_notebook_mat` extended (dots,
+the switch, NPC hidden/down, a move shown with who moved and taken back
+by the Handler; the own token dragged on a half-dot, another's not, none
+with the switch off). `sw.js` `CACHE_NAME` v333.

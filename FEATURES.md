@@ -936,6 +936,20 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   of the notebook to `document.body` -- and Exit gives the screen back.
   A phone on its side now stays A-Cell's phone layout (its media query
   also matches a short touch screen).
+  v3.22.0: **Dots** Black/White (`dots` on the mat doc, chosen by the
+  Handler, black by default). **NPCs from Initiative**: the Tokens sheet
+  lists the session's NPCs (`dgMat.npcsOf(session)`, keyed by name in
+  lower case); placed as `npc` items (red, initials or photo) whose `hid`
+  (hidden in Initiative: dashed for the Handler, not drawn for the
+  Agents) and `out` (down at HP 0, or out of the order: greyed) follow
+  Initiative whenever the desk redraws with the mat open. **The Agents
+  move their own token**: dragged in the notebook's Mat tab, written to
+  `mats/{cellId}/moves/{code}` (`{x, y, at}`, a few times a second while
+  dragging, then on the nearest half-dot); both sides draw the token
+  there, the Handler's bar says who moved, and the Handler moving or
+  removing that token deletes the move. The Handler's **Agents move their
+  own tokens** (`agents_move`, on by default) stops it; the rules let only
+  that Agent's own session, a member of the Cell, write while it's on.
 - **Arranging Play** (`assets/acell-play.js`, since v3.19.3): the
   Arrange bar has five layouts (Session, Investigation, Action, Music,
   Compact; what one doesn't use is put away), "Mine" (layouts saved
