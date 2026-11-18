@@ -7657,3 +7657,16 @@ v3.0.1 (Node 20, refused since 2026-10-30; fixed with `git fetch` and
 `npm install` run in it. The card now says plainly that the photo reader
 may not be set up on the server yet. Test: `test_appearance_from_photo`
 (10 checks). `sw.js` `CACHE_NAME` v341.
+
+## The darkroom stopped: "No content returned (HTTP 200)" (v3.26.2, PR #117)
+
+Reported 2026-11-18, the first real try of Appearance & photos: the
+brief filed, then "SURVEILLANCE DESCRIPTION, 2020s ... HALTED" and "THE
+PRINT DID NOT TAKE (NO CONTENT RETURNED (HTTP 200))". The functions read
+only `content[0].text` of the Messages API reply. Claude Sonnet 5 thinks
+by default, so a reply opens with a thinking block that has no text;
+the answer was in a later block. Their `max_tokens` (1000, 800, 300)
+could also be used up by the thinking before any text. All three now
+join every text block, explain an empty reply (declined, out of room),
+and run with room for the thinking at low effort. translateEvidence had
+been written this way already. Deploy: `functions`.
