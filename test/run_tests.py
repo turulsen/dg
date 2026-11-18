@@ -546,6 +546,7 @@ NOTES_FIRESTORE_STUB = """
             // 2026-11-18: the Appearance brief from a reference photo (canned, or window.__dgPhotoReply).
             if (name === 'describeReferencePhoto') {
               (window.__dgFunctionCalls = window.__dgFunctionCalls || []).push({ name: name, payload: payload });
+              if (window.__dgPhotoThrow) return Promise.reject(window.__dgPhotoThrow);
               return Promise.resolve({ data: window.__dgPhotoReply || { status: 'OK', fields: { sex: 'Female', age_range: 'Late 30s', face_shape: 'long, angular jaw', eye_color: 'pale blue', hair_color: 'sandy', hair_style: 'cropped short', expression: 'guarded, half a smile' } } });
             }
             if (name === 'generatePrompt' || name === 'generatePlateImage') {
@@ -9686,7 +9687,7 @@ def test_appearance_from_photo(p):
     wait_for_condition(lambda: page.eval_on_selector("#dg-form [name=sex]", "el => el.value") == "Male", timeout_ms=8000)
     jacket0 = page.eval_on_selector("#dg-form [name=jacket]", "el => el.value")
     record("photo-first", "Start from a photo sits above the Random Agent Generator, outside the questions",
-           page.evaluate("() => { const z = document.querySelector('.af-photo-zone'), r = document.getElementById('rand-profession'); return !!z && !!(z.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING) && !document.getElementById('dg-form').contains(z); }"), "")
+           page.evaluate("() => { const z = document.querySelector('#af-pcard'), r = document.getElementById('rand-profession'); return !!z && !!(z.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING) && !document.getElementById('dg-form').contains(z); }"), "")
     png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
     f = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f.write(png); f.close()
     page.set_input_files("#ref-img", f.name)
@@ -9701,13 +9702,21 @@ def test_appearance_from_photo(p):
            and not page.eval_on_selector("#dg-form [name=age_range]", "el => el.classList.contains('af-from-photo')"), str((v("sex"), v("age_range"))))
     record("photo-first", "the clothes are never filled from the photo", v("jacket") == jacket0, str((jacket0, v("jacket"))))
     sm = page.inner_text("#af-photo-sum")
-    record("photo-first", "a line says what was filled and what the sheet kept", "from the photo" in sm and "character sheet" in sm and "clothes are yours" in sm, sm)
+    record("photo-first", "the card says how many were filled, what the marks mean and that the clothes are the player's",
+           "filled from the photo" in page.inner_text("#af-ptitle") and "from the photo" in sm and "character sheet" in sm and "clothes are yours" in sm, page.inner_text("#af-ptitle") + " | " + sm)
     page.fill("#dg-form [name=eye_color]", "grey")
     record("photo-first", "editing a field takes its mark off", not page.eval_on_selector("#dg-form [name=eye_color]", "el => el.classList.contains('af-from-photo')"), "")
     page.evaluate("() => { window.__dgPhotoReply = { status: 'ERROR', message: 'Rate limit reached for this Agent -- please wait a few minutes and try again.' }; }")
+    page.evaluate("() => { document.getElementById('af-pcard').dataset.state = 'photo'; }")
+    page.evaluate("() => document.getElementById('af-photo-read').click()")
+    wait_for_condition(lambda: "Too many tries" in (page.text_content("#af-photo-term") or ""), timeout_ms=6000)
+    record("photo-first", "a failure says why in plain words, offers Try again and changes nothing",
+           v("eye_color") == "grey" and "Nothing was changed" in page.text_content("#af-photo-term") and page.is_visible("#af-photo-read") and page.inner_text("#af-photo-read").lower() == "try again", page.text_content("#af-photo-term"))
+    page.evaluate("() => { window.__dgPhotoReply = null; window.__dgPhotoThrow = { code: 'functions/internal', message: 'internal' }; }")
     page.click("#af-photo-read")
-    wait_for_condition(lambda: "CAPACITY" in (page.text_content("#af-photo-term") or ""), timeout_ms=6000)
-    record("photo-first", "a failure says so in the terminal and changes nothing", v("eye_color") == "grey" and "CAPACITY" in page.text_content("#af-photo-term"), page.text_content("#af-photo-term"))
+    wait_for_condition(lambda: "isn't answering" in (page.text_content("#af-photo-term") or ""), timeout_ms=6000)
+    record("photo-first", "an unreachable photo reader (\"internal\") is said plainly, not as INTERNAL [0]",
+           "set up on the server" in page.text_content("#af-photo-term") and "INTERNAL" not in page.text_content("#af-photo-term"), page.text_content("#af-photo-term"))
     record("photo-first", "no JS errors (photo first)", not errs, str(errs))
     page.close()
 

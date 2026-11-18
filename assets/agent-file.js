@@ -36,14 +36,20 @@
                  or what the character sheet set. The same photo stays the
                  Face Plate's likeness reference. -->
             <div class="section-head" style="margin-top:var(--s4);">Start from a photo <span style="font-family:'Source Sans 3';font-weight:300;text-transform:none;letter-spacing:0;color:var(--ink-3);font-size:9px;">(optional)</span></div>
-            <div class="upload-zone af-photo-zone" onclick="if (event.target.id !== 'ref-img') document.getElementById('ref-img').click()">
-              <input type="file" id="ref-img" name="ref_image" accept="image/jpeg,image/png,image/webp">
-              <div class="upload-hint">Upload a reference photo: a face that looks like your Agent (an actor, a stock photo, a sketch). The questions below fill themselves in from it; what your character sheet says stays. Check them and change anything. JPG, PNG or WebP.</div>
-              <img id="upload-prev" class="upload-prev">
+            <!-- One card (2026-11-18, the approved mock-up): the whole card
+                 picks a photo; its words follow what's happening (afPhotoState_). -->
+            <div class="af-pcard" id="af-pcard" role="button" tabindex="0" aria-label="Choose a reference photo">
+              <input type="file" id="ref-img" name="ref_image" accept="image/jpeg,image/png,image/webp" hidden>
+              <div class="af-pslot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg><img id="upload-prev" class="af-pimg" alt=""></div>
+              <div class="af-ptxt">
+                <b id="af-ptitle">Upload a face</b>
+                <small id="af-psub">We fill in the face and hair. Your sheet's details stay. <button type="button" class="af-pinfo" id="af-pinfo" aria-label="More about this" aria-expanded="false">i</button></small>
+                <small class="af-pmore" id="af-pmore" hidden>An actor, a stock photo or a sketch: a face that looks like your Agent. Never the clothes. You can change everything after. JPG, PNG or WebP.</small>
+                <small class="af-photo-sum" id="af-photo-sum" hidden></small>
+                <div class="af-pterm" id="af-photo-term" hidden></div>
+                <div class="af-pacts"><button type="button" class="af-pbtn" id="af-photo-read" hidden>Fill in from this photo</button><span class="af-pbtn" id="af-pchoose">Choose photo</span></div>
+              </div>
             </div>
-            <div class="af-photo-acts"><button type="button" class="af-era-new" id="af-photo-read" hidden>Fill in from this photo</button></div>
-            <div class="af-darkroom" id="af-photo-term" hidden></div>
-            <div class="af-photo-sum" id="af-photo-sum" hidden></div>
             <div class="section-head" style="margin-top:var(--s4);">Or: Random Agent Generator</div>
             <div style="display:flex;gap:var(--s2);align-items:center;margin-bottom:var(--s4);flex-wrap:wrap;">
               <select class="rand-select fi" id="rand-profession" style="flex:1;min-width:140px;">
@@ -488,7 +494,7 @@ document.getElementById('ref-img').addEventListener('change', async function() {
     photoDataUrl = await f2b(this.files[0]);
     const p = document.getElementById('upload-prev');
     p.src = photoDataUrl; p.style.display = 'block';
-    afReadPhoto_(photoDataUrl);
+    afReadPhoto_();
   }
 });
 
@@ -514,38 +520,73 @@ function afShrink_(dataUrl) {
     im.src = dataUrl;
   });
 }
+function afPhotoSrc_() {
+  return photoDataUrl || (afData && (afData.ref_image_link || '')) || '';
+}
+// The card's words and buttons for what's happening: empty, a photo not
+// read yet, reading, done (n filled), or a failure (why).
+function afPhotoState_(state, info) {
+  const t = document.getElementById('af-ptitle'), sub = document.getElementById('af-psub'), sum = document.getElementById('af-photo-sum');
+  const term = document.getElementById('af-photo-term'), read = document.getElementById('af-photo-read'), choose = document.getElementById('af-pchoose');
+  const card = document.getElementById('af-pcard'), img = document.getElementById('upload-prev');
+  if (!t) return;
+  const src = afPhotoSrc_();
+  if (src && img.getAttribute('src') !== src) img.src = src;
+  img.style.display = src ? 'block' : 'none';
+  card.classList.toggle('af-has', !!src);
+  card.dataset.state = state;
+  sub.hidden = state === 'done' || state === 'fail'; sum.hidden = state !== 'done';
+  term.hidden = state !== 'reading' && state !== 'fail';
+  read.hidden = !(src && (state === 'photo' || state === 'fail'));
+  read.textContent = state === 'fail' ? 'Try again' : 'Fill in from this photo';
+  choose.textContent = src ? 'Another photo' : 'Choose photo';
+  choose.hidden = state === 'reading';
+  if (state === 'empty') { t.textContent = 'Upload a face'; }
+  else if (state === 'photo') { t.textContent = 'Your reference photo'; }
+  else if (state === 'reading') { t.textContent = 'Reading the photo…'; term.innerHTML = '&gt; DESCRIBING THE SUBJECT<i>_</i>'; term.className = 'af-pterm'; }
+  else if (state === 'done') { t.textContent = info.photo + ' filled from the photo'; }
+  else if (state === 'fail') { t.textContent = 'The photo couldn\'t be read'; term.innerHTML = '&gt; ' + afEscapeHtml(info); term.className = 'af-pterm af-pfail'; }
+}
 function afPhotoButton_() {
-  const b = document.getElementById('af-photo-read');
-  if (b) b.hidden = !(photoDataUrl && /^data:image\//.test(photoDataUrl));
+  const card = document.getElementById('af-pcard');
+  if (card && card.dataset.state !== 'reading' && card.dataset.state !== 'done' && card.dataset.state !== 'fail') afPhotoState_(afPhotoSrc_() ? 'photo' : 'empty');
+}
+// The photo as a data URL (a saved one is fetched from Storage).
+function afPhotoData_() {
+  const src = afPhotoSrc_();
+  if (!src || /^data:image\//.test(src)) return Promise.resolve(src);
+  return fetch(src).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); }).then(function (b) {
+    return new Promise(function (res) { const fr = new FileReader(); fr.onload = function () { res(fr.result); }; fr.onerror = function () { res(''); }; fr.readAsDataURL(b); });
+  }).catch(function () { return ''; });
 }
 var afPhotoBusy = false;
-function afReadPhoto_(dataUrl) {
-  const term = document.getElementById('af-photo-term'), sum = document.getElementById('af-photo-sum');
-  const form = document.getElementById('dg-form'), code = afMountedCode || afCode;
-  afPhotoButton_();
-  if (!term || !form || !dataUrl || afPhotoBusy) return Promise.resolve(false);
-  if (!code || !window.dgStore || !window.dgStore.describeReferencePhoto) { sum.hidden = false; sum.textContent = 'The photo is kept; filling in from it needs the Agent to be filed first.'; return Promise.resolve(false); }
-  afPhotoBusy = true; sum.hidden = true;
-  const head = '<div class="af-dr-dim">DELTA GREEN // RECORDS DIVISION // ' + afEscapeHtml(code) + '</div><div class="af-dr-ok">&gt; PHOTOGRAPH RECEIVED ................ LOGGED</div>';
-  term.hidden = false;
-  term.innerHTML = head + '<div class="af-dr-now">&gt; FIELD DESCRIPTION ................... IN PROGRESS<i>_</i></div><div class="af-dr-dim af-dr-note">A few seconds.</div>';
-  return afShrink_(dataUrl).then(function (img) {
+function afReadPhoto_() {
+  const sum = document.getElementById('af-photo-sum'), form = document.getElementById('dg-form'), code = afMountedCode || afCode;
+  if (!form || afPhotoBusy || !afPhotoSrc_()) return Promise.resolve(false);
+  if (!code || !window.dgStore || !window.dgStore.describeReferencePhoto) { afPhotoState_('fail', 'The photo is kept. Filling in from it needs the Agent filed first.'); return Promise.resolve(false); }
+  afPhotoBusy = true;
+  afPhotoState_('reading');
+  return afPhotoData_().then(function (d) {
+    if (!d) throw new Error('nophoto');
+    return afShrink_(d);
+  }).then(function (img) {
     return window.dgStore.describeReferencePhoto(code, { image: img });
   }).then(function (r) {
     afPhotoBusy = false;
     if (!r || r.status !== 'OK' || !r.fields) throw new Error((r && r.message) || 'no description');
     const filled = afFillFromPhoto_(r.fields);
-    term.innerHTML = head + '<div class="af-dr-ok">&gt; FIELD DESCRIPTION ................... FILED</div>';
-    setTimeout(function () { term.hidden = true; }, 2500);
-    sum.hidden = false;
-    sum.innerHTML = 'Filled <b>' + filled.photo + '</b> from the photo (marked green).' + (filled.sheet.length ? ' Kept <b>' + filled.sheet.length + '</b> from your character sheet (blue: ' + afEscapeHtml(filled.sheet.join(', ')) + ').' : '') +
-      ' The clothes are yours to choose. Change anything that isn\'t right, then Submit.';
+    sum.innerHTML = 'Green: from the photo.' + (filled.sheet.length ? ' Blue: your character sheet.' : '') + ' The clothes are yours to choose. Check them below.';
+    afPhotoState_('done', filled);
     return true;
   }).catch(function (e) {
     afPhotoBusy = false;
-    const m = String((e && e.message) || e || '');
-    term.innerHTML = head + '<div class="af-dr-fail">&gt; ' + afEscapeHtml(/rate limit|wait a few minutes|resource-exhausted/i.test(m)
-      ? 'RECORDS AT CAPACITY: TRY AGAIN IN A FEW MINUTES.' : 'THE PHOTOGRAPH COULD NOT BE READ (' + m.toUpperCase().slice(0, 80) + '). NOTHING WAS CHANGED.') + '</div>';
+    const m = String((e && (e.code || e.message)) || e || '');
+    // Said plainly (2026-11-18: it showed "INTERNAL [0]").
+    const why = /rate limit|wait a few minutes|resource-exhausted/i.test(m) ? 'Too many tries: wait a few minutes, then Try again.'
+      : /internal|not-found|unavailable|failed to fetch|deadline|timeout/i.test(m) ? 'The photo reader isn\'t answering (it may not be set up on the server yet).'
+      : /nophoto/.test(m) ? 'The photo couldn\'t be opened. Choose it again.'
+      : 'It couldn\'t describe this photo. Try another one.';
+    afPhotoState_('fail', why + ' Nothing was changed.');
     return false;
   });
 }
@@ -573,7 +614,20 @@ function afFillFromPhoto_(fields) {
 document.getElementById('dg-form').addEventListener('input', function (e) {
   if (e.isTrusted && e.target && e.target.classList) e.target.classList.remove('af-from-photo', 'af-from-sheet');
 });
-document.getElementById('af-photo-read').addEventListener('click', function () { afReadPhoto_(photoDataUrl); });
+document.getElementById('af-photo-read').addEventListener('click', function (e) { e.stopPropagation(); afReadPhoto_(); });
+// The whole card picks a photo (but not its own buttons).
+document.getElementById('af-pcard').addEventListener('click', function (e) {
+  if (e.target.closest('#af-photo-read')) return;
+  if (e.target.closest('#af-pinfo')) {
+    const more = document.getElementById('af-pmore');
+    more.hidden = !more.hidden; e.target.setAttribute('aria-expanded', String(!more.hidden));
+    return;
+  }
+  if (e.target.id !== 'ref-img' && !afPhotoBusy) document.getElementById('ref-img').click();
+});
+document.getElementById('af-pcard').addEventListener('keydown', function (e) {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target === this) { e.preventDefault(); document.getElementById('ref-img').click(); }
+});
 
 /* ── Firebase Storage: direct client upload for the reference photo
    (Phase 4). Self-contained copy of the same loader/sign-in pattern
@@ -2563,6 +2617,7 @@ function afReset_() {
   document.getElementById('form-status').textContent = '';
   document.getElementById('upload-prev').style.display = 'none';
   ['af-photo-term', 'af-photo-sum'].forEach(function (id) { const x = document.getElementById(id); if (x) { x.hidden = true; x.innerHTML = ''; } });
+  const pc = document.getElementById('af-pcard'); if (pc) pc.dataset.state = '';
   Array.prototype.forEach.call(document.querySelectorAll('#dg-form .af-from-photo, #dg-form .af-from-sheet'), function (x) { x.classList.remove('af-from-photo', 'af-from-sheet'); });
   afPhotoButton_();
   document.getElementById('code-load-status').textContent = '';
