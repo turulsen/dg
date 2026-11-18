@@ -122,6 +122,21 @@
                 <img id="upload-prev" class="upload-prev">
               </div>
 
+              <!-- 2026-11-18: the era is the brief's last question; Submit
+                   makes the photos for it (afDarkroom_). Shown until the
+                   Agent has a photo; then the remake tick instead. -->
+              <div class="af-era-q" id="af-era-q" hidden>
+                <div class="section-head">Era &middot; when your photos are set</div>
+                <div class="af-era-pick">
+                  <label><input type="radio" name="af_photo_era" value="90s"><b>1990s</b><small>Cold War aftermath</small></label>
+                  <label><input type="radio" name="af_photo_era" value="00s"><b>2000s</b><small>War on Terror</small></label>
+                  <label><input type="radio" name="af_photo_era" value="10s"><b>2010s</b><small>Digital age</small></label>
+                  <label><input type="radio" name="af_photo_era" value="20s"><b>2020s</b><small>Present day</small></label>
+                </div>
+                <p class="af-era-hint">Starts on your campaign's era. You can add others later.</p>
+              </div>
+              <label class="af-remake" id="af-remake" hidden><input type="checkbox" id="af-remake-cb"> When I save an edit, remake the photos with the new look</label>
+
               <div class="submit-row">
                 <button type="submit" class="submit-btn" id="submit-btn" onclick="handleSubmit()">Submit Brief</button>
                 <span id="form-status"></span>
@@ -132,6 +147,7 @@
 <section class="af-photos" id="af-photos">
   <div class="af-block-head"><span class="af-block-title">Era Photos</span></div>
   <p class="af-photos-locked" id="af-photos-locked">Finish the Appearance brief above to make this Agent's photos.</p>
+  <div class="af-darkroom" id="af-darkroom" hidden></div>
       <div id="af-content" style="display:none;">
 
         <!-- Header strip -->
@@ -187,6 +203,7 @@
                   <div class="era-option" onclick="initEra('10s')"><div class="era-decade">2010s</div><div class="era-sub">Digital Age</div></div>
                   <div class="era-option" onclick="initEra('20s')"><div class="era-decade">2020s</div><div class="era-sub">Present Day</div></div>
                 </div>
+                <p class="af-era-limit">The same Agent, dressed and aged for that decade; the photos are made straight away. Darkroom limit: 3 prints per Agent every 10 minutes, and an era takes 2, so a second era may have to wait a few minutes.</p>
               </div>
             </div>
           </div>
@@ -195,7 +212,7 @@
         <!-- Stacked era pages -->
         <div id="af-pages-wrap" style="display:none;margin-top:12px;">
           <div class="era-stack" id="era-stack"></div>
-          <button class="af-add-era-btn" id="af-add-era-btn" onclick="showEraSelect()" style="display:none;">+ Add Era</button>
+          <button class="af-add-era-btn" id="af-add-era-btn" onclick="showEraSelect()" style="display:none;">+ Another era</button>
         </div>
 
         <!-- Medical History -->
@@ -595,7 +612,19 @@ async function handleSubmit() {
   btn.disabled=true; status.className=''; status.textContent='Transmitting...';
   const payload={};
   new FormData(document.getElementById('dg-form')).forEach((v,k)=>{ payload[k]=v; });
+  delete payload.af_photo_era;
   payload.submitted_at = new Date().toISOString();
+  // What Submit develops afterwards: the chosen era's photos (first time),
+  // or the first era's again (the remake tick).
+  const eraQ = document.getElementById('af-era-q');
+  let photoPlan = null;
+  if (eraQ && !eraQ.hidden) {
+    const pick = document.querySelector('#af-era-q input[name="af_photo_era"]:checked');
+    if (pick) photoPlan = { era: pick.value, fresh: true };
+  } else if (document.getElementById('af-remake-cb') && document.getElementById('af-remake-cb').checked && !document.getElementById('af-remake').hidden) {
+    const firstEra = parseEras(afData || {})[0];
+    if (firstEra) photoPlan = { era: firstEra, remake: true };
+  }
   // The form always describes the Agent whose Agent Hub tab is open, so
   // that Agent's code is the one to save under -- renaming them here
   // renames them, it never splits off a second Agent. (On the old
@@ -645,6 +674,12 @@ async function handleSubmit() {
     }
   }
   payload.agent_code = agentCode;
+  if (photoPlan && photoPlan.fresh) {
+    // No photo yet on any era: the picked era is the Agent's era list
+    // (an era the Recruit wizard set but never photographed goes).
+    payload.active_eras = JSON.stringify([photoPlan.era]);
+    payload.campaign_era = photoPlan.era;
+  }
   persistAgent(agentCode, payload);
   afCode = agentCode;
   afData = payload;
@@ -657,6 +692,9 @@ async function handleSubmit() {
   // File is unlocked -- go straight there instead of showing the old
   // inline printable dossier card underneath the Profiling form.
   openInAgentFile();
+  const rcb = document.getElementById('af-remake-cb');
+  if (rcb) rcb.checked = false;
+  if (photoPlan) afDarkroom_(photoPlan.era, { remake: !!photoPlan.remake, filed: true });
 }
 
 /* ── DOSSIER ── */
@@ -1015,7 +1053,7 @@ function parseEras(data) {
 }
 
 /* ── Init a new era (first time) ── */
-function initEra(era) {
+function initEra(era, opts) {
   if (!afCode) return;
 
   // Build era list — add to existing
@@ -1040,6 +1078,8 @@ function initEra(era) {
   document.getElementById('af-add-era-btn').style.display = 'block';
 
   renderEraStack(existing, afData);
+  // Picked from + Another era (the brief is complete): developed at once.
+  if (!(opts && opts.noDarkroom) && isProfilingComplete(afData)) afDarkroom_(era, {});
 }
 
 /* ── Show era selector for adding a new era ── */
@@ -1052,7 +1092,7 @@ function syncEraSelect_() {
   const have = parseEras(afData || {});
   const sub = sel.querySelector('.af-sub');
   if (sub) sub.textContent = have.length
-    ? 'Choose another era to add to this file.'
+    ? 'Pick another era: the same Agent, dressed and aged for that decade.'
     : 'No era pages found for this agent. Choose the first era to create the file.';
   sel.querySelectorAll('.era-option').forEach(function (o) {
     const m = /initEra\('(\w+)'\)/.exec(o.getAttribute('onclick') || '');
@@ -1137,7 +1177,9 @@ function renderEraStack(eras, data) {
       + '<input type="file" id="upload-outfit-' + era + '" accept="image/*" style="display:none" data-era="' + era + '" data-type="outfit" onchange="handlePlateUpload(this,this.dataset.era,this.dataset.type)">'
       + '</div>'
       + '</div>'
-      // Prompts
+      + '<div class="af-era-acts"><button type="button" class="af-era-new" data-era="' + era + '" onclick="afDarkroom_(this.dataset.era,{})">New photos</button></div>'
+      // Prompts (folded: the darkroom writes them; here to read, redraft or copy)
+      + '<details class="af-prompts"><summary>Prompts</summary>'
       + '<div style="margin-bottom:16px;">'
       + '<div style="font-family:Special Elite,monospace;font-size:8px;letter-spacing:.15em;text-transform:uppercase;color:#8b1a1a;margin-bottom:8px;">Field Portrait Prompt</div>'
       + '<textarea id="prompt-mode0-' + era + '" style="width:100%;background:rgba(0,0,0,.04);border:none;border-left:2px solid rgba(160,130,70,.35);padding:8px 12px;font-family:Courier Prime,monospace;font-size:10px;line-height:1.7;color:#4a3f28;min-height:60px;resize:vertical;box-sizing:border-box;">' + (mode0||'') + '</textarea>'
@@ -1160,6 +1202,7 @@ function renderEraStack(eras, data) {
       + '<span id="prompt-mode1-status-' + era + '" style="font-family:Courier Prime,monospace;font-size:9px;font-style:italic;color:#8a7a5a;align-self:center;"></span>'
       + '</div>'
       + '</div>'
+      + '</details>'
       // Divider + appearance
       + '<div style="border-top:1.5px dashed rgba(160,130,70,.35);margin:0 0 16px;"></div>'
       + '<div style="font-family:Special Elite,monospace;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#8b1a1a;margin-bottom:12px;border-bottom:1px solid #8b1a1a;padding-bottom:4px;">Agent Appearance — ' + eraDecade[era] + '</div>'
@@ -1187,7 +1230,7 @@ function renderEraStack(eras, data) {
     // through the read fallback instead of the old write collision.
     if (!data['era_' + era + '_mode0'] || !data['era_' + era + '_mode1']) {
       (function(capturedEra) {
-        setTimeout(function() { autoGenerateEraPrompts(capturedEra); }, 500 + idx * 200);
+        setTimeout(function() { autoGenerateEraPrompts(capturedEra).catch(function () { /* shown */ }); }, 500 + idx * 200);
       })(era);
     }
     afEraPages.push(era);
@@ -1457,13 +1500,18 @@ function fetchDriveImageAsDataUri(url) {
 }
 
 function generatePlateImage(era, mode, btn) {
-  if (btn && btn.disabled) return;
+  const job = plateJob_(era, mode, btn);
+  job.catch(function () { /* shown by the button; a caller may wait on it */ });
+  return job;
+}
+function plateJob_(era, mode, btn) {
+  if (btn && btn.disabled) return Promise.reject(new Error('busy'));
   const type = mode === 'mode0' ? 'face' : 'outfit';
   const ta = document.getElementById('prompt-' + mode + '-' + era);
   const st = document.getElementById('prompt-' + mode + '-status-' + era);
-  if (!ta || !afCode) return;
+  if (!ta || !afCode) return Promise.reject(new Error('no era page'));
   const prompt = ta.value.trim();
-  if (!prompt) { if (st) st.textContent = 'Write or generate a prompt first.'; return; }
+  if (!prompt) { if (st) st.textContent = 'Write or generate a prompt first.'; return Promise.reject(new Error('no prompt')); }
 
   // Same idx===0 gating as renderEraStack()'s own display fallback (see
   // its comment) -- afEraPages[0] is the first/only era on a pre-fix
@@ -1481,7 +1529,7 @@ function generatePlateImage(era, mode, btn) {
   // therefore inconsistent) full-body shot.
   if (type === 'outfit' && !faceUrl && !recentFaceDataUri) {
     if (st) st.textContent = 'Generate a Face Plate first, so the Outfit Plate can match it.';
-    return;
+    return Promise.reject(new Error('no face plate'));
   }
 
   if (st) st.textContent = 'Generating image…';
@@ -1499,7 +1547,7 @@ function generatePlateImage(era, mode, btn) {
   const payload = { action: 'generate_plate_image', agent_code: afCode, token: agentToken(afCode), prompt: prompt, plate_type: type };
 
   function send() {
-    afFetch(payload)
+    return afFetch(payload)
     .then(function(r) { return r.json(); })
     .then(function(json) {
       if (json.status === 'OK' && json.image_base64) {
@@ -1509,13 +1557,14 @@ function generatePlateImage(era, mode, btn) {
         }, function() {
           if (st) st.textContent = 'Image made, but not saved (connection). Press Save again on the photo.';
           reenable();
+          throw new Error('made, but not saved: the connection dropped');
         });
       } else {
         if (st) st.textContent = 'Error: ' + (json.message || 'generation failed');
         reenable();
+        throw new Error(json.message || 'generation failed');
       }
-    })
-    .catch(function() { if (st) st.textContent = 'Error.'; reenable(); });
+    }, function() { if (st) st.textContent = 'Error.'; reenable(); throw new Error('connection failed'); });
   }
 
   if (type === 'outfit') {
@@ -1529,7 +1578,7 @@ function generatePlateImage(era, mode, btn) {
     // broke too (that element gets replaced, dropping its id, every time
     // a Face Plate is generated or uploaded). Falling back to a fresh
     // Drive fetch covers a Face Plate from an earlier session instead.
-    (recentFaceDataUri ? Promise.resolve(recentFaceDataUri) : fetchDriveImageAsDataUri(faceUrl)).then(function(dataUri) {
+    return (recentFaceDataUri ? Promise.resolve(recentFaceDataUri) : fetchDriveImageAsDataUri(faceUrl)).then(function(dataUri) {
       if (!dataUri && isDirectImageUrl_(faceUrl)) payload.reference_image_url = faceUrl;
       if (dataUri || payload.reference_image_url) {
         if (dataUri) payload.reference_image_base64 = dataUri;
@@ -1542,21 +1591,109 @@ function generatePlateImage(era, mode, btn) {
         // right clothes instead of an actual full-body shot.
         payload.prompt += '\n\nIMPORTANT: The attached reference image is ONLY for facial identity and likeness -- completely ignore its framing, crop, and camera distance. The output MUST be a full-body image with the entire figure visible from head to feet, matching the framing instructions above, not a headshot or close-up crop.';
       }
-      send();
+      return send();
     });
   } else if (type === 'face' && afData && afData.ref_image_link) {
     // Face Plate: the player's own optional "Resembles" reference photo
     // from Profiling (ref_image_link) is exactly what that field is
     // for -- give Gemini the actual likeness reference alongside the
     // text description instead of working from the description alone.
-    fetchDriveImageAsDataUri(afData.ref_image_link).then(function(dataUri) {
+    return fetchDriveImageAsDataUri(afData.ref_image_link).then(function(dataUri) {
       if (dataUri) payload.reference_image_base64 = dataUri;
       else if (isDirectImageUrl_(afData.ref_image_link)) payload.reference_image_url = afData.ref_image_link;
-      send();
+      return send();
     });
   } else {
-    send();
+    return send();
   }
+}
+
+/* ── The darkroom (2026-11-18): Submit (or + Another era, New photos)
+   drafts the era's prompts and develops its Face Plate, then its Outfit
+   Plate (which uses the face), with a Records Division terminal showing
+   each step. A failed step says why in the same voice, with Try again
+   (which skips what's already done). ── */
+var afDarkroomBusy = false;
+function afDarkroom_(era, opts) {
+  opts = opts || {};
+  const box = document.getElementById('af-darkroom');
+  if (!box || !afData || !afCode || afDarkroomBusy) return Promise.resolve(false);
+  const decade = { '90s': '1990s', '00s': '2000s', '10s': '2010s', '20s': '2020s' }[era] || era;
+  function line(text, dots, state, cls) {
+    const pad = Math.max(3, 40 - text.length);
+    return '<div class="af-dr-' + (cls || 'ok') + '">&gt; ' + afEscapeHtml(text) + ' ' + '.'.repeat(pad) + ' ' + afEscapeHtml(state) + (cls === 'now' ? '<i>_</i>' : '') + '</div>';
+  }
+  const steps = [
+    { key: 'brief', text: 'PROFILE TRANSMITTED TO RECORDS', done: 'FILED' },
+    { key: 'prompt', text: 'SURVEILLANCE DESCRIPTION, ' + decade, now: 'DRAFTING', done: 'DRAFTED' },
+    { key: 'face', text: 'DEVELOPING FACE PLATE', now: 'IN THE TRAY', done: 'DRY' },
+    { key: 'outfit', text: 'DEVELOPING OUTFIT PLATE', now: 'IN THE TRAY', done: 'DRY' }
+  ];
+  const state = { brief: opts.filed ? 'done' : 'skip', prompt: 'wait', face: 'wait', outfit: 'wait' };
+  let fault = '';
+  function draw() {
+    box.hidden = false;
+    box.innerHTML = '<div class="af-dr-dim">DELTA GREEN // RECORDS DIVISION // ' + afEscapeHtml(afCode) + '</div>' +
+      steps.filter(function (x) { return state[x.key] !== 'skip'; }).map(function (x) {
+        const st = state[x.key];
+        if (st === 'done') return line(x.text, 0, x.done, 'ok');
+        if (st === 'now') return line(x.text, 0, x.now, 'now');
+        if (st === 'fail') return line(x.text, 0, 'HALTED', 'fail');
+        return line(x.text, 0, 'QUEUED', 'dim');
+      }).join('') +
+      (fault ? '<div class="af-dr-fail">&gt; ' + afEscapeHtml(fault) + '</div><div><button type="button" class="af-dr-btn" data-dr="again">[ TRY AGAIN ]</button> <button type="button" class="af-dr-btn" data-dr="close">[ CLOSE ]</button></div>'
+        : (state.outfit === 'done' ? '<div class="af-dr-ok">&gt; PRINTS FILED. DARKROOM CLEAR.</div><div><button type="button" class="af-dr-btn" data-dr="close">[ CLOSE ]</button></div>'
+          : '<div class="af-dr-dim af-dr-note">Darkroom time: about a minute. You may close the file; the prints are routed to it when dry.</div>'));
+  }
+  box.onclick = function (e) {
+    const b = e.target.closest && e.target.closest('[data-dr]');
+    if (!b) return;
+    if (b.getAttribute('data-dr') === 'close') { box.hidden = true; box.innerHTML = ''; }
+    else afDarkroom_(era, { retry: true });
+  };
+  function why(err) {
+    const m = String((err && err.message) || err || '');
+    if (/rate limit|wait a few minutes|resource-exhausted/i.test(m)) return 'DARKROOM AT CAPACITY: 3 PRINTS PER AGENT EVERY 10 MINUTES. TRY AGAIN IN A FEW MINUTES.';
+    if (/not saved|connection/i.test(m)) return 'TRANSMISSION LOST. THE PRINT DID NOT REACH THE FILE.';
+    return 'THE PRINT DID NOT TAKE (' + m.toUpperCase().slice(0, 90) + ').';
+  }
+  afDarkroomBusy = true;
+  // Its era page, open (made if it isn't there yet).
+  if (!document.getElementById('era-body-' + era)) {
+    const eras = parseEras(afData);
+    if (eras.indexOf(era) < 0) { initEra(era, { noDarkroom: true }); }
+    else renderAgentFile(afData);
+  }
+  const body = document.getElementById('era-body-' + era);
+  if (body && body.style.display === 'none') toggleEraAccordion(era);
+  if (opts.remake) {
+    ['mode0', 'mode1'].forEach(function (m) {
+      afData['era_' + era + '_' + m] = '';
+      const ta = document.getElementById('prompt-' + m + '-' + era);
+      if (ta) ta.value = '';
+    });
+  }
+  const has = function (t) { return !!(afData['era_' + era + '_' + (t === 'face' ? 'face_url' : 'outfit_url')] || (t === 'face' && afRecentFacePlateDataUri[era])); };
+  const fresh = !(opts.retry);
+  function face() {
+    if (!fresh && has('face')) { state.face = 'done'; return Promise.resolve(); }
+    state.face = 'now'; draw();
+    return generatePlateImage(era, 'mode0', document.querySelector('button[data-era="' + era + '"][data-mode="mode0"][onclick^="generatePlateImage"]')).then(function () { state.face = 'done'; }, function (e) { state.face = 'fail'; throw e; });
+  }
+  function outfit() {
+    if (!fresh && has('outfit') && state.face === 'done' && opts.retry) { state.outfit = 'done'; return Promise.resolve(); }
+    state.outfit = 'now'; draw();
+    return generatePlateImage(era, 'mode1', document.querySelector('button[data-era="' + era + '"][data-mode="mode1"][onclick^="generatePlateImage"]')).then(function () { state.outfit = 'done'; }, function (e) { state.outfit = 'fail'; throw e; });
+  }
+  state.prompt = 'now'; draw();
+  return autoGenerateEraPrompts(era)
+    .then(function () {
+      if (!afData['era_' + era + '_mode0'] || !afData['era_' + era + '_mode1']) throw new Error('no description came back');
+      state.prompt = 'done';
+    }, function (e) { state.prompt = 'fail'; throw e; })
+    .then(face).then(outfit)
+    .then(function () { afDarkroomBusy = false; draw(); updatePreviewBadges(); afEraQuestion_(); return true; },
+      function (e) { afDarkroomBusy = false; fault = why(e); draw(); return false; });
 }
 
 /* ── Per-era age adjustment: an Agent's age_range is entered once, for
@@ -1609,14 +1746,25 @@ function ageRangeForEra_(era) {
 }
 
 /* ── AUTO-GENERATE ERA PROMPTS ── */
+// One drafting job per era at a time (the era page starts one by itself
+// and the darkroom waits on the same one); resolves when both are in.
+var afPromptJobs = {};
 function autoGenerateEraPrompts(era) {
-  if (!afData || !afCode) return;
+  if (afPromptJobs[era]) return afPromptJobs[era];
+  const job = autoGenerateEraPrompts_(era);
+  const done = function () { if (afPromptJobs[era] === job) delete afPromptJobs[era]; };
+  afPromptJobs[era] = job;
+  job.then(done, done);
+  return job;
+}
+function autoGenerateEraPrompts_(era) {
+  if (!afData || !afCode) return Promise.resolve();
 
   const ta0 = document.getElementById('prompt-mode0-' + era);
   const ta1 = document.getElementById('prompt-mode1-' + era);
   const st0 = document.getElementById('prompt-mode0-status-' + era);
   const st1 = document.getElementById('prompt-mode1-status-' + era);
-  if (!ta0 || !ta1) return;
+  if (!ta0 || !ta1) return Promise.resolve();
 
   // Checks THIS era's own columns directly, same reasoning as
   // renderEraStack()'s own outer guard right above its call to this
@@ -1629,7 +1777,7 @@ function autoGenerateEraPrompts(era) {
   // era already had data and silently skip generation.
   const needsPortrait = !afData['era_' + era + '_mode0'];
   const needsReference = !afData['era_' + era + '_mode1'];
-  if (!needsPortrait && !needsReference) return;
+  if (!needsPortrait && !needsReference) return Promise.resolve();
 
   const character = {
     age_range: ageRangeForEra_(era), sex: afData.sex||'', nationality: afData.nationality||'',
@@ -1655,8 +1803,9 @@ function autoGenerateEraPrompts(era) {
   // actually matching the era tab it was generated for.
 
   // Generate Field Portrait (mode: base = headshot)
+  let p0 = Promise.resolve(), p1 = Promise.resolve();
   if (needsPortrait) {
-    afFetch({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'base', era: era })
+    p0 = afFetch({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'base', era: era })
     .then(function(r) { return r.json(); })
     .then(function(json) {
       if (json.status === 'OK' && json.prompt) {
@@ -1674,14 +1823,14 @@ function autoGenerateEraPrompts(era) {
         // calls) -- surfaces json.message now, same as
         // generatePlateImage()'s own error text already does.
         if (st0) st0.textContent = 'Error: ' + (json.message || 'generation failed');
+        throw new Error(json.message || 'generation failed');
       }
-    })
-    .catch(function() { if (st0) st0.textContent = 'Error: connection failed.'; });
+    }, function() { if (st0) st0.textContent = 'Error: connection failed.'; throw new Error('connection failed'); });
   }
 
   // Generate Field Reference (mode: outfit = full body with outfit)
   if (needsReference) {
-    afFetch({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'outfit', era: era })
+    p1 = afFetch({ action: 'generate_prompt', agent_code: afCode, token: agentToken(afCode), character: character, injuries: [], mode: 'outfit', era: era })
     .then(function(r) { return r.json(); })
     .then(function(json) {
       if (json.status === 'OK' && json.prompt) {
@@ -1693,10 +1842,13 @@ function autoGenerateEraPrompts(era) {
       } else {
         // See the mode0 branch above's comment -- same fix.
         if (st1) st1.textContent = 'Error: ' + (json.message || 'generation failed');
+        throw new Error(json.message || 'generation failed');
       }
-    })
-    .catch(function() { if (st1) st1.textContent = 'Error: connection failed.'; });
+    }, function() { if (st1) st1.textContent = 'Error: connection failed.'; throw new Error('connection failed'); });
   }
+  const all = Promise.all([p0, p1]);
+  all.catch(function () { /* shown on the page; a caller may wait on it */ });
+  return all;
 }
 
 // Redraft: write this era's prompt again from the brief as it is now
@@ -1708,7 +1860,7 @@ function redraftEraPrompt(btn) {
   const ta = document.getElementById('prompt-' + mode + '-' + era);
   if (ta) ta.value = '';
   // autoGenerateEraPrompts() redoes whichever of the two is now empty.
-  autoGenerateEraPrompts(era);
+  autoGenerateEraPrompts(era).catch(function () { /* shown */ });
 }
 
 function saveEraPrompt(btn) {
@@ -2316,7 +2468,7 @@ function afReset_() {
     el.classList.remove('cover-field-locked'); delete el.dataset.locked;
   });
   const btn = document.getElementById('submit-btn');
-  btn.disabled = false; btn.textContent = 'Submit Brief';
+  btn.disabled = false; btn.textContent = 'Submit Brief'; afEraQuestion_();
   document.getElementById('form-status').textContent = '';
   document.getElementById('upload-prev').style.display = 'none';
   document.getElementById('code-load-status').textContent = '';
@@ -2362,6 +2514,8 @@ function afRender_() {
     note.textContent = '';
   }
   document.getElementById('af-photos-locked').hidden = complete;
+  afEraQuestion_();
+  document.getElementById('af-photos').classList.toggle('af-photos-wait', !complete);
   if (complete) renderAgentFile(afData);
   else document.getElementById('af-content').style.display = 'none';
   try {
@@ -2373,6 +2527,27 @@ function afRender_() {
     afPendingFocus = null;
     setTimeout(function () { window.dgAgentFile.focus(part); }, 50);
   }
+}
+
+// The brief's last question: the photos' era, until the Agent has a
+// photo; after that, the remake tick. Submit's label says what it does.
+function afEraQuestion_() {
+  const q = document.getElementById('af-era-q'), rm = document.getElementById('af-remake'), btn = document.getElementById('submit-btn');
+  if (!q || !rm) return;
+  const d = afData || {}, eras = parseEras(d);
+  const anyPhoto = eras.some(function (e) { return d['era_' + e + '_face_url'] || d['era_' + e + '_outfit_url']; }) || !!d.face_plate_url;
+  q.hidden = anyPhoto;
+  rm.hidden = !anyPhoto;
+  if (!anyPhoto) {
+    const want = d.campaign_era || eras[0] || '20s';
+    const cur = q.querySelector('input[name="af_photo_era"]:checked');
+    if (!cur || q.dataset.code !== afCode) {
+      const r = q.querySelector('input[name="af_photo_era"][value="' + want + '"]');
+      if (r) r.checked = true;
+      q.dataset.code = afCode || '';
+    }
+  }
+  if (btn && !btn.disabled) btn.textContent = anyPhoto ? 'Submit Brief' : 'Submit brief & make photos';
 }
 
 // A read that fails (a slow phone connection, an SDK script that didn't
@@ -2538,6 +2713,13 @@ function afRosterChanged_(code) {
 
 document.getElementById('af-appear-toggle').addEventListener('click', function () {
   afAppearOpen = !afAppearOpen;
+  // Edit after a Submit in this visit: Submit works again (it stayed
+  // "Submitted" until the page was reopened).
+  if (afAppearOpen) {
+    const b = document.getElementById('submit-btn'), st = document.getElementById('form-status');
+    if (b) b.disabled = false;
+    if (st) { st.className = ''; st.textContent = ''; }
+  }
   afRender_();
 });
 

@@ -812,8 +812,11 @@ def _open_era(page):
     """The era photos drop down from their button under the photo on Agent
     Hub; open them (if folded) before a test works them."""
     try:
-        page.evaluate("""() => { const f = document.getElementById('af-photos'); const d = f && f.closest('.ah-era-drop');
-            if (d && d.hidden) { const b = document.querySelector('[data-ah-era="' + d.id.replace('ah-era-', '') + '"]'); if (b) b.click(); } }""")
+        # 2026-11-18: the photos live in the Appearance & photos drop-down.
+        page.evaluate("""() => { const f = document.getElementById('af-photos'); const d = f && f.closest('.ah-appear-drop');
+            if (d && d.hidden) { const b = document.querySelector('[data-ah-appear="' + d.id.replace('ah-appear-', '') + '"]'); if (b) b.click(); } }""")
+        # ...and the folded Prompts, where the Generate Image buttons are.
+        page.evaluate("() => document.querySelectorAll('#af-photos .af-prompts').forEach(d => { d.open = true; })")
     except Exception:
         pass
 
@@ -9588,7 +9591,8 @@ def test_agent_portal_cover(p, agent):
     if prof_id and page.locator(f"#rand-profession option[value={prof_id}]").count():
         _open_appearance(page)
         page.select_option("#rand-profession", prof_id)
-        page.locator("button:has-text('Generate')").first.click()
+        # (the photos now come first in the drop-down, so "the first Generate" is no longer this one)
+        page.locator("#af-appear button[onclick^='randomizeAgent']").click()
         page.wait_for_timeout(200)
         record("agent-file", f"random agent generator for profession '{prof_id}'", page.is_visible("#rand-result-bar"), "")
 
@@ -9605,6 +9609,71 @@ def test_agent_portal_cover(p, agent):
            page.eval_on_selector("#ah-callout-" + code, "el => el.hidden"), "")
     page.close()
     return errs, code
+
+def test_appearance_and_photos(p):
+    """2026-11-18, Appearance & photos: one drop-down on Agent Hub; the era
+    is the brief's last question (starting on the campaign's era); Submit
+    files the brief, drafts the prompts and develops the Face, then the
+    Outfit Plate, on a green Records Division terminal; then the photos come
+    first, + Another era develops a new era straight away, the darkroom
+    limit is said in the same voice with Try again, and the remake tick
+    redoes the photos after an edit."""
+    agent = AGENTS[0]
+    code = "PHOT-0001"
+    page = p.new_page()
+    page.set_default_timeout(8000)
+    errs = collect_errors(page)
+    _block_fonts(page)
+    install_firestore_backend(page, {"briefs/" + code: {"char_name": agent["char_name"], "agent_code": code, "campaign_era": "00s"}})
+    page.goto(f"{BASE}/agent-hub.html?code={code}", wait_until="domcontentloaded", timeout=15000)
+    _af_state(page)
+    record("photos", "one drop-down: Appearance & photos (no Era photos button)",
+           page.locator(f"[data-ah-era='{code}']").count() == 0 and "photos" in page.inner_text(f"[data-ah-appear='{code}']").lower(), page.inner_text(f"[data-ah-appear='{code}']"))
+    fill_cover_form(page, agent, "#dg-form")
+    record("photos", "the era is the brief's last question, on the campaign's era (2000s)",
+           page.is_visible("#af-era-q") and page.eval_on_selector("#af-era-q input[value='00s']", "el => el.checked") and page.inner_text("#submit-btn").lower().startswith("submit brief & make photos"), page.inner_text("#submit-btn"))
+    page.click("#af-era-q label:has(input[value='10s'])")
+    page.click("#submit-btn")
+    brief = lambda: fs_doc(page, "briefs/" + code) or {}
+    wait_for_condition(lambda: brief().get("era_10s_outfit_url"), timeout_ms=15000)
+    calls = page.evaluate("() => (window.__dgFunctionCalls || []).map(c => c.name + ':' + ((c.payload && (c.payload.mode || c.payload.plate_type)) || ''))")
+    record("photos", "Submit files the brief, drafts both prompts and develops the Face, then the Outfit Plate",
+           brief().get("submitted_at") and brief().get("era_10s_face_url") and brief().get("era_10s_outfit_url") and
+           calls.index("generatePlateImage:face") < calls.index("generatePlateImage:outfit") and "generatePrompt:base" in calls and "generatePrompt:outfit" in calls, str(calls))
+    wait_for_condition(lambda: "PRINTS FILED" in (page.text_content("#af-darkroom") or ""), timeout_ms=4000)
+    term = page.text_content("#af-darkroom") or ""
+    record("photos", "the Records Division terminal: filed, drafted, both plates dry",
+           all(x in term for x in ["RECORDS DIVISION", "PROFILE TRANSMITTED TO RECORDS", "FILED", "SURVEILLANCE DESCRIPTION, 2010s", "DRAFTED", "DEVELOPING FACE PLATE", "DEVELOPING OUTFIT PLATE", "PRINTS FILED"]), term)
+    record("photos", "the brief records the picked era (only it) and keeps the radio out", brief().get("active_eras") == '["10s"]' and "af_photo_era" not in brief(), str(brief().get("active_eras")))
+    order = page.evaluate(f"() => {{ const d = document.getElementById('ah-appear-{code}'); return [d.firstElementChild && d.firstElementChild.id, !document.getElementById('af-photos').classList.contains('af-photos-wait')]; }}")
+    record("photos", "then the photos come first in the drop-down", order == ["af-photos", True], str(order))
+    record("photos", "the era question gives way to the remake tick",
+           page.evaluate("() => [document.getElementById('af-era-q').hidden, document.getElementById('af-remake').hidden]") == [True, False], "")
+    # + Another era: develops at once. (Pretend the darkroom is full first.)
+    page.evaluate("""() => { window.__dgBackendHook = function (kind, a) { if (kind !== 'call') return '__local__';
+        if (a.name === 'generatePlateImage') return { status: 'ERROR', message: 'Rate limit reached for this Agent -- please wait a few minutes and try again.' };
+        return { status: 'OK', prompt: 'STUB PROMPT' }; }; }""")
+    page.click("#af-add-era-btn")
+    page.click("#af-era-select .era-option[onclick=\"initEra('90s')\"]")
+    wait_for_condition(lambda: "DARKROOM AT CAPACITY" in (page.text_content("#af-darkroom") or ""), timeout_ms=8000)
+    term = page.text_content("#af-darkroom") or ""
+    record("photos", "+ Another era develops straight away; the darkroom limit is said in the same voice, with Try again",
+           "SURVEILLANCE DESCRIPTION, 1990s" in term and "DARKROOM AT CAPACITY" in term and page.locator("#af-darkroom [data-dr=again]").count() == 1, term)
+    record("photos", "the limit is noted where an era is added", "3 prints per Agent every 10 minutes" in (page.text_content("#af-era-select") or ""), "")
+    page.evaluate("() => { delete window.__dgBackendHook; }")
+    page.click("#af-darkroom [data-dr=again]")
+    wait_for_condition(lambda: brief().get("era_90s_outfit_url"), timeout_ms=15000)
+    record("photos", "Try again develops the rest", bool(brief().get("era_90s_face_url")) and "PRINTS FILED" in (page.text_content("#af-darkroom") or ""), "")
+    # The remake tick: an edit's Submit redoes the first era's photos.
+    page.evaluate("() => { window.__dgFunctionCalls = []; }")
+    page.click("#af-appear-toggle")
+    page.check("#af-remake-cb")
+    page.click("#submit-btn")
+    wait_for_condition(lambda: page.evaluate("() => (window.__dgFunctionCalls || []).filter(c => c.name === 'generatePlateImage').length") >= 2, timeout_ms=15000)
+    redo = page.evaluate("() => (window.__dgFunctionCalls || []).map(c => c.name + ':' + ((c.payload && (c.payload.era || c.payload.plate_type)) || ''))")
+    record("photos", "the remake tick redrafts the first era's prompts and develops new photos", "generatePrompt:10s" in redo and redo.count("generatePlateImage:face") == 1 and redo.count("generatePlateImage:outfit") == 1, str(redo))
+    record("photos", "no JS errors (Appearance & photos)", not errs, str(errs))
+    page.close()
 
 def test_agent_portal_random_generator_matches_sex(p):
     """Regression test for an older request: the Random Agent Generator
@@ -12954,19 +13023,20 @@ def test_agent_file_parts_and_looks(p):
         const b = document.querySelector('[data-ah-appear="{FN_CODE}"]'), c = document.querySelector('[data-ah-cell="{FN_CODE}"]');
         const tr = t.getBoundingClientRect(), br = b.getBoundingClientRect(), cr = c.getBoundingClientRect();
         return [br.left >= tr.right - 1, cr.left > br.right, Math.abs(cr.top - br.top) < 2]; }}""")
-    record("agent-file-parts", "desktop: Appearance / Era photos / Cell in a row beside the name", all(geo), str(geo))
-    record("agent-file-parts", "Agent Hub: Era photos and Cell start folded", page.is_hidden(f"#ah-era-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
+    record("agent-file-parts", "desktop: Appearance & photos / Cell in a row beside the name", all(geo), str(geo))
+    record("agent-file-parts", "Agent Hub: Appearance & photos (one drop-down since 2026-11-18) and Cell start folded",
+           page.locator(f"[data-ah-era={FN_CODE}]").count() == 0 and page.is_hidden(f"#ah-appear-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
     page.click(f"[data-ah-cell={FN_CODE}]")
     page.wait_for_selector(root + " .ap-celldrop .ap-init li", timeout=5000)
-    page.click(f"[data-ah-era={FN_CODE}]")
-    record("agent-file-parts", "Cell ▾ drops down the initiative list, Era photos ▾ the era photos",
-           page.locator(root + " .ap-celldrop .ap-init li").count() >= 1 and page.is_visible(f"#ah-era-{FN_CODE} #af-photos"), "")
+    page.click(f"[data-ah-appear={FN_CODE}]")
+    record("agent-file-parts", "Cell ▾ drops down the initiative list, Appearance & photos ▾ the brief (photos hidden until it's complete)",
+           page.locator(root + " .ap-celldrop .ap-init li").count() >= 1 and page.is_visible(f"#ah-appear-{FN_CODE} #af-appear") and page.locator(f"#ah-appear-{FN_CODE} #af-photos").count() == 1 and not page.is_visible(f"#ah-appear-{FN_CODE} #af-photos"), "")
     page.click(root + " [data-a='wp-']")
     page.wait_for_timeout(300)
     record("agent-file-parts", "the Cell stays open when the sheet redraws", page.locator(root + " .ap-celldrop").count() == 1, "")
     page.click(f"[data-ah-cell={FN_CODE}]")
-    page.click(f"[data-ah-era={FN_CODE}]")
-    record("agent-file-parts", "both fold again", page.is_hidden(f"#ah-era-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
+    page.click(f"[data-ah-appear={FN_CODE}]")
+    record("agent-file-parts", "both fold again", page.is_hidden(f"#ah-appear-{FN_CODE}") and page.locator(root + " .ap-celldrop").count() == 0, "")
     page.fill(root + " [data-u=skill-find]", "fir")
     vis = lambda: page.eval_on_selector_all(root + " .ap-part[data-part=skills] .as-skills > *", "els => els.filter(e => !e.hidden).map(e => e.querySelector('.as-sn').textContent)")
     v1 = vis()
@@ -15618,6 +15688,7 @@ def main():
             codes.append(res[1] if res else None)
 
         safe(test_agent_portal_random_generator_matches_sex, browser, area="agent-portal")
+        safe(test_appearance_and_photos, browser, area="photos")
 
         safe(test_agent_portal_incomplete_submit_blocked, browser, area="agent-portal")
 

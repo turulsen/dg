@@ -7572,3 +7572,20 @@ model name ("SUV") look alike, so only a short capital code at the very
 start of a file name is dropped. New rules: Firestore `token_library`
 (Handler-only), Storage `tokens/` (read by all, Handler writes). Test:
 `test_acell_token_library`. `sw.js` `CACHE_NAME` v334.
+
+## Appearance and Era photos as one (v3.24.0, PR #112)
+
+Requested 2026-11-18 ("It is not so fluid to make a photo. Era should be
+added under appearance questionnaire, then the prompt and image
+generates at submit"). Built from the approved mock-up. Before, a player
+filled in Appearance, opened a second drop-down, picked an era, waited
+for the prompts, pressed Generate Image on the Face Plate, then again on
+the Outfit Plate. Now the era is the brief's last question and Submit
+does all of it. Two things found on the way: after one Submit, the Submit
+button stayed "Submitted" until the page was reopened, so an edit in the
+same visit couldn't be saved (Edit re-enables it now); and the prompt and
+image calls returned nothing a caller could wait on (they return promises
+now; the buttons work as before). The image limit stays at 3 per Agent
+every 10 minutes, said where an era is added and by the terminal when
+hit. Tests: `test_appearance_and_photos` (new); helpers open the merged
+drop-down and the folded Prompts. `sw.js` `CACHE_NAME` v335.

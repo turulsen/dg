@@ -402,7 +402,11 @@
     .ah-drop-btns{ min-width:0; width:112px; }
     .ah-drop-btns .ah-appear-btn{ font-size:10px; padding:4px 6px; letter-spacing:.06em; }
   }
-  .ah-era-drop .af-photos > .af-block-head{ border-top:0; margin-top:10px; padding-top:0; }
+  .ah-appear-drop .af-photos > .af-block-head{ border-top:0; margin-top:10px; padding-top:0; }
+  /* Until the brief is complete there are no photos to show: the
+     questions (with the era last) are the whole drop-down. */
+  .ah-appear-drop .af-photos.af-photos-wait{ display:none; }
+  .ah-appear-drop .af-photos{ margin-bottom:18px; }
   .ah-appear-btn{ font-family:'Special Elite',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#1c1608; background:#fbf7ea; border:1px solid rgba(160,130,70,.5); padding:4px 10px; cursor:pointer; border-radius:0; white-space:nowrap; }
   .ah-appear-btn:hover{ border-color:#8b1a1a; }
   .ah-appear-drop[hidden]{ display:none !important; }
@@ -814,36 +818,31 @@
       AF.focus = function (part) {
         // (Before the Agent has loaded, focus() only queues itself and
         // comes back here once it knows whether Appearance is finished.)
-        if (part === 'appearance' || (AF.data() && !AF.complete())) toggleAppearance(AF.code(), true);
-        else if (part === 'photos') toggleDrop('era', AF.code(), true);
+        // (2026-11-18: one drop-down, Appearance & photos, holds both.)
+        if (part === 'appearance' || part === 'photos' || (AF.data() && !AF.complete())) toggleAppearance(AF.code(), true);
         return focus.call(AF, part);
       };
       AF._dropFocus = true;
     }
     if (!afAppearHome) afAppearHome = { parent: f.parentNode, next: f.nextSibling };
     if (f.parentNode !== drop) drop.appendChild(f);
-    const ph = document.getElementById('af-photos'), era = document.getElementById('ah-era-' + id);
-    if (ph && era) {
+    // The photos come first in the same drop-down (2026-11-18): once the
+    // brief is in they're what the player came for; the questions fold.
+    const ph = document.getElementById('af-photos');
+    if (ph) {
       if (!afPhotosHome) afPhotosHome = { parent: ph.parentNode, next: ph.nextSibling };
-      if (ph.parentNode !== era) era.appendChild(ph);
+      if (ph.parentNode !== drop || drop.firstChild !== ph) drop.insertBefore(ph, drop.firstChild);
     }
   }
   // Era photos and Cell drop down from beside Appearance. The Cell is
   // drawn by the Agent File paper itself (live initiative, member cards).
   function toggleDrop(kind, code, open) {
     const btn = document.querySelector('[data-ah-' + kind + '="' + code + '"]');
-    const label = kind === 'era' ? 'Era photos' : 'Cell';
-    let on;
-    if (kind === 'era') {
-      const drop = document.getElementById('ah-era-' + code);
-      if (!drop) return;
-      on = open == null ? drop.hidden : !!open;
-      drop.hidden = !on;
-    } else {
-      const sheet = document.getElementById('ah-sheet-' + code);
-      if (!sheet || !sheet._ap || !sheet._ap.toggleCell) return;
-      on = sheet._ap.toggleCell(open);
-    }
+    if (kind === 'era') { toggleAppearance(code, open); return; }
+    const label = 'Cell';
+    const sheet = document.getElementById('ah-sheet-' + code);
+    if (!sheet || !sheet._ap || !sheet._ap.toggleCell) return;
+    const on = sheet._ap.toggleCell(open);
     if (btn) { btn.setAttribute('aria-expanded', String(on)); btn.innerHTML = label + ' ' + (on ? '&#9652;' : '&#9662;'); }
   }
   function toggleAppearance(code, open) {
@@ -852,7 +851,7 @@
     if (!drop) return;
     const on = open == null ? drop.hidden : !!open;
     drop.hidden = !on;
-    if (btn) { btn.setAttribute('aria-expanded', String(on)); btn.innerHTML = 'Appearance ' + (on ? '&#9652;' : '&#9662;'); }
+    if (btn) { btn.setAttribute('aria-expanded', String(on)); btn.innerHTML = 'Appearance &amp; photos ' + (on ? '&#9652;' : '&#9662;'); }
   }
 
   // The Agents menu (past STACK_MAX Agents): every Agent on this device (the open one
@@ -993,11 +992,10 @@
                 <div class="paper-title" id="${titleId}">${escapeHtml(a.char_name || 'Unknown Agent')}</div>
                 <div class="ah-prof" id="ah-prof-${escapeHtml(a.code)}" hidden></div>
               </div>
-              <!-- Appearance, Era photos and Cell drop down from here: beside
+              <!-- Appearance & photos and Cell drop down from here: beside
                    the name on a desktop, under the photo on a phone. -->
               <div class="ah-drop-btns">
-                <button type="button" class="ah-appear-btn" data-ah-appear="${escapeHtml(a.code)}" aria-expanded="false" aria-controls="ah-appear-${escapeHtml(a.code)}">Appearance &#9662;</button>
-                <button type="button" class="ah-appear-btn" data-ah-era="${escapeHtml(a.code)}" aria-expanded="false" aria-controls="ah-era-${escapeHtml(a.code)}">Era photos &#9662;</button>
+                <button type="button" class="ah-appear-btn" data-ah-appear="${escapeHtml(a.code)}" aria-expanded="false" aria-controls="ah-appear-${escapeHtml(a.code)}">Appearance &amp; photos &#9662;</button>
                 <button type="button" class="ah-appear-btn" data-ah-cell="${escapeHtml(a.code)}" aria-expanded="false">Cell &#9662;</button>
               </div>
             </div>
@@ -1006,9 +1004,6 @@
           <!-- Appearance: the profiling form (assets/agent-file.js), dropped
                down from the button under the photo. -->
           <div class="ah-appear-drop af-root" id="ah-appear-${escapeHtml(a.code)}" hidden><div class="ah-appear-desc as-paper" id="ah-desc-${escapeHtml(a.code)}"></div></div>
-          <!-- Era photos (the Agent File's Face and Outfit Plates), dropped
-               down from their button under the photo. -->
-          <div class="ah-appear-drop ah-era-drop af-root" id="ah-era-${escapeHtml(a.code)}" hidden></div>
           <div class="stamps" id="${stampId}">${era ? `<div class="stamp">${escapeHtml(era)}</div>` : ''}</div>
           <div class="dossier-line" id="ah-meta-${escapeHtml(a.code)}"${meta ? '' : ' hidden'}>${meta}</div>
           <div class="paper-actions">
