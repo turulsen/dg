@@ -647,6 +647,69 @@
       inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } if (e.key === 'Escape') { box.hidden = true; f.phase.value = f.phase.getAttribute('data-was') || ''; } });
     }
   }
+  /* "+ New Cell…" and "+ New operation…" in a session form (2026-11-18): a
+     Cell can be made with no Agents yet (its players come later), an
+     operation in the Cell picked above. Both are selected once made. The
+     form's selects are named cell and op; the submit reads newVal(). */
+  function makeCell(name) {
+    var cs = A.cells(), hand = {};
+    cs.forEach(function (c) { if (c.handler) hand[c.handler] = (hand[c.handler] || 0) + 1; });
+    var handler = Object.keys(hand).sort(function (a, b) { return hand[b] - hand[a]; })[0] || '';
+    var id = 'cell_' + Date.now() + '_' + Math.floor(Math.random() * 100000).toString(36);
+    return window.dgAcellApi.handler().then(function (F) {
+      return F.firestore().collection('cells').doc(id).set({ name: name, handler: handler, member_codes: [], channel: '' });
+    }).then(function () { return { cell_id: id, name: name }; });
+  }
+  function newVal(sel) { return sel && sel.value && sel.value.indexOf('__new') !== 0 ? sel.value : ''; }
+  function newOpts(f) {
+    if (!f.cell || !f.op || f.getAttribute('data-newopts')) return;
+    f.setAttribute('data-newopts', '1');
+    [['cell', '__newcell', '+ New Cell…', 'Cell name, e.g. Cell Kestrel'], ['op', '__newop', '+ New operation…', 'Operation name, e.g. Black Water']].forEach(function (k) {
+      var sel = f[k[0]], box = document.createElement('span');
+      sel.insertAdjacentHTML('beforeend', '<option value="' + k[1] + '">' + k[2] + '</option>');
+      box.className = 'acm-newphase acm-newin'; box.hidden = true; box.setAttribute('data-newin', k[0]);
+      box.innerHTML = '<input type="text" maxlength="60" placeholder="' + esc(k[3]) + '"><button type="button">Add</button><small class="acm-newok"></small>';
+      var label = sel.closest('label') || sel;
+      label.parentNode.insertBefore(box, label.nextSibling);
+      sel.setAttribute('data-was', sel.value === k[1] ? '' : sel.value);
+      var inp = box.querySelector('input'), ok = box.querySelector('small'), b = box.querySelector('button');
+      sel.addEventListener('change', function () {
+        if (sel.value !== k[1]) { box.hidden = true; sel.setAttribute('data-was', sel.value); return; }
+        ok.textContent = '';
+        if (k[0] === 'op' && !newVal(f.cell)) {
+          sel.value = sel.getAttribute('data-was') || '';
+          toast('Pick the Cell first (or make one): the operation is made in it.');
+          return;
+        }
+        box.hidden = false; inp.focus();
+      });
+      function add() {
+        var name = inp.value.trim();
+        if (!name) { inp.focus(); return; }
+        b.disabled = true;
+        var job = k[0] === 'cell' ? makeCell(name).then(function (c) { return { id: c.cell_id, name: name, note: name + ' made: no Agents yet. Add them on the Cells tab later.' }; })
+          : createOperation(name, newVal(f.cell)).then(function (o) { return { id: o.operation_id, name: name, cell: o.cell_id, note: 'Made in ' + ((A.cell(o.cell_id) || {}).name || 'the Cell') + ': its Evidence folder and its vault folder with an Index note.' }; });
+        job.then(function (r) {
+          b.disabled = false; inp.value = ''; box.hidden = true;
+          var o = document.createElement('option');
+          o.value = r.id; o.textContent = r.name; if (r.cell) o.setAttribute('data-cell', r.cell);
+          sel.insertBefore(o, sel.querySelector('option[value="' + k[1] + '"]'));
+          sel.value = r.id; sel.setAttribute('data-was', r.id);
+          var note = f.querySelector('[data-newnote="' + k[0] + '"]');
+          if (!note) { note = document.createElement('small'); note.className = 'acm-note acm-newnote'; note.setAttribute('data-newnote', k[0]); box.parentNode.insertBefore(note, box.nextSibling); }
+          note.textContent = r.note;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          // A new operation's Phase select once the operations list has it.
+          if (k[0] === 'op') { var n = 0, t = setInterval(function () { if (opById(r.id) || ++n > 15) { clearInterval(t); phaseOpts(f); f.dispatchEvent(new Event('change', { bubbles: true })); } }, 200); }
+        }, function (err) { b.disabled = false; toast((err && err.message) || String(err)); });
+      }
+      b.addEventListener('click', add);
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); add(); }
+        if (e.key === 'Escape') { box.hidden = true; sel.value = sel.getAttribute('data-was') || ''; }
+      });
+    });
+  }
   // A new phase (2026-11-08): its folder under the operation's, with a note of its own
   // (the operation's properties, tag phase), and a link in the Index's phases:.
   function makePhase(op, name) {
@@ -811,21 +874,22 @@
             var t = tpls[+f.tpl.value];
             f.querySelector('[data-tplscenes]').textContent = t ? 'Scenes: ' + scenesOf(t.md).join(' · ') : '';
             phaseOpts(f);
-            var where = sessionNotePath({ operation_id: f.op.value, name: f.elements['name'].value || 'Session', phase: f.phase && f.phase.value !== '__new' ? f.phase.value : '' });
-            f.querySelector('[data-where]').textContent = 'Its note: ' + where + (f.op.value ? ' · the operation\'s tapes come along.' : '');
+            var where = sessionNotePath({ operation_id: newVal(f.op), name: f.elements['name'].value || 'Session', phase: f.phase && f.phase.value !== '__new' ? f.phase.value : '' });
+            f.querySelector('[data-where]').textContent = 'Its note: ' + where + (newVal(f.op) ? ' · the operation\'s tapes come along.' : '');
           }
           f.setAttribute('data-how', how);
+          newOpts(f);
           f.addEventListener('click', function (e) { var b = e.target.closest('[data-how]'); if (b) { f.setAttribute('data-how', b.getAttribute('data-how')); sync(); } });
           f.addEventListener('input', sync); f.addEventListener('change', sync);
           sync();
           f.addEventListener('submit', function (e) {
             e.preventDefault();
             var h = f.getAttribute('data-how'), name = f.elements['name'].value.trim() || 'Untitled session';
-            var fields = { name: name, date: f.date.value, cell_id: f.cell.value, operation_id: f.op.value, phase: f.phase && f.phase.value !== '__new' ? f.phase.value : '' };
+            var fields = { name: name, date: f.date.value, cell_id: newVal(f.cell), operation_id: newVal(f.op), phase: f.phase && f.phase.value !== '__new' ? f.phase.value : '' };
             var src = h === 'copy' ? S().get(f.from.value) : null;
             if (src) ['evidence', 'npcs', 'pads', 'tracks'].forEach(function (k) { fields[k] = JSON.parse(JSON.stringify(src[k] || [])); });
             f.querySelector('button.k').disabled = true;
-            var op = operations().filter(function (o) { return o.operation_id === f.op.value; })[0];
+            var op = operations().filter(function (o) { return o.operation_id === fields.operation_id; })[0];
             (op ? ensureOpFolder(op).catch(function () {}) : Promise.resolve()).then(function () {
               var md;
               if (h === 'blank') md = '# ' + name + '\n\n## Scene 1\n\n';
@@ -1203,7 +1267,8 @@
         }).join('') + '</div>' : '<p class="acm-none">No evidence in this session yet.</p>');
         var have = {};
         s.evidence.forEach(function (id) { have[id] = 1; });
-        var cand = items.filter(function (h) { return !have[h.evidence_id] && !h.released && (!s.cell_id || h.cell_id === s.cell_id); }).slice(0, 10);
+        // The session's operation's (or, with none, the Cell's): not other operations' (2026-11-18).
+        var cand = items.filter(function (h) { return !have[h.evidence_id] && !h.released && (!s.operation_id || !h.operation_id || h.operation_id === s.operation_id) && (!s.cell_id || h.cell_id === s.cell_id); }).slice(0, 10);
         body += (cand.length ? lab('Not released yet · add to the session') + '<div class="acm-card">' + cand.map(function (h) { return '<div class="acm-row"><span class="acm-g"><b>' + esc(h.title || 'Untitled') + '</b></span>' + btn('Add', 'ev-in', 's', 'data-id="' + esc(h.evidence_id) + '"') + '</div>'; }).join('') + '</div>' : '') + btn('New evidence', 'add:ev', 'k w');
       } else {
         var D = T(), list = D ? D.forOperation(s.operation_id).concat(D.forCell(s.cell_id)) : [], deck = M() && M().state().tape;
@@ -1619,7 +1684,7 @@
     icon: I, photo: photo, plain: plain, sw: sw, btn: btn, lab: lab, initials: initials, agentsByDex: agentsByDex, opOf: opOf, operations: operations,
     npcNote: npcNote, npcSheet: npcSheet, agentNoteSheet: agentNoteSheet, folderNpcs: folderNpcs, parseNpc: parseNpc, npcDir: npcDir,
     ensureOpFolder: ensureOpFolder, createOperation: createOperation, sameNamed: sameNamed, vaultFolders: vaultFolders, folderOf: folderOf,
-    followVault: followVault, setOpFolder: setOpFolder, loadOpDocs: loadOpDocs, phaseOpts: phaseOpts,
+    followVault: followVault, setOpFolder: setOpFolder, loadOpDocs: loadOpDocs, phaseOpts: phaseOpts, newOpts: newOpts, newVal: newVal, makeCell: makeCell,
     layout: { opIndex: opIndex, cellDir: cellDir, phases: phases, phaseOf: phaseOf, typeDir: typeDir, sessionNotePath: sessionNotePath,
       makeSessionNote: makeSessionNote, makePhase: makePhase, forLink: forLink, baseFm: baseFm, fmOf: fmOf, withFm: withFm, setFm: setFm, asNpc: asNpc }, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
     enable: function () { A.keep('dg_acm_desktop', false); check(); }

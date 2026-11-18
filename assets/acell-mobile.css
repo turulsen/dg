@@ -388,3 +388,6 @@ body.acm .acm-mat{ position:fixed; left:0; right:0; top:var(--acm-top,56px); bot
 @media (orientation: landscape) and (max-height: 520px) and (pointer: coarse){
   body.acm .acm-mat:not(:has(.mt-nofull)){ top:0; bottom:0; z-index:200; }
 }
+/* + New Cell / + New operation in a session form (2026-11-18) */
+.acm-newin small{ display:none; }
+.acm-newnote{ display:block; color:#2f7a4a; font-size:11.5px; margin-top:4px; text-transform:none; letter-spacing:0; }

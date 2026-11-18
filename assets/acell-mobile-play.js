@@ -500,7 +500,8 @@
       var items = E().items(), inS = s ? s.evidence : [];
       function row(h) { return '<div class="acm-row"><span class="acm-g"><b>' + esc(h.title || 'Untitled') + '</b><small>' + (h.released ? 'released' : 'not released') + '</small></span>' + sw(h.released, 'data-acm="release" data-id="' + esc(h.evidence_id) + '"') + '</div>'; }
       var mine = inS.map(function (id) { return E().find(id); }).filter(Boolean);
-      var more = items.filter(function (h) { return !h.released && inS.indexOf(h.evidence_id) < 0 && (!s || !s.cell_id || h.cell_id === s.cell_id); });
+      // The session's operation's (or, with none, the Cell's): not other operations' (2026-11-18).
+      var more = items.filter(function (h) { return !h.released && inS.indexOf(h.evidence_id) < 0 && (!s || ((!s.operation_id || !h.operation_id || h.operation_id === s.operation_id) && (!s.cell_id || h.cell_id === s.cell_id))); });
       box.innerHTML = (mine.length ? lab('In this session') + '<div class="acm-card">' + mine.map(row).join('') + '</div>' : '') +
         (more.length ? lab('The Cell\'s, not released yet') + '<div class="acm-card">' + more.map(row).join('') + '</div>' : '') +
         (mine.length || more.length ? '' : '<p class="acm-none">' + (items.length ? 'Nothing left to release.' : 'Loading the evidence…') + '</p>');
