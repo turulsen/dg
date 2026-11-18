@@ -453,7 +453,11 @@ exports.generatePlateImage = onCall({ secrets: [GEMINI_API_KEY], timeoutSeconds:
   if (ref) {
     parts.push({ text: isOutfit
       ? 'Reference image (next): use it ONLY for this person\'s face and likeness. Ignore its framing, crop and camera distance -- it is a close-up headshot, the output is not.'
-      : 'Reference image (next): use it for this person\'s likeness.' });
+      // 2026-11-18: a Face Plate's reference is the player's own photo (a
+      // film still, an actor); "use it for this person's likeness" alone let
+      // its clothes, lighting and background come through -- Face Plates in
+      // the photo's dark top instead of the brief's jacket and shirt.
+      : 'Reference image (next): use it ONLY for this person\'s face and likeness (features, hair, age). Ignore everything else in it: their clothing, the background, the lighting, the framing. Dress them exactly as the text below says.' });
     parts.push({ inlineData: ref });
   }
   parts.push({ text: prompt });
