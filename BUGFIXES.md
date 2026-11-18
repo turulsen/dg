@@ -7612,3 +7612,20 @@ making either meant leaving the form (the Cells tab, or the phone's New
 operation, which also needed an existing Cell). Built from the approved
 mock-up: "+ New Cell…" and "+ New operation…" at the end of the lists.
 Test: `test_acell_new_session_new_cell_op`. `sw.js` `CACHE_NAME` v337.
+
+## Held notes couldn't be read; new notes without their YAML (v3.25.1, PR #114)
+
+Reported 2026-11-18. **Held notes:** the Notes vault settings' Held list
+(v3.18.0) showed only each note's path with Move to... and Delete, so
+there was no way to see what a note was before deciding. Each row now
+has Show (its text in the list, with when it last changed) and Open (in
+the notebook). **New notes without properties:** two paths wrote none.
+The note picker's + New note (a session's From the vault..., the phone's
+Notes) wrote a bare title even inside an operation's folder; it now
+starts with the operation's properties there. A new session note got
+properties only when its operation had an Index note, so none when A-Cell
+was using the Handler's own same-named folder or the operation was made a
+moment before (the operations list catches up a beat later); it now gets
+at least the Cell and operation, and waits for a just-made operation.
+Tests: `test_acell_vault_held_move`, `test_acell_vault_layout`.
+`sw.js` `CACHE_NAME` v338.

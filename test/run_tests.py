@@ -6172,6 +6172,11 @@ def test_acell_vault_layout(p):
     nc2 = page.evaluate("(p) => (dgVault.get(p) || {}).content || ''", npc or "")
     record("acell-layout", "an NPC's numbers change in place; its other properties stay",
            "hp: 7" in nc2 and "hp: 10" not in nc2 and "operation: A Volume of Secret Faces" in nc2 and "tags:\n  - npc" in nc2, nc2[:400])
+    # 2026-11-18: + New note in the picker, inside the operation's folder: its properties too.
+    nn = page.evaluate("(p) => dgAcm.layout.newNoteText(p)", OPD + "/Dorchester House/The ledger.md") or ""
+    record("acell-layout", "+ New note in an operation's folder starts with the operation's properties",
+           'cell: "[[Impossible]]"' in nn and "operation: A Volume of Secret Faces" in nn and "# The ledger" in nn, nn[:300])
+    record("acell-layout", "...and outside one, a plain note", page.evaluate("() => dgAcm.layout.newNoteText('Elsewhere/Thing.md')") is None, "")
     lk = page.evaluate("(p) => dgAcm.layout.forLink('Mr. Wilde', p)", sn or "")
     record("acell-layout", "a [[link]] to a new note from the session note: in that session's phase, with the properties",
            bool(lk) and lk.get("path") == OPD + "/Dorchester House/Mr. Wilde.md" and "operation: A Volume of Secret Faces" in lk.get("content", "") and "# Mr. Wilde" in lk.get("content", ""), str(lk))
@@ -6383,6 +6388,10 @@ def test_acell_vault_held_move(p):
     wait_for_condition(lambda: page.locator(".vn-hrow").count() == 2, timeout_ms=5000)
     record("acell-vault", "held notes are listed in the vault settings, each with Move to... and Delete",
            page.locator(".vn-hrow [data-vhmove]").count() == 2 and page.locator(".vn-hrow [data-vhdel]").count() == 2, page.inner_text(".vn-held"))
+    # 2026-11-18: Show puts the note's text in the list, to decide what to do with it.
+    page.click(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhshow]")
+    record("acell-vault", "Show: a held note's text in the list (and Open beside it)",
+           "Keeps the keys." in page.inner_text(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] .vn-hview") and page.locator(".vn-hrow [data-vhopen]").count() == 2, "")
     page.click(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhmove]")
     page.select_option(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhdir]", "Impossible/Night Floors/Phase A/NPCs")
     page.click(".vn-hrow[data-vheld='Old Op/NPCs/Sheriff Dunn.md'] [data-vhok]")
