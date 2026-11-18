@@ -31,7 +31,20 @@
   <div class="af-block-head"><span class="af-block-title">Appearance</span><span class="af-appear-state" id="af-appear-state"></span><button type="button" class="af-appear-toggle" id="af-appear-toggle"></button></div>
   <div class="af-appear-note" id="code-load-status"></div>
   <div class="af-appear-body" id="form-paper">
-            <div class="section-head" style="margin-top:var(--s4);">Random Agent Generator</div>
+            <!-- 2026-11-18: start from a reference photo (optional): the
+                 questions fill in from it (afReadPhoto_), never the clothes
+                 or what the character sheet set. The same photo stays the
+                 Face Plate's likeness reference. -->
+            <div class="section-head" style="margin-top:var(--s4);">Start from a photo <span style="font-family:'Source Sans 3';font-weight:300;text-transform:none;letter-spacing:0;color:var(--ink-3);font-size:9px;">(optional)</span></div>
+            <div class="upload-zone af-photo-zone" onclick="if (event.target.id !== 'ref-img') document.getElementById('ref-img').click()">
+              <input type="file" id="ref-img" name="ref_image" accept="image/jpeg,image/png,image/webp">
+              <div class="upload-hint">Upload a reference photo: a face that looks like your Agent (an actor, a stock photo, a sketch). The questions below fill themselves in from it; what your character sheet says stays. Check them and change anything. JPG, PNG or WebP.</div>
+              <img id="upload-prev" class="upload-prev">
+            </div>
+            <div class="af-photo-acts"><button type="button" class="af-era-new" id="af-photo-read" hidden>Fill in from this photo</button></div>
+            <div class="af-darkroom" id="af-photo-term" hidden></div>
+            <div class="af-photo-sum" id="af-photo-sum" hidden></div>
+            <div class="section-head" style="margin-top:var(--s4);">Or: Random Agent Generator</div>
             <div style="display:flex;gap:var(--s2);align-items:center;margin-bottom:var(--s4);flex-wrap:wrap;">
               <select class="rand-select fi" id="rand-profession" style="flex:1;min-width:140px;">
                 <option value="">Any profession</option>
@@ -115,12 +128,6 @@
               <div class="fg"><label>Resembles <span class="opt">(optional)</span></label><input type="text" name="reference_person" class="fi" placeholder="e.g. early Kris Kristofferson, Nick Nolte"></div>
               <div class="fg"><label>Handler notes <span class="opt">(optional)</span></label><textarea name="notes" class="ft" placeholder="Anything that doesn't fit above."></textarea></div>
 
-              <div class="section-head">Reference Image <span style="font-family:'Source Sans 3';font-weight:300;text-transform:none;letter-spacing:0;color:var(--ink-3);font-size:9px;">(optional)</span></div>
-              <div class="upload-zone" onclick="document.getElementById('ref-img').click()">
-                <input type="file" id="ref-img" name="ref_image" accept="image/jpeg,image/png,image/webp">
-                <div class="upload-hint">Tap to upload reference — JPG, PNG or WebP</div>
-                <img id="upload-prev" class="upload-prev">
-              </div>
 
               <!-- 2026-11-18: the era is the brief's last question; Submit
                    makes the photos for it (afDarkroom_). Shown until the
@@ -481,8 +488,92 @@ document.getElementById('ref-img').addEventListener('change', async function() {
     photoDataUrl = await f2b(this.files[0]);
     const p = document.getElementById('upload-prev');
     p.src = photoDataUrl; p.style.display = 'block';
+    afReadPhoto_(photoDataUrl);
   }
 });
+
+/* ── Start from a photo (2026-11-18): the reference photo is read on the
+   server (describeReferencePhoto, Claude) for what a face and bearing
+   show, and the brief's questions are filled from it. Never the clothes,
+   the name, nationality or build, nor sex or age when the character
+   sheet gave them; everything filled is marked "photo", the sheet's
+   "sheet", until the player edits it. ── */
+const AF_PHOTO_FIELDS = ['age_range', 'sex', 'face_shape', 'eye_color', 'eye_shape', 'nose', 'lips', 'skin', 'facial_hair',
+  'face_scars', 'hair_color', 'hair_style', 'hair_texture', 'posture', 'body_markers', 'expression'];
+const AF_SHEET_FIELDS = ['sex', 'age_range', 'nationality', 'build'];
+function afShrink_(dataUrl) {
+  return new Promise(function (res) {
+    const im = new Image();
+    im.onload = function () {
+      const k = Math.min(1, 1024 / Math.max(im.naturalWidth || 1, im.naturalHeight || 1));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round((im.naturalWidth || 1) * k)); c.height = Math.max(1, Math.round((im.naturalHeight || 1) * k));
+      try { c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', 0.85)); } catch (e) { res(dataUrl); }
+    };
+    im.onerror = function () { res(dataUrl); };
+    im.src = dataUrl;
+  });
+}
+function afPhotoButton_() {
+  const b = document.getElementById('af-photo-read');
+  if (b) b.hidden = !(photoDataUrl && /^data:image\//.test(photoDataUrl));
+}
+var afPhotoBusy = false;
+function afReadPhoto_(dataUrl) {
+  const term = document.getElementById('af-photo-term'), sum = document.getElementById('af-photo-sum');
+  const form = document.getElementById('dg-form'), code = afMountedCode || afCode;
+  afPhotoButton_();
+  if (!term || !form || !dataUrl || afPhotoBusy) return Promise.resolve(false);
+  if (!code || !window.dgStore || !window.dgStore.describeReferencePhoto) { sum.hidden = false; sum.textContent = 'The photo is kept; filling in from it needs the Agent to be filed first.'; return Promise.resolve(false); }
+  afPhotoBusy = true; sum.hidden = true;
+  const head = '<div class="af-dr-dim">DELTA GREEN // RECORDS DIVISION // ' + afEscapeHtml(code) + '</div><div class="af-dr-ok">&gt; PHOTOGRAPH RECEIVED ................ LOGGED</div>';
+  term.hidden = false;
+  term.innerHTML = head + '<div class="af-dr-now">&gt; FIELD DESCRIPTION ................... IN PROGRESS<i>_</i></div><div class="af-dr-dim af-dr-note">A few seconds.</div>';
+  return afShrink_(dataUrl).then(function (img) {
+    return window.dgStore.describeReferencePhoto(code, { image: img });
+  }).then(function (r) {
+    afPhotoBusy = false;
+    if (!r || r.status !== 'OK' || !r.fields) throw new Error((r && r.message) || 'no description');
+    const filled = afFillFromPhoto_(r.fields);
+    term.innerHTML = head + '<div class="af-dr-ok">&gt; FIELD DESCRIPTION ................... FILED</div>';
+    setTimeout(function () { term.hidden = true; }, 2500);
+    sum.hidden = false;
+    sum.innerHTML = 'Filled <b>' + filled.photo + '</b> from the photo (marked green).' + (filled.sheet.length ? ' Kept <b>' + filled.sheet.length + '</b> from your character sheet (blue: ' + afEscapeHtml(filled.sheet.join(', ')) + ').' : '') +
+      ' The clothes are yours to choose. Change anything that isn\'t right, then Submit.';
+    return true;
+  }).catch(function (e) {
+    afPhotoBusy = false;
+    const m = String((e && e.message) || e || '');
+    term.innerHTML = head + '<div class="af-dr-fail">&gt; ' + afEscapeHtml(/rate limit|wait a few minutes|resource-exhausted/i.test(m)
+      ? 'RECORDS AT CAPACITY: TRY AGAIN IN A FEW MINUTES.' : 'THE PHOTOGRAPH COULD NOT BE READ (' + m.toUpperCase().slice(0, 80) + '). NOTHING WAS CHANGED.') + '</div>';
+    return false;
+  });
+}
+function afFillFromPhoto_(fields) {
+  const form = document.getElementById('dg-form'), sheetNames = { sex: 'sex', age_range: 'age', nationality: 'nationality', build: 'build' };
+  let photo = 0;
+  const sheet = [];
+  AF_SHEET_FIELDS.forEach(function (k) {
+    const el = form.elements[k];
+    if (el && el.value && el.dataset.locked) { el.classList.add('af-from-sheet'); sheet.push(sheetNames[k]); }
+  });
+  AF_PHOTO_FIELDS.forEach(function (k) {
+    const el = form.elements[k], v = fields[k];
+    if (!el || !v) return;
+    // The character sheet's facts stay; sex and age only fill a blank.
+    if ((k === 'sex' || k === 'age_range') && (el.value || el.dataset.locked)) return;
+    if (el.tagName === 'SELECT' && !Array.prototype.some.call(el.options, function (o) { return (o.value || o.text) === v; })) return;
+    el.value = v;
+    el.classList.remove('af-from-sheet'); el.classList.add('af-from-photo');
+    photo++;
+  });
+  try { form.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) { /* old engine */ }
+  return { photo: photo, sheet: sheet };
+}
+document.getElementById('dg-form').addEventListener('input', function (e) {
+  if (e.isTrusted && e.target && e.target.classList) e.target.classList.remove('af-from-photo', 'af-from-sheet');
+});
+document.getElementById('af-photo-read').addEventListener('click', function () { afReadPhoto_(photoDataUrl); });
 
 /* ── Firebase Storage: direct client upload for the reference photo
    (Phase 4). Self-contained copy of the same loader/sign-in pattern
@@ -2471,6 +2562,9 @@ function afReset_() {
   btn.disabled = false; btn.textContent = 'Submit Brief'; afEraQuestion_();
   document.getElementById('form-status').textContent = '';
   document.getElementById('upload-prev').style.display = 'none';
+  ['af-photo-term', 'af-photo-sum'].forEach(function (id) { const x = document.getElementById(id); if (x) { x.hidden = true; x.innerHTML = ''; } });
+  Array.prototype.forEach.call(document.querySelectorAll('#dg-form .af-from-photo, #dg-form .af-from-sheet'), function (x) { x.classList.remove('af-from-photo', 'af-from-sheet'); });
+  afPhotoButton_();
   document.getElementById('code-load-status').textContent = '';
   document.getElementById('rand-result-bar').style.display = 'none';
   document.getElementById('rand-reroll-btn').style.display = 'none';
@@ -2515,6 +2609,7 @@ function afRender_() {
   }
   document.getElementById('af-photos-locked').hidden = complete;
   afEraQuestion_();
+  afPhotoButton_();
   document.getElementById('af-photos').classList.toggle('af-photos-wait', !complete);
   if (complete) renderAgentFile(afData);
   else document.getElementById('af-content').style.display = 'none';
