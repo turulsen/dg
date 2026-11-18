@@ -555,12 +555,34 @@
     return V().cleanPath(idx.dir + '/SN- ' + fileName(op.name) + ' - pt.' + (n + 1));
   }
   // A new session note: the Index's properties, and the Index lists it.
+  // The session's operation, waiting a moment for one just made (the
+  // operations list catches up a beat after it's created).
+  function opSoon(id) {
+    if (!id || opById(id)) return Promise.resolve(opById(id));
+    return new Promise(function (res) { var n = 0, t = setInterval(function () { if (opById(id) || ++n > 15) { clearInterval(t); res(opById(id)); } }, 200); });
+  }
   function makeSessionNote(s, md) {
-    var path = sessionNotePath(s), op = opById(s.operation_id), idx = opIndex(op);
-    return V().load().catch(function () {}).then(function () {
+    return Promise.all([V().load().catch(function () {}), opSoon(s.operation_id)]).then(function (r) {
+      var op = r[1], path = sessionNotePath(s);
       if (V().get(path)) return path;
-      return V().save(path, idx ? withFm(md, op, 'session', s.date || today()) : md, { why: 'session note for ' + (s.name || 'a session') }).then(function () { return listInIndex(op, path); }).then(function () { return path; });
+      // Its properties (2026-11-18): the Index's when there is one, else at
+      // least the Cell and the operation (baseFm) -- it used to write none
+      // for an operation without an Index note.
+      return V().save(path, op ? withFm(md, op, 'session', s.date || today()) : md, { why: 'session note for ' + (s.name || 'a session') }).then(function () { return listInIndex(op, path); }).then(function () { return path; });
     });
+  }
+  // A new note made from the note picker (+ New note): inside an operation's
+  // folder it gets the operation's properties, like every note A-Cell makes
+  // there (2026-11-18: it was a bare title). Null outside one.
+  function newNoteText(path) {
+    var best = null, bestDir = '';
+    (operations() || []).forEach(function (o) {
+      var i = opIndex(o), d = (i && i.dir) || folderOf(o.operation_id) || '';
+      if (d && path.indexOf(d + '/') === 0 && d.length > bestDir.length) { best = o; bestDir = d; }
+    });
+    if (!best) return null;
+    var title = baseOf(path).replace(/\.md$/i, '');
+    return baseFm(best, '', today()) + '# ' + title + '\n\n';
   }
   function listInIndex(op, path) {
     var idx = opIndex(op);
@@ -1686,7 +1708,7 @@
     ensureOpFolder: ensureOpFolder, createOperation: createOperation, sameNamed: sameNamed, vaultFolders: vaultFolders, folderOf: folderOf,
     followVault: followVault, setOpFolder: setOpFolder, loadOpDocs: loadOpDocs, phaseOpts: phaseOpts, newOpts: newOpts, newVal: newVal, makeCell: makeCell,
     layout: { opIndex: opIndex, cellDir: cellDir, phases: phases, phaseOf: phaseOf, typeDir: typeDir, sessionNotePath: sessionNotePath,
-      makeSessionNote: makeSessionNote, makePhase: makePhase, forLink: forLink, baseFm: baseFm, fmOf: fmOf, withFm: withFm, setFm: setFm, asNpc: asNpc }, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
+      makeSessionNote: makeSessionNote, newNoteText: newNoteText, makePhase: makePhase, forLink: forLink, baseFm: baseFm, fmOf: fmOf, withFm: withFm, setFm: setFm, asNpc: asNpc }, backfillOps: backfillOps, actions: SCREEN_ACTIONS, add: ADD_ACTIONS, templates: templates,
     enable: function () { A.keep('dg_acm_desktop', false); check(); }
   };
   // After the other phone screens (acell-mobile-*.js) have registered.

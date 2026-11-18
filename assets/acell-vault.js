@@ -666,7 +666,9 @@
       if (e.target.closest('[data-vnew]')) {
         var path = cleanPath(w.querySelector('.vn-newpath').value);
         if (!path) return;
-        var make = get(path) ? Promise.resolve(path) : save(path, '# ' + title(path) + '\n\n');
+        // In an operation's folder: its properties too (A-Cell's layout).
+        var L = window.dgAcm && window.dgAcm.layout, txt = (L && L.newNoteText && L.newNoteText(path)) || '# ' + title(path) + '\n\n';
+        var make = get(path) ? Promise.resolve(path) : save(path, txt);
         make.then(function () { w.remove(); if (opts.onPick) opts.onPick(path); });
       }
     });
@@ -808,8 +810,13 @@
         // Changed here, but their folder is gone from the phone: kept, not sent (the sync won't recreate a folder).
         (heldList(last).length ? '<h4>Held</h4><p class="vn-small">Changed in A-Cell, but their folder is gone from your phone, so the sync doesn\'t send them (it won\'t recreate a folder). Move each into a folder you have, or delete it.</p><div class="vn-held">' +
           heldList(last).map(function (p) {
+            // Show: its text here, to decide (2026-11-18: only the path showed); Open: in the notebook.
+            var hn = get(p) || {}, when = hn.mtime || hn.updated_at || 0;
             return '<div class="vn-hrow" data-vheld="' + esc(p) + '"><span class="vn-hp">' + esc(p.replace(/\.md$/i, '')) + '</span>' +
+              '<button type="button" class="vn-btn" data-vhshow>' + (heldShow[p] ? 'Hide' : 'Show') + '</button><button type="button" class="vn-btn" data-vhopen>Open</button>' +
               '<button type="button" class="vn-btn" data-vhmove>Move to…</button><button type="button" class="vn-btn vn-del" data-vhdel>Delete</button>' +
+              (heldShow[p] ? '<div class="vn-hview"><small>' + (when ? 'Last changed ' + esc(new Date(when).toLocaleString()) + ' · ' : '') + esc(String(hn.content || '').length) + ' characters</small><pre>' +
+                esc(String(hn.content || '').slice(0, 1500) || '(empty)') + (String(hn.content || '').length > 1500 ? '\n…' : '') + '</pre></div>' : '') +
               (heldPick === p ? '<div class="vn-hpick"><select class="vn-search" data-vhdir>' + folders().map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('') + '</select>' +
                 '<button type="button" class="vn-btn p" data-vhok>Move it</button><button type="button" class="vn-btn" data-vhx>Cancel</button></div>' : '') + '</div>';
           }).join('') + '</div>' : '') +
@@ -827,7 +834,7 @@
         '<h4>Without the Shortcut</h4>' +
         '<div class="vn-key"><label class="vn-btn">⇪ Import .md files<input type="file" accept=".md,text/markdown" multiple hidden data-vimport></label><button type="button" class="vn-btn" data-vexport>⇩ Export all as .zip</button><span class="vn-status"></span></div>';
     }
-    var cfgRef = null, cfgNow = {}, heldPick = '', heldDone = {};
+    var cfgRef = null, cfgNow = {}, heldPick = '', heldDone = {}, heldShow = {};
     // The held notes A-Cell still has (the last sync's list, less those moved or deleted here since).
     function heldList(last) { return ((last && last.held_paths) || []).filter(function (p) { return !heldDone[p] && get(p); }); }
     function folders() {
@@ -859,6 +866,8 @@
       var hr = e.target.closest('[data-vheld]');
       if (hr) {
         var hp = hr.getAttribute('data-vheld');
+        if (e.target.closest('[data-vhshow]')) { heldShow[hp] = !heldShow[hp]; draw(cfgNow); drawAct(); return; }
+        if (e.target.closest('[data-vhopen]')) { w.remove(); if (window.dgAc && window.dgAc.openNote) window.dgAc.openNote(hp); return; }
         if (e.target.closest('[data-vhmove]')) { heldPick = heldPick === hp ? '' : hp; draw(cfgNow); drawAct(); return; }
         if (e.target.closest('[data-vhx]')) { heldPick = ''; draw(cfgNow); drawAct(); return; }
         if (e.target.closest('[data-vhdel]')) {
