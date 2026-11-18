@@ -176,6 +176,25 @@ async function checkRateLimit_(key, bucket, maxCalls, windowSeconds) {
 const IN_EMULATOR = process.env.FUNCTIONS_EMULATOR === 'true';
 const FAKE_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGElEQVR4nGNgGAWjYBSMglEwCkbBwAQABAgAAWm3N0IAAAAASUVORK5CYII=';
 
+// The text of a Messages API reply (2026-11-18). Claude Sonnet 5 thinks by
+// default, so the reply can open with a thinking block (no text): reading
+// content[0] found nothing and reported "No content returned (HTTP 200)".
+// Every text block, joined; a decline (stop_reason "refusal") or a reply
+// cut off before any text says so instead.
+function replyText_(result) {
+  return (result && Array.isArray(result.content) ? result.content : [])
+    .filter(function (b) { return b && b.type === 'text' && b.text; }).map(function (b) { return b.text; }).join('').trim();
+}
+function replyProblem_(result, status, what) {
+  if (result && result.error && result.error.message) return result.error.message;
+  if (result && result.stop_reason === 'refusal') return 'The AI declined to write ' + what + ' for this. Change the wording (a real person\'s name in "Resembles", say) and try again.';
+  if (result && result.stop_reason === 'max_tokens') return 'The AI ran out of room before writing ' + what + '. Try again.';
+  return 'No ' + what + ' came back (HTTP ' + status + (result && result.stop_reason ? ', ' + result.stop_reason : '') + ').';
+}
+// Short jobs: thinking stays on (Claude Sonnet 5's default) at low effort,
+// with room for it before the answer.
+const SHORT_JOB = { max_tokens: 16000, output_config: { effort: 'low' } };
+
 exports.generatePrompt = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120 }, async (request) => {
   const key = callerKey_(request);
   await checkRateLimit_(key, 'prompt', 10, 600);
@@ -192,14 +211,13 @@ exports.generatePrompt = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1000, messages: [{ role: 'user', content: userPrompt }] })
+      body: JSON.stringify(Object.assign({ model: 'claude-sonnet-5', messages: [{ role: 'user', content: userPrompt }] }, SHORT_JOB))
     });
     const result = await resp.json().catch(() => ({}));
-    if (result.content && result.content[0] && result.content[0].text) {
-      return { status: 'OK', prompt: result.content[0].text };
-    }
-    const message = (result.error && result.error.message) || ('No content returned (HTTP ' + resp.status + ').');
-    logger.error('generatePrompt: Anthropic API error', { status: resp.status, error: result.error || null });
+    const text = replyText_(result);
+    if (text && result.stop_reason !== 'refusal') return { status: 'OK', prompt: text };
+    const message = replyProblem_(result, resp.status, 'the description');
+    logger.error('generatePrompt: no prompt', { status: resp.status, error: result.error || null, stop: result.stop_reason || null, details: result.stop_details || null });
     return { status: 'ERROR', message: message };
   } catch (err) {
     logger.error('generatePrompt failed', err);
@@ -256,16 +274,16 @@ exports.describeReferencePhoto = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutS
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 800, messages: [{ role: 'user', content: [
+      body: JSON.stringify(Object.assign({ model: 'claude-sonnet-5', messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } },
-        { type: 'text', text: photoPrompt_() }] }] })
+        { type: 'text', text: photoPrompt_() }] }] }, SHORT_JOB))
     });
     const result = await resp.json().catch(() => ({}));
-    const text = result.content && result.content[0] && result.content[0].text;
+    const text = result.stop_reason === 'refusal' ? '' : replyText_(result);
     const fields = text ? photoFields_(text) : null;
     if (fields) return { status: 'OK', fields: fields };
-    const message = (result.error && result.error.message) || (text ? 'The description could not be read.' : 'No content returned (HTTP ' + resp.status + ').');
-    logger.error('describeReferencePhoto: no fields', { status: resp.status, error: result.error || null });
+    const message = text ? 'The description could not be read.' : replyProblem_(result, resp.status, 'a description of the photo');
+    logger.error('describeReferencePhoto: no fields', { status: resp.status, error: result.error || null, stop: result.stop_reason || null, details: result.stop_details || null });
     return { status: 'ERROR', message: message };
   } catch (err) {
     logger.error('describeReferencePhoto failed', err);
@@ -304,14 +322,15 @@ exports.generateBondDescription = onCall({ secrets: [ANTHROPIC_API_KEY], timeout
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 300, messages: [{ role: 'user', content: bondPrompt_(data) }] })
+      body: JSON.stringify(Object.assign({ model: 'claude-sonnet-5', messages: [{ role: 'user', content: bondPrompt_(data) }] }, SHORT_JOB))
     });
     const result = await resp.json().catch(() => ({}));
-    if (result.content && result.content[0] && result.content[0].text) {
-      return { status: 'OK', description: String(result.content[0].text).trim() };
+    const text = result.stop_reason === 'refusal' ? '' : replyText_(result);
+    if (text) {
+      return { status: 'OK', description: text };
     }
-    const message = (result.error && result.error.message) || ('No content returned (HTTP ' + resp.status + ').');
-    logger.error('generateBondDescription: Anthropic API error', { status: resp.status, error: result.error || null });
+    const message = replyProblem_(result, resp.status, 'the description');
+    logger.error('generateBondDescription: no description', { status: resp.status, error: result.error || null, stop: result.stop_reason || null });
     return { status: 'ERROR', message: message };
   } catch (err) {
     logger.error('generateBondDescription failed', err);
