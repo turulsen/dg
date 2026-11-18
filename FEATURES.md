@@ -607,6 +607,12 @@ testing found the one long paper hard to read, so it's grouped:
   the character sheet's locked ones marked `af-from-sheet` (blue); a mark
   goes when the field is edited. The green terminal shows the read, a
   summary line what was filled and kept; a failure changes nothing.
+  v3.26.1: it's one card (`#af-pcard`, the whole card picks a photo;
+  `afPhotoState_()` sets its words for empty / photo / reading / done /
+  fail); the longer explanation behind an **i**; a saved reference photo
+  (`ref_image_link`) shows in the slot and can be read again
+  (`afPhotoData_()` fetches it); an unreachable function (Firebase's
+  "internal") says the photo reader may not be set up on the server yet.
 - A narrow paper (the notebook page) stacks the two-column parts and puts
   the statistics in rows of three (a container query on `.as-paper.ap`).
 

@@ -7642,3 +7642,18 @@ model adds are dropped. Also: on a phone "Appearance & photos" (v3.24.0)
 ran out of its 112px button column; it wraps onto two lines now.
 Tests: `test_appearance_from_photo`, `test_agent_hub_drop_buttons_phone`.
 `sw.js` `CACHE_NAME` v340.
+
+## Start from a photo: hard to see, and "INTERNAL [0]" (v3.26.1, PR #116)
+
+Reported 2026-11-18 from a phone: the photo box was a long paragraph in a
+faint dashed area ("not visible enough, too much text"), and reading a
+photo showed "THE PHOTOGRAPH COULD NOT BE READ (INTERNAL [0])", with the
+terminal's lines cut off at the right. Rebuilt from the approved mock-up
+as one card. "internal" is Firebase's word for a function it couldn't
+reach: `describeReferencePhoto` wasn't deployed yet. The deploy from the
+Handler's Cloud Shell copy then failed twice: the copy was older than
+v3.0.1 (Node 20, refused since 2026-10-30; fixed with `git fetch` and
+`git reset --hard origin/main`), and `functions/` had never had
+`npm install` run in it. The card now says plainly that the photo reader
+may not be set up on the server yet. Test: `test_appearance_from_photo`
+(10 checks). `sw.js` `CACHE_NAME` v341.
