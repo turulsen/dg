@@ -209,9 +209,13 @@
   }
   function placeStamp(host, x) {
     if (!host) return;
-    host.classList.toggle('ap-struck', fateOf(x).insane);   // SAN 0: struck like KIA
+    var f = fateOf(x);
+    // 2026-11-18: KIA (HP 0) struck too, with the big KIA stamp in place of
+    // INSANE ("I want the same as the insane stamp"). Dead outranks mad.
+    host.classList.toggle('ap-struck', f.insane || f.kia);
+    if (f.kia) host.setAttribute('data-kia-stamp', ''); else host.removeAttribute('data-kia-stamp');
     var w = x ? wearVars(R().derived(x).san) : { tier: 0 };
-    if (w.tier >= 5) {
+    if (w.tier >= 5 && !f.kia) {
       host.setAttribute('data-wear-stamp', '');
       host.style.setProperty('--insane', w.insane);
       host.style.setProperty('--fill', w.fill);
@@ -229,18 +233,25 @@
   function hashStr(t) { var h = 2166136261; for (var i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; }
   function placeDisorders(area, names, code, fresh) {
     if (!area) return;
-    Array.prototype.forEach.call(area.querySelectorAll('.ap-dis-stamp'), function (n) { n.remove(); });
+    Array.prototype.forEach.call(area.querySelectorAll('.ap-dis-stamp, .ap-dis-row'), function (n) { n.remove(); });
     if (!names.length || !area.getClientRects().length) return;
     if (getComputedStyle(area).position === 'static') area.style.position = 'relative';
     var b0 = area.getBoundingClientRect(), extend = +(area.getAttribute('data-dis-extend') || 0);
     var box = { left: b0.left, top: b0.top, width: b0.width, height: b0.height + extend };
-    var avoid = Array.prototype.map.call(area.querySelectorAll('button, a, input, select, textarea, .ap-vitals, .ap-pop, .ap-status, .paper-meta, .paper-title, .ah-prof, .as-name, .as-sub'),
-      function (e) { return e.getBoundingClientRect(); }).filter(function (r) { return r.width; });
+    // A stamp no wider than most of the header: a long disorder wraps
+    // instead of running off the page over the tabs (2026-11-18).
+    var maxW = Math.max(120, Math.min(260, box.width * .72));
+    // Buttons just outside the header (Field Notes' tabs below it) too.
+    var near = area.parentElement || area;
+    var avoid = Array.prototype.map.call(near.querySelectorAll('button, .as-tab, .stamp'), function (e) { return e.getBoundingClientRect(); })
+      .filter(function (r) { return r.width; })
+      .concat(Array.prototype.map.call(area.querySelectorAll('button, a, input, select, textarea, .ap-vitals, .ap-pop, .ap-status, .paper-meta, .paper-title, .ah-prof, .as-name, .as-sub'),
+      function (e) { return e.getBoundingClientRect(); }).filter(function (r) { return r.width; }));
     // Agent Hub's stamp row (the era, KIA, INSANE) sits in the strip below the rule.
     Array.prototype.forEach.call(document.querySelectorAll('.stamps .stamp'), function (e) {
       var r = e.getBoundingClientRect(); if (r.width) avoid.push(r);
     });
-    var ws = document.querySelector('[data-wear-stamp]');
+    var ws = document.querySelector('[data-kia-stamp]') || document.querySelector('[data-wear-stamp]');
     if (ws && area.contains(ws)) {
       var r = ws.getBoundingClientRect(), fs = parseFloat(getComputedStyle(ws).fontSize) || 16;
       avoid.push({ left: r.left - .6 * fs, top: r.top - .3 * fs, right: r.left + 6.6 * fs, bottom: r.bottom + 1.1 * fs });
@@ -255,6 +266,7 @@
       sp.textContent = n;
       sp.setAttribute('aria-hidden', 'true');
       sp.style.color = DIS_INKS[i % DIS_INKS.length];   // red, violet, blue-black in turn
+      sp.style.maxWidth = maxW.toFixed(0) + 'px';
       area.appendChild(sp);
       var w = sp.offsetWidth, h = sp.offsetHeight;
       // A crowded header: after 300 tries, let it spill a little lower.
@@ -272,7 +284,13 @@
         placed.push(rr);
         return;
       }
-      sp.remove();   // no free spot left in this header: better none than one on a button
+      // No free spot left in this header: rather than drop it, or lay it
+      // on a button or the tabs below, it goes in a row of its own at the
+      // foot of the header (2026-11-18).
+      var row = area.querySelector('.ap-dis-row');
+      if (!row) { row = document.createElement('div'); row.className = 'ap-dis-row'; row.setAttribute('aria-hidden', 'true'); area.appendChild(row); }
+      sp.style.setProperty('--rot', (rnd() * 8 - 4).toFixed(1) + 'deg');
+      row.appendChild(sp);
     });
   }
   applyWear();

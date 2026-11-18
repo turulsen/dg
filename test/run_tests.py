@@ -1654,8 +1654,10 @@ def test_agent_hub_kia_stamp(p):
            "kia-name" in page.eval_on_selector("#ah-tablabel-DEAD-0001", "el => el.className"), "")
     record("hub", "the dead Agent's panel title is struck through",
            "kia-name" in page.eval_on_selector("#ah-title-DEAD-0001", "el => el.className"), "")
-    record("hub", "the dead Agent's panel shows a KIA stamp",
-           "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"), page.inner_text("#ah-charstamp-DEAD-0001"))
+    # 2026-11-18: the big KIA stamp on the name (like INSANE), not a tag in the row.
+    kia_after = page.evaluate("() => getComputedStyle(document.getElementById('ah-title-DEAD-0001'), '::after').content")
+    record("hub", "the dead Agent's name carries the big KIA stamp (no small tag in the row)",
+           kia_after == '"KIA"' and "KIA" not in page.inner_text("#ah-charstamp-DEAD-0001"), kia_after + " / " + page.inner_text("#ah-charstamp-DEAD-0001"))
 
     record("hub", "the living Agent's tab label is not struck through",
            "kia-name" not in page.eval_on_selector("#ah-tablabel-ALIV-0002", "el => el.className"), "")
@@ -12771,6 +12773,48 @@ def test_appearance_carries_over_from_sheet(p):
     page.close()
 
 
+def test_kia_stamp_like_insane(p):
+    """KIA (HP 0) gets the INSANE stamp's look: the name struck in red and a
+    big KIA stamp across it, on Agent Hub's header and in the notebook's
+    Agent File (which used to strike only for SAN 0). A long Mental Disorder
+    stamp wraps and stays inside the page, clear of the tabs."""
+    long_dis = "Light schizophrenia - hallucinations of a person that helps in research"
+    errs_all = []
+    for width in (1180, 390):
+        docs = _field_notes_docs()
+        st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+              "derived": {"hp": 0, "wp": 12, "san": 49, "bp": 48},
+              "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester", "disorders": [long_dis]}}
+        docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+        page, errs = _field_notes_page(p, width=width, docs=docs,
+                                       extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
+        page.evaluate("() => document.fonts.ready")
+        page.wait_for_timeout(900)
+        hub = page.evaluate("""(c) => { const t = document.getElementById('ah-title-' + c), a = getComputedStyle(t, '::after');
+            const panel = document.getElementById('panel-' + c).getBoundingClientRect(), d = document.querySelector('#panel-' + c + ' .ap-dis-stamp');
+            const R = d && d.getBoundingClientRect(), hit = (x, y) => !(x.right <= y.left || x.left >= y.right || x.bottom <= y.top || x.top >= y.bottom);
+            const keep = [...document.querySelectorAll('#panel-' + c + ' button, #panel-' + c + ' .stamp')].map(e => e.getBoundingClientRect()).filter(r => r.width);
+            return { struck: t.classList.contains('kia-name'), after: a.content, row: !!document.querySelector('#ah-charstamp-' + c + ' .stamp[data-fate="kia"]'),
+                     dis: !!d, inside: !!R && R.left >= panel.left - 1 && R.right <= panel.right + 1, clear: !!R && !keep.some(k => hit(R, k)),
+                     lines: d ? Math.round(d.offsetHeight / parseFloat(getComputedStyle(d).lineHeight)) : 0 }; }""", FN_CODE)
+        record("kia", f"Agent Hub: the dead Agent's name is struck with the big KIA stamp, no small tag ({width}px)",
+               hub["struck"] and hub["after"] == '"KIA"' and not hub["row"], json.dumps(hub))
+        record("kia", f"a long disorder stamp wraps and stays inside the page, clear of buttons and tags ({width}px)",
+               hub["dis"] and hub["inside"] and hub["clear"] and hub["lines"] >= 2, json.dumps(hub))
+        page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+        page.wait_for_selector("#fn-veil .as-paper.ap .as-head .as-name", timeout=8000)
+        page.wait_for_timeout(500)
+        nb = page.evaluate("""() => { const n = [...document.querySelectorAll('#fn-veil .as-paper.ap .as-head .as-name')].find(e => e.getClientRects().length);
+            const cs = getComputedStyle(n);
+            return { struck: cs.textDecorationLine.includes('line-through'), after: getComputedStyle(n, '::after').content }; }""")
+        record("kia", f"Field Notes: the dead Agent's name is struck too, with the same KIA stamp ({width}px)",
+               nb["struck"] and nb["after"] == '"KIA"', json.dumps(nb))
+        page.close(); errs_all.extend(errs)
+    record("kia", "no JS exceptions (KIA stamp)", not errs_all, str(errs_all[:3]))
+
+
 def test_insane_struck_like_kia(p):
     """SAN 0 is marked the way KIA is: the Agent's name struck through on
     Agent Hub's tab and header, a small INSANE stamp in the stamp row, and
@@ -15872,6 +15916,7 @@ def main():
         safe(test_agent_file_disorder_stamps, browser, area="disorders")
         safe(test_appearance_carries_over_from_sheet, browser, area="appearance")
         safe(test_insane_struck_like_kia, browser, area="insane")
+        safe(test_kia_stamp_like_insane, browser, area="kia")
         safe(test_plate_save_survives_a_dropped_connection, browser, area="plates")
         safe(test_bond_at_zero_struck, browser, area="bonds")
         safe(test_notebook_flip_agents, browser, area="flip")
