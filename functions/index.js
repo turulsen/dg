@@ -207,6 +207,72 @@ exports.generatePrompt = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 
   }
 });
 
+// Appearance from a reference photo (2026-11-18): the player's photo is
+// read for what a face and bearing show, and the brief's questions are
+// filled from it (assets/agent-file.js afReadPhoto_). Never the clothes,
+// the name or nationality, nor the build (the character sheet's); never
+// who the person is. Same sign-in and limit as the prompts above.
+const PHOTO_FIELDS = ['age_range', 'sex', 'face_shape', 'eye_color', 'eye_shape', 'nose', 'lips', 'skin', 'facial_hair',
+  'face_scars', 'hair_color', 'hair_style', 'hair_texture', 'posture', 'body_markers', 'expression'];
+const AGE_RANGES = ['Early 20s', 'Mid 20s', 'Late 20s', 'Early 30s', 'Mid 30s', 'Late 30s', 'Early 40s', 'Mid 40s', 'Late 40s',
+  'Early 50s', 'Mid 50s', 'Late 50s', '60s or older'];
+function photoPrompt_() {
+  return 'This is a reference photo a player chose for their character in the tabletop game Delta Green. Describe how ' +
+    'the person in it LOOKS, to fill in the character\'s appearance brief. Do not say or guess who the person is, and do ' +
+    'not describe clothing or jewellery. Reply with one JSON object only, no other text, with these keys:\n' +
+    '- age_range: one of ' + AGE_RANGES.map(function (a) { return '"' + a + '"'; }).join(', ') + '\n' +
+    '- sex: "Male", "Female" or "Other"\n' +
+    '- face_shape, eye_color, eye_shape, nose, lips, skin, facial_hair, face_scars, hair_color, hair_style, hair_texture, ' +
+    'posture, body_markers, expression: each a short phrase (2 to 8 words) in plain, specific language, e.g. ' +
+    '"long, angular jaw", "pale blue", "deep-set, hooded", "two days\' stubble", "sandy, thinning, cropped short", ' +
+    '"guarded, half a smile".\n' +
+    'Use "" for anything the photo does not show (scars, tattoos or marks you cannot see, posture in a head shot).';
+}
+function photoFields_(text) {
+  const m = String(text || '').match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let o;
+  try { o = JSON.parse(m[0]); } catch (e) { return null; }
+  const out = {};
+  PHOTO_FIELDS.forEach(function (k) {
+    let v = clip_(o[k], 80);
+    if (k === 'age_range' && AGE_RANGES.indexOf(v) < 0) v = '';
+    if (k === 'sex' && ['Male', 'Female', 'Other'].indexOf(v) < 0) v = '';
+    if (v) out[k] = v;
+  });
+  return out;
+}
+exports.describeReferencePhoto = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120 }, async (request) => {
+  const key = callerKey_(request);
+  await checkRateLimit_(key, 'prompt', 10, 600);
+  const data = request.data || {};
+  const m = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(String(data.image || ''));
+  if (!m) throw new HttpsError('invalid-argument', 'Send the photo as a JPEG, PNG or WebP.');
+  if (m[2].length > 6 * 1024 * 1024) throw new HttpsError('invalid-argument', 'That photo is too large.');
+  if (IN_EMULATOR) return { status: 'OK', fields: { eye_color: 'EMULATOR grey', hair_color: 'EMULATOR brown' } };
+  const apiKey = String(ANTHROPIC_API_KEY.value() || '').trim();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY is not set on the server.');
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 800, messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } },
+        { type: 'text', text: photoPrompt_() }] }] })
+    });
+    const result = await resp.json().catch(() => ({}));
+    const text = result.content && result.content[0] && result.content[0].text;
+    const fields = text ? photoFields_(text) : null;
+    if (fields) return { status: 'OK', fields: fields };
+    const message = (result.error && result.error.message) || (text ? 'The description could not be read.' : 'No content returned (HTTP ' + resp.status + ').');
+    logger.error('describeReferencePhoto: no fields', { status: resp.status, error: result.error || null });
+    return { status: 'ERROR', message: message };
+  } catch (err) {
+    logger.error('describeReferencePhoto failed', err);
+    return { status: 'ERROR', message: 'Photo service error: ' + ((err && err.message) || String(err)) };
+  }
+});
+
 // A Bond's description for the New Recruit wizard (assets/recruit-wizard.js):
 // two or three sentences, in the Agent's own voice, from the Bond's name
 // and relationship and what the wizard knows of the Agent so far. Same

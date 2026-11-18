@@ -478,6 +478,8 @@
   function generatePlateImage(code, payload) { return callFunction(code, 'generatePlateImage', payload, 180000); }
   // A Bond's description, drafted from its name, relationship and the Agent.
   function generateBondDescription(code, payload) { return callFunction(code, 'generateBondDescription', payload, 60000); }
+  // The Appearance brief from a reference photo (2026-11-18): { status, fields }.
+  function describeReferencePhoto(code, payload) { return callFunction(code, 'describeReferencePhoto', payload, 90000); }
 
   // ── Field ID wallet (v3.9.0): wallets/{code}, the Agent's own forged
   // cards. Only that Agent's own session reads or writes it.
@@ -522,7 +524,7 @@
     getBrief, updateBrief, submitBrief, findByPlayerName,
     listHandoutNotes, saveHandoutNote, saveHandoutTags,
     getIdentities, saveIdentity, listSeen, markSeen, deleteOwnAgent, mainPhoto, photoRef,
-    generatePrompt, generatePlateImage, generateBondDescription,
+    generatePrompt, generatePlateImage, generateBondDescription, describeReferencePhoto,
     getWallet, saveWallet, idTemplates, forgetIdTemplates
   };
 })();

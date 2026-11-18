@@ -543,6 +543,11 @@ NOTES_FIRESTORE_STUB = """
             if ((name === 'generatePrompt' || name === 'generatePlateImage') && window.__dgBackendHook) {
               return Promise.resolve(window.__dgBackendHook('call', { name: name, payload: payload })).then(function (r) { return { data: r }; });
             }
+            // 2026-11-18: the Appearance brief from a reference photo (canned, or window.__dgPhotoReply).
+            if (name === 'describeReferencePhoto') {
+              (window.__dgFunctionCalls = window.__dgFunctionCalls || []).push({ name: name, payload: payload });
+              return Promise.resolve({ data: window.__dgPhotoReply || { status: 'OK', fields: { sex: 'Female', age_range: 'Late 30s', face_shape: 'long, angular jaw', eye_color: 'pale blue', hair_color: 'sandy', hair_style: 'cropped short', expression: 'guarded, half a smile' } } });
+            }
             if (name === 'generatePrompt' || name === 'generatePlateImage') {
               (window.__dgFunctionCalls = window.__dgFunctionCalls || []).push({ name: name, payload: payload });
               return Promise.resolve({ data: name === 'generatePrompt'
@@ -9661,6 +9666,64 @@ def test_agent_portal_cover(p, agent):
     page.close()
     return errs, code
 
+def test_appearance_from_photo(p):
+    """2026-11-18: Appearance can start from a reference photo (optional):
+    it's read on the server (describeReferencePhoto) and the questions
+    fill in from it, marked; never the clothes, and the character sheet's
+    sex and age stay; a failure says so and changes nothing."""
+    import base64, tempfile
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 9, "wp": 8, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent", "sex": "Male", "age": "38", "nationality": "Scottish"},
+             "skills": {"alertness": 60}, "bonds": []}
+    docs = _field_notes_docs()
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000})); localStorage.setItem('dg_tours_off','1');" % FN_CODE
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-part", timeout=15000)
+    _open_appearance(page)
+    wait_for_condition(lambda: page.eval_on_selector("#dg-form [name=sex]", "el => el.value") == "Male", timeout_ms=8000)
+    jacket0 = page.eval_on_selector("#dg-form [name=jacket]", "el => el.value")
+    record("photo-first", "Start from a photo sits above the Random Agent Generator, outside the questions",
+           page.evaluate("() => { const z = document.querySelector('.af-photo-zone'), r = document.getElementById('rand-profession'); return !!z && !!(z.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING) && !document.getElementById('dg-form').contains(z); }"), "")
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+    f = tempfile.NamedTemporaryFile(suffix=".png", delete=False); f.write(png); f.close()
+    page.set_input_files("#ref-img", f.name)
+    wait_for_condition(lambda: page.is_visible("#af-photo-sum"), timeout_ms=8000)
+    v = lambda k: page.eval_on_selector(f"#dg-form [name={k}]", "el => el.value")
+    calls = page.evaluate("() => (window.__dgFunctionCalls || []).filter(c => c.name === 'describeReferencePhoto').map(c => String(c.payload.image).slice(0, 23))")
+    record("photo-first", "choosing a photo reads it on the server (a JPEG, shrunk)", calls == ["data:image/jpeg;base64,"], str(calls))
+    record("photo-first", "the questions fill in from it, marked as from the photo",
+           v("eye_color") == "pale blue" and v("face_shape") == "long, angular jaw" and page.eval_on_selector("#dg-form [name=eye_color]", "el => el.classList.contains('af-from-photo')"), str((v("eye_color"), v("face_shape"))))
+    record("photo-first", "the character sheet's sex and age stay (not the photo's), marked as from the sheet",
+           v("sex") == "Male" and page.eval_on_selector("#dg-form [name=sex]", "el => el.classList.contains('af-from-sheet')")
+           and not page.eval_on_selector("#dg-form [name=age_range]", "el => el.classList.contains('af-from-photo')"), str((v("sex"), v("age_range"))))
+    record("photo-first", "the clothes are never filled from the photo", v("jacket") == jacket0, str((jacket0, v("jacket"))))
+    sm = page.inner_text("#af-photo-sum")
+    record("photo-first", "a line says what was filled and what the sheet kept", "from the photo" in sm and "character sheet" in sm and "clothes are yours" in sm, sm)
+    page.fill("#dg-form [name=eye_color]", "grey")
+    record("photo-first", "editing a field takes its mark off", not page.eval_on_selector("#dg-form [name=eye_color]", "el => el.classList.contains('af-from-photo')"), "")
+    page.evaluate("() => { window.__dgPhotoReply = { status: 'ERROR', message: 'Rate limit reached for this Agent -- please wait a few minutes and try again.' }; }")
+    page.click("#af-photo-read")
+    wait_for_condition(lambda: "CAPACITY" in (page.text_content("#af-photo-term") or ""), timeout_ms=6000)
+    record("photo-first", "a failure says so in the terminal and changes nothing", v("eye_color") == "grey" and "CAPACITY" in page.text_content("#af-photo-term"), page.text_content("#af-photo-term"))
+    record("photo-first", "no JS errors (photo first)", not errs, str(errs))
+    page.close()
+
+def test_agent_hub_drop_buttons_phone(p):
+    """2026-11-18: on a phone (390px) the Appearance & photos button fits
+    its column (it wraps onto two lines) instead of running out of it."""
+    docs = _field_notes_docs()
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000})); localStorage.setItem('dg_tours_off','1');" % FN_CODE
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.set_viewport_size({"width": 390, "height": 900})
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-part", timeout=15000)
+    over = page.evaluate(f"""() => Array.from(document.querySelectorAll('[data-ah-appear="{FN_CODE}"], [data-ah-cell="{FN_CODE}"]')).map(el => el.scrollWidth > el.clientWidth + 1)""")
+    record("agent-hub", "phone: the Appearance & photos and Cell buttons' text fits inside them", over == [False, False], str(over))
+    page.close()
+
 def test_appearance_and_photos(p):
     """2026-11-18, Appearance & photos: one drop-down on Agent Hub; the era
     is the brief's last question (starting on the campaign's era); Submit
@@ -15741,6 +15804,8 @@ def main():
 
         safe(test_agent_portal_random_generator_matches_sex, browser, area="agent-portal")
         safe(test_appearance_and_photos, browser, area="photos")
+        safe(test_agent_hub_drop_buttons_phone, browser, area="agent-hub")
+        safe(test_appearance_from_photo, browser, area="photo-first")
 
         safe(test_agent_portal_incomplete_submit_blocked, browser, area="agent-portal")
 

@@ -345,3 +345,12 @@
 .af-root .af-prompts{ margin-bottom:18px; }
 .af-root .af-prompts > summary{ font-family:'Special Elite',monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:#4a3f28; cursor:pointer; margin-bottom:10px; }
 .af-root .af-era-limit{ font-family:'Courier Prime',monospace; font-size:11px; color:var(--ink-3); margin:8px 0 0; }
+
+/* Start from a photo (2026-11-18): where each answer came from. */
+.af-root .af-photo-zone .upload-hint{ line-height:1.5; text-transform:none; letter-spacing:0; font-size:12px; color:var(--ink-2, #4a3f28); }
+.af-root .af-photo-acts{ margin:6px 0 0; }
+.af-root .af-photo-acts button[hidden]{ display:none; }
+.af-root .af-photo-sum{ font-family:'Courier Prime',monospace; font-size:12px; line-height:1.5; color:var(--ink); background:rgba(255,255,255,.4); border:1px solid var(--rule); padding:8px 10px; margin:8px 0 0; }
+.af-root .af-photo-sum[hidden], .af-root #af-photo-term[hidden]{ display:none; }
+.af-root #dg-form .af-from-photo{ border-left:3px solid #2f8f5a; background:rgba(47,143,90,.08); }
+.af-root #dg-form .af-from-sheet{ border-left:3px solid #2f6b8f; background:rgba(47,107,143,.08); }
