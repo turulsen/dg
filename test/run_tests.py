@@ -9661,6 +9661,19 @@ def test_agent_portal_cover(p, agent):
     page.close()
     return errs, code
 
+def test_agent_hub_drop_buttons_phone(p):
+    """2026-11-18: on a phone (390px) the Appearance & photos button fits
+    its column (it wraps onto two lines) instead of running out of it."""
+    docs = _field_notes_docs()
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000})); localStorage.setItem('dg_tours_off','1');" % FN_CODE
+    page, errs = _field_notes_page(p, docs=docs, extra_init=extra)
+    page.set_viewport_size({"width": 390, "height": 900})
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_selector(f"#ah-sheet-{FN_CODE} .ap-part", timeout=15000)
+    over = page.evaluate(f"""() => Array.from(document.querySelectorAll('[data-ah-appear="{FN_CODE}"], [data-ah-cell="{FN_CODE}"]')).map(el => el.scrollWidth > el.clientWidth + 1)""")
+    record("agent-hub", "phone: the Appearance & photos and Cell buttons' text fits inside them", over == [False, False], str(over))
+    page.close()
+
 def test_appearance_and_photos(p):
     """2026-11-18, Appearance & photos: one drop-down on Agent Hub; the era
     is the brief's last question (starting on the campaign's era); Submit
@@ -15741,6 +15754,7 @@ def main():
 
         safe(test_agent_portal_random_generator_matches_sex, browser, area="agent-portal")
         safe(test_appearance_and_photos, browser, area="photos")
+        safe(test_agent_hub_drop_buttons_phone, browser, area="agent-hub")
 
         safe(test_agent_portal_incomplete_submit_blocked, browser, area="agent-portal")
 
