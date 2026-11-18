@@ -7722,7 +7722,23 @@ Reported 2026-11-18, after the first plates from a reference photo.
   (`agent-paper.js` `dropBtns`) still had both. It has one Appearance &
   photos fold now, the photos first.
 
-Tests: `test_kia_stamp_like_insane` (new), `test_agent_hub_kia_stamp`
+- **Field IDs vanished from wallets:** "Richard had a Miskatonic
+  University, Arthur a Syracuse Fire Station". Both wallet writers saved
+  the page's whole copy of the wallet over the stored one. The
+  Fabricator's copy starts empty and stays empty if its read fails (it
+  then marks the wallet loaded anyway), so filing the next card saved
+  that one card alone; the notebook, on a failed read, kept the
+  previous Agent's cards under the new Agent's code, and a ‹ › flip
+  saved them over that Agent's wallet. Now `saveWallet` reads the
+  stored wallet and keeps every card the page didn't burn (burns are
+  sent as `removed` ids), the notebook's flip writes only `carried`
+  (`{ carriedOnly: true }`, a merge), and a failed read in the notebook
+  shows an empty wallet for that Agent, never another's. Cards already
+  lost can't be brought back from the app (Firestore keeps no history
+  here); they have to be made again. Test `test_wallet_never_loses_cards`
+  fails on the old code (the two cards reduced to the new one).
+
+Tests: `test_kia_stamp_like_insane` (new), `test_wallet_never_loses_cards` (new), `test_agent_hub_kia_stamp`
 (the big stamp, no row tag), `test_agent_file_disorder_stamps`,
 `test_agent_file_parts_and_looks` (one fold in the notebook).
-Deploy: `functions`. `sw.js` `CACHE_NAME` v344.
+Deploy: `functions`. `sw.js` `CACHE_NAME` v345.

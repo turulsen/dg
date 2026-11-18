@@ -644,6 +644,9 @@ testing found the one long paper hard to read, so it's grouped:
   v3.27.0: the notebook's Agent File has one **Appearance & photos**
   drop-down too (the era photos first, then the physical description),
   in place of its separate Appearance and Era photos buttons.
+  v3.27.0, the Field ID wallet: `saveWallet` merges with the stored
+  wallet (cards the page didn't burn are kept; burns go as `removed`),
+  and the notebook's ‹ › flip writes only `carried`.
 - A narrow paper (the notebook page) stacks the two-column parts and puts
   the statistics in rows of three (a container query on `.as-paper.ap`).
 

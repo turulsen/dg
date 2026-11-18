@@ -404,6 +404,8 @@ NOTES_FIRESTORE_STUB = """
           // __dgFsFailGet(path): only this one-shot read fails (a phone's
           // "client is offline"); its listeners still work.
           if (window.__dgFsFailGet && window.__dgFsFailGet(docPath)) return Promise.reject(new Error('Failed to get document because the client is offline.'));
+          // __dgFsDenyGet(path): this read is refused outright (permission, a dropped sign-in).
+          if (window.__dgFsDenyGet && window.__dgFsDenyGet(docPath)) return Promise.reject(Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' }));
           // _route_backend(): a test's Python respond() answers reads of
           // characters/ and briefs/ ('__local__' = use this store).
           if (window.__dgBackendHook) {
@@ -2479,10 +2481,11 @@ def test_agent_hub_checks_read_firestore(p):
     apps_script = watch_apps_script(page)
     page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
-    wait_for_condition(lambda: "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"))
+    # v3.27.0: the KIA stamp is the big one on the name (data-kia-stamp).
+    kia = lambda: page.evaluate("() => { const t = document.getElementById('ah-title-DEAD-0001'); return !!(t && t.hasAttribute('data-kia-stamp')); }")
+    wait_for_condition(kia)
     page.wait_for_timeout(800)
-    record("hub", "an Agent's KIA stamp comes from its Firestore character doc",
-           "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"), page.inner_text("#ah-charstamp-DEAD-0001"))
+    record("hub", "an Agent's KIA stamp comes from its Firestore character doc", kia(), "")
     record("hub", "an Agent with an Agent File but no character doc shows No Character Sheet Yet",
            "No Character Sheet Yet" in page.eval_on_selector("#ah-charstamp-ALIV-0002", "el => el.textContent"), "")
     record("hub", "Agent Hub makes no Apps Script call (the Sheet is retired)", apps_script == [], str(apps_script))
@@ -14412,6 +14415,54 @@ def test_field_id_forgery(p):
     record("forgery", "no JS exceptions", not errs_all, str(errs_all[:3]))
     return errs_all
 
+def test_wallet_never_loses_cards(p):
+    """2026-11-18: Field IDs vanished ("Richard had a Miskatonic University,
+    Arthur a Syracuse Fire Station"). A page whose wallet read had failed
+    saved its empty copy over the stored one when a card was filed or the
+    wallet flipped. Now a save keeps every stored card it didn't remove,
+    and a flip changes only the carried card."""
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 11, "wp": 11, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent", "employer": "Federal Bureau of Investigation"}}
+    fd = _field_notes_docs()
+    fd[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    old = [{"id": "cmisk", "proto": "entity", "org": "Miskatonic University", "layout": "letterhead", "name": "Mara Voss", "title": "Lecturer"},
+           {"id": "csyr", "proto": "entity", "org": "Syracuse Fire Station", "layout": "letterhead", "name": "Mara Voss", "title": "Inspector"}]
+    fd[f"wallets/{FN_CODE}"] = {"agent_code": FN_CODE, "cards": old, "carried": "auto"}
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));window.__dgStorageFiles=%s;" % (FN_CODE, json.dumps(_STOCK_FILES))
+    page, errs = _field_notes_page(p, docs=fd, extra_init=extra)
+    _route_stock(page)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    wal = lambda: page.evaluate("() => window.__dgFirestoreDocs['wallets/%s'] || null" % FN_CODE)
+    orgs = lambda: [c.get("org") or c.get("proto") for c in ((wal() or {}).get("cards") or [])]
+    # The Fabricator's wallet read fails; then a card is filed.
+    page.evaluate("() => { window.__dgFsDenyGet = p => /^wallets\\//.test(p); window.dgFieldNotes.open('fab'); }")
+    f = page.wait_for_selector("#fn-veil iframe[data-dg-embed=fieldid]", timeout=8000).content_frame()
+    f.wait_for_function("() => { const s = window.dgFabricator && window.dgFabricator.state(); return s && s.walletLoaded && s.stock && s.brief; }", timeout=20000)
+    page.evaluate("() => { window.__dgFsDenyGet = null; }")
+    f.click("[data-x=p-mirror]")
+    f.wait_for_function("() => { const i = document.getElementById('ids-agency'); return i && i.value; }", timeout=8000)
+    f.evaluate("() => window.dgFabricator.act('file')")
+    f.wait_for_selector("text=FORGERY COMPLETE")
+    got = wait_for_condition(lambda: len(orgs()) == 3 and orgs(), timeout_ms=6000) or orgs()
+    record("wallet", "a card filed after a failed wallet read keeps the cards already in the wallet",
+           "Miskatonic University" in got and "Syracuse Fire Station" in got and "mirror" in got, str(got))
+    # The notebook flips: only the carried card changes.
+    page.click("#fn-veil [data-fab=card]")
+    page.wait_for_selector("#fn-veil [data-fn-walbar]:not([hidden])", timeout=8000)
+    page.click("#fn-veil [data-fn-walbar] [data-fn=wal-next]")
+    w = wait_for_condition(lambda: (wal() or {}).get("carried") not in (None, "auto") and wal(), timeout_ms=5000) or wal()
+    record("wallet", "flipping the wallet changes only the carried card, never the cards",
+           len(w.get("cards") or []) == 3 and w.get("carried") != "auto", str(w)[:200])
+    # A burn removes just that card.
+    page.evaluate("(c) => window.dgStore.saveWallet(c, { cards: [], removed: ['csyr'] })", FN_CODE)
+    after = orgs()
+    record("wallet", "a burned card is removed, the others stay", "Syracuse Fire Station" not in after and "Miskatonic University" in after and len(after) == 2, str(after))
+    record("wallet", "no JS exceptions (wallet)", not [e for e in errs if "permissions" not in e], str(errs[:3]))
+    page.close()
+    return errs
+
 def test_agent_file_profession_employer_line(p):
     """v3.10.1: under the Agent's name the Agent File shows profession ·
     employer · Cover, on Agent Hub and in Field Notes alike; an Agent whose
@@ -15918,6 +15969,7 @@ def main():
         safe(test_appearance_carries_over_from_sheet, browser, area="appearance")
         safe(test_insane_struck_like_kia, browser, area="insane")
         safe(test_kia_stamp_like_insane, browser, area="kia")
+        safe(test_wallet_never_loses_cards, browser, area="wallet")
         safe(test_plate_save_survives_a_dropped_connection, browser, area="plates")
         safe(test_bond_at_zero_struck, browser, area="bonds")
         safe(test_notebook_flip_agents, browser, area="flip")
