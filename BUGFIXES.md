@@ -7560,3 +7560,15 @@ Tests: `test_acell_combat_mat`, `test_notebook_mat` extended (dots,
 the switch, NPC hidden/down, a move shown with who moved and taken back
 by the Handler; the own token dragged on a half-dot, another's not, none
 with the switch off). `sw.js` `CACHE_NAME` v333.
+
+## The mat's token library (v3.23.0, PR #111)
+
+Requested 2026-11-17 ("how about if I get a token library? can that be
+uploaded later?"), built 2026-11-18 from the approved mock-up after the
+Handler found a vehicle pack. The art lives in the Handler's own Firebase
+Storage (`tokens/`), never in this public repo, since packs are usually
+paid. One thing caught while naming: a pack maker's code ("PP") and a
+model name ("SUV") look alike, so only a short capital code at the very
+start of a file name is dropped. New rules: Firestore `token_library`
+(Handler-only), Storage `tokens/` (read by all, Handler writes). Test:
+`test_acell_token_library`. `sw.js` `CACHE_NAME` v334.

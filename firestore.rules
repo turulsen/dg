@@ -218,6 +218,14 @@ service cloud.firestore {
     // in A-Cell, the Cell's Agents watch it in the notebook's Mat tab.
     // Read like radio/{channel} (a map of the table, nothing private);
     // only the Handler writes.
+    // token_library/{id} (2026-11-18): the Handler's own token art for the
+    // combat mat (name, Storage url, size in squares). Handler-only; a
+    // token placed on a mat carries its own url, so the Agents never read
+    // this.
+    match /token_library/{id} {
+      allow read, write: if isHandler();
+    }
+
     match /mats/{cellId} {
       allow read: if true;
       allow write: if isHandler();

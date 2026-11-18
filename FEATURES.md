@@ -950,6 +950,17 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   removing that token deletes the move. The Handler's **Agents move their
   own tokens** (`agents_move`, on by default) stops it; the rules let only
   that Agent's own session, a member of the Cell, write while it's on.
+  v3.23.0: the **token library** -- the Handler's own token art (PNGs
+  with a see-through background), uploaded several at once from the
+  Tokens sheet to Storage `tokens/` and listed in `token_library/{id}`
+  (`name`, `url`, `path`, `sw`, `sh`; Handler-only). `tidyName()` makes
+  the name and size from the file name ("PP_Modern_Vehicle_Car_01_Sedan_
+  Police_4x4.png" -> Sedan Police, 4 x 4); a square is `SQ` = 1.5 m (5 ft,
+  the grid such packs are drawn for). Placed as `img` items carrying their
+  own `url` (so the Agents never read the library), sized in squares and
+  kept in metres when the dot size changes; turned by 45 or 90 degrees;
+  resized in squares on the mat. **Manage** renames, resizes or removes
+  one (Storage file too); a token already on a mat stays.
 - **Arranging Play** (`assets/acell-play.js`, since v3.19.3): the
   Arrange bar has five layouts (Session, Investigation, Action, Music,
   Compact; what one doesn't use is put away), "Mine" (layouts saved

@@ -15,7 +15,12 @@
        text, tok (token kind), code, name, photo (agent), label;
        an NPC from the session's Initiative (t: 'npc'): key (their name,
        lower case), name, photo, hid (hidden: the Handler's eyes only),
-       out (down, or out of the order: greyed) }
+       out (down, or out of the order: greyed) }; a token from the Handler's
+       library (t: 'img', 2026-11-18): lib (its token_library id), url,
+       name, sw, sh (its size in squares of SQ metres, kept as the dot
+       size changes), label.
+   token_library/{id}: { name, url, path (Storage tokens/...), sw, sh,
+     created_at } -- the Handler's own token art, for every Cell's mat.
    bg: { url, x, y, w, h, op (0..1), locked }.
 
    window.dgMat.editor(host, { cellId, members: [{ code, name, photo }] })
@@ -66,6 +71,19 @@
   function matRef(cellId) { return fb().firestore().collection('mats').doc(cellId); }
   function movesRef(cellId) { return matRef(cellId).collection('moves'); }
   var DOTS = { black: '#1c120a', white: '#ffffff' };
+  var SQ = 1.5;   // a library token's square: 1.5 m (5 ft), the grid token packs are drawn for
+  function libRef() { return fb().firestore().collection('token_library'); }
+  // "PP_Modern_Vehicle_Car_01_Sedan_Police_4x4.png" -> Sedan Police, 4 x 4.
+  function tidyName(file) {
+    var base = String(file || '').replace(/\.[a-z0-9]+$/i, ''), m = /(?:^|[_\s-])(\d{1,2})x(\d{1,2})(?=$|[_\s-])/i.exec(base);
+    var parts = base.replace(/(?:^|[_\s-])\d{1,2}x\d{1,2}(?=$|[_\s-])/i, ' ').split(/[_\s-]+/).filter(Boolean);
+    if (parts.length > 1 && /^[A-Z]{1,3}$/.test(parts[0])) parts.shift();   // a pack's maker code ("PP")
+    while (parts.length > 1 && (/^(modern|vehicle|token|tokens)$/i.test(parts[0]) || /^\d+$/.test(parts[0]) ||
+      (/^car$/i.test(parts[0]) && parts.length > 2) || (parts.length > 2 && /^\d+$/.test(parts[1]) && /^car$/i.test(parts[0])))) parts.shift();
+    parts = parts.filter(function (x, i) { return !(/^\d+$/.test(x) && i > 0); });
+    var name = parts.map(function (w) { return w.length > 3 && w === w.toUpperCase() ? w.charAt(0) + w.slice(1).toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1); }).join(' ') || 'Token';
+    return { name: name.slice(0, 40), sw: m ? Math.max(1, Math.min(30, +m[1])) : 1, sh: m ? Math.max(1, Math.min(30, +m[2])) : 1 };
+  }
   function readMoves(snap) {
     var out = {};
     snap.forEach(function (d) { var v = d.data() || {}; if (typeof v.x === 'number' && typeof v.y === 'number') out[d.id] = { x: v.x, y: v.y, at: v.at || 0 }; });
@@ -94,6 +112,13 @@
     if (it.t === 'token') {
       var T = TOKENS[it.tok] || TOKENS.crate;
       return '<g' + data + ' transform="translate(' + it.x + ' ' + it.y + ')' + (it.r ? ' rotate(' + it.r + ' ' + it.w / 2 + ' ' + it.h / 2 + ')' : '') + '">' + T.draw(it.w, it.h) +
+        '<rect x="0" y="0" width="' + it.w + '" height="' + it.h + '" fill="transparent"/></g>' +
+        (it.label ? '<text x="' + (it.x + it.w / 2) + '" y="' + (it.y + it.h + .75) + '" text-anchor="middle" font-size=".6" font-family="Courier Prime,monospace" fill="#2a2418" paint-order="stroke" stroke="#efe6cc" stroke-width=".15">' + esc(it.label) + '</text>' : '');
+    }
+    if (it.t === 'img') {
+      if (!/^(https?:|data:)/.test(it.url || '')) return '';
+      return '<g' + data + ' class="mt-img" transform="translate(' + it.x + ' ' + it.y + ')' + (it.r ? ' rotate(' + it.r + ' ' + it.w / 2 + ' ' + it.h / 2 + ')' : '') + '">' +
+        '<image href="' + esc(it.url) + '" x="0" y="0" width="' + it.w + '" height="' + it.h + '" preserveAspectRatio="xMidYMid meet"/>' +
         '<rect x="0" y="0" width="' + it.w + '" height="' + it.h + '" fill="transparent"/></g>' +
         (it.label ? '<text x="' + (it.x + it.w / 2) + '" y="' + (it.y + it.h + .75) + '" text-anchor="middle" font-size=".6" font-family="Courier Prime,monospace" fill="#2a2418" paint-order="stroke" stroke="#efe6cc" stroke-width=".15">' + esc(it.label) + '</text>' : '');
     }
@@ -224,7 +249,7 @@
     s += '<rect x="' + (v.x - 2) + '" y="' + (v.y - 2) + '" width="' + (v.w + 4) + '" height="' + (v.h + 4) + '" fill="url(#mtdots' + (o.uid || '') + ')" pointer-events="none"/>';
     var mv = this.moves;
     var items = (d.items || []).filter(function (it) { return !(o.readOnly && it.hid); }).map(function (it) { return placed(it, mv); });
-    var order = { path: 0, rect: 1, circle: 1, text: 2, token: 3, npc: 4, agent: 4 };
+    var order = { path: 0, rect: 1, circle: 1, text: 2, token: 3, img: 3, npc: 4, agent: 4 };
     items.slice().sort(function (a, b) { return (order[a.t] || 0) - (order[b.t] || 0); }).forEach(function (it) { s += itemSvg(it, o); });
     if (d.ruler && d.ruler.a) s += rulerSvg(d.ruler.a, d.ruler.b, d.scale || 1);
     if (this.local) s += rulerSvg(this.local.a, this.local.b, d.scale || 1, '#2f6b8f');
@@ -383,6 +408,8 @@
           var T = TOKENS[k], s = Math.max(T.w, T.h);
           return '<button type="button" class="mt-tok" data-mt="tool" data-tool="tok:' + k + '" title="' + esc(T.name) + '"><svg viewBox="' + (-(s - T.w) / 2 - .1) + ' ' + (-(s - T.h) / 2 - .1) + ' ' + (s + .2) + ' ' + (s + .2) + '">' + T.draw(T.w, T.h) + '</svg><small>' + esc(T.name) + '</small></button>';
         }).join('') + '</div>' +
+        '<div class="mt-libw"><span class="mt-lab">Your tokens <i class="mt-libn"></i></span><div class="mt-lib"></div>' +
+          '<div class="mt-libup"><label class="mt-btn">Upload tokens…<input type="file" accept="image/png,image/webp,image/gif,image/jpeg" multiple hidden data-mt="libfile"></label><button type="button" data-mt="libman">Manage</button><small>Several at once. A size in the name (…_4x4.png) is used.</small></div></div>' +
         '<span class="mt-lab">Agents</span><div class="mt-tray mt-agents"></div>' +
         '<span class="mt-lab">NPCs · this session\'s Initiative</span><div class="mt-npcs"></div></div>' +
       '</div><div class="mt-stage"></div></div>' +
@@ -393,6 +420,54 @@
     var unsub = null, unsubM = null, saveT = null, rulerT = null;
 
     function members() { return (opts.members && opts.members()) || []; }
+    // The Handler's token library (token_library/{id}), kept live.
+    var lib = [], libMan = false, unsubL = null;
+    function libTok(id) { return lib.filter(function (t) { return t.id === id; })[0] || null; }
+    function drawLib() {
+      var box = root.querySelector('.mt-lib');
+      root.querySelector('.mt-libn').textContent = lib.length ? '· ' + lib.length : '';
+      root.querySelector('[data-mt="libman"]').textContent = libMan ? 'Done' : 'Manage';
+      root.querySelector('[data-mt="libman"]').hidden = !lib.length;
+      if (libMan) {
+        box.className = 'mt-lib mt-libm';
+        box.innerHTML = lib.map(function (t) {
+          return '<div class="mt-libr" data-lib="' + esc(t.id) + '"><img src="' + esc(t.url) + '" alt=""><input type="text" maxlength="40" data-mt="libname" value="' + esc(t.name) + '" aria-label="Name">' +
+            '<span class="mt-libsz"><input type="number" min="1" max="30" data-mt="libsw" value="' + t.sw + '" aria-label="Squares across">×<input type="number" min="1" max="30" data-mt="libsh" value="' + t.sh + '" aria-label="Squares down"></span>' +
+            '<button type="button" class="mt-red" data-mt="libdel">Remove</button></div>';
+        }).join('');
+        return;
+      }
+      box.className = 'mt-lib';
+      box.innerHTML = lib.map(function (t) {
+        return '<button type="button" class="mt-lt" data-mt="tool" data-tool="lib:' + esc(t.id) + '" title="' + esc(t.name) + ' (' + t.sw + ' × ' + t.sh + ' squares)"><img src="' + esc(t.url) + '" alt=""><small>' + esc(t.name) + '</small></button>';
+      }).join('') || '<span class="mt-none2">None yet: upload PNGs with a see-through background.</span>';
+    }
+    function libUpdate(id, patch) {
+      var t = libTok(id); if (!t) return;
+      Object.assign(t, patch);
+      window.dgAcellApi.handler().then(function () { return libRef().doc(id).set(patch, { merge: true }); }).catch(function (e) { status('Not saved: ' + ((e && e.message) || e)); });
+    }
+    function uploadTokens(files) {
+      files = Array.prototype.slice.call(files || []).filter(function (f) { return /^image\//.test(f.type || '') || /\.(png|webp|gif|jpe?g)$/i.test(f.name || ''); });
+      if (!files.length) return;
+      var done = 0, failed = 0;
+      status('Uploading ' + files.length + ' token' + (files.length === 1 ? '' : 's') + '…');
+      window.dgAcellApi.handler().then(function (F) {
+        return files.reduce(function (pr, f) {
+          return pr.then(function () {
+            var id = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+            var ext = (/\.(png|jpe?g|webp|gif)$/i.exec(f.name || '') || [, 'png'])[1].toLowerCase(), path = 'tokens/' + id + '.' + ext, nm = tidyName(f.name);
+            return F.storage().ref(path).put(f, { contentType: f.type || 'image/' + ext })
+              .then(function (snap) { return snap.ref.getDownloadURL(); })
+              .then(function (url) { return libRef().doc(id).set({ name: nm.name, url: url, path: path, sw: nm.sw, sh: nm.sh, created_at: Date.now() }); })
+              .then(function () { done++; status('Uploaded ' + done + ' of ' + files.length + '…'); }, function () { failed++; });
+          });
+        }, Promise.resolve());
+      }).then(function () { status(done + ' token' + (done === 1 ? '' : 's') + ' added' + (failed ? '; ' + failed + ' failed' : '') + '.'); })
+        .catch(function (e) { status('Upload failed: ' + ((e && e.message) || e)); });
+    }
+    // A library token's size in dots, from its squares at this dot size.
+    function sqDots(n) { return r2(Math.max(.3, n * SQ / (b.doc.scale || 1))); }
     // The session's NPCs: [{ key, name, photo, dex, hidden, out, down }].
     function npcs() { return (opts.npcs && opts.npcs()) || []; }
     function drawNpcTray() {
@@ -473,16 +548,18 @@
       if (!it) { box.hidden = true; return; }
       var pl = placed(it, b.moves), bb = it.t === 'path' ? bounds(it.pts) : { x: pl.x, y: pl.y, w: it.w || 1, h: it.h || 1 };
       b.extra = '<rect x="' + (bb.x - .3) + '" y="' + (bb.y - .3) + '" width="' + (bb.w + .6) + '" height="' + (bb.h + .6) + '" fill="none" stroke="#2f6b8f" stroke-width=".1" stroke-dasharray=".35 .2" pointer-events="none"/>' +
-        (it.t !== 'path' && it.t !== 'text' && it.t !== 'agent' && it.t !== 'npc' ? '<rect class="mt-handle" x="' + (bb.x + bb.w - .1) + '" y="' + (bb.y + bb.h - .1) + '" width=".7" height=".7" fill="#c9a227" stroke="#1c120a" stroke-width=".06"/>' : '');
-      var name = it.t === 'token' ? (TOKENS[it.tok] || {}).name : it.t === 'agent' || it.t === 'npc' ? it.name : { path: 'Marker line', rect: 'Rectangle', circle: 'Circle', text: 'Text' }[it.t];
+        (it.t !== 'path' && it.t !== 'text' && it.t !== 'agent' && it.t !== 'npc' && it.t !== 'img' ? '<rect class="mt-handle" x="' + (bb.x + bb.w - .1) + '" y="' + (bb.y + bb.h - .1) + '" width=".7" height=".7" fill="#c9a227" stroke="#1c120a" stroke-width=".06"/>' : '');
+      var name = it.t === 'token' ? (TOKENS[it.tok] || {}).name : it.t === 'agent' || it.t === 'npc' || it.t === 'img' ? it.name : { path: 'Marker line', rect: 'Rectangle', circle: 'Circle', text: 'Text' }[it.t];
       var sc = b.doc.scale || 1;
       box.hidden = false;
       box.innerHTML = '<b>' + esc(name) + '</b>' +
-        (it.t !== 'path' && it.t !== 'text' ? '<span>' + r2((it.w || 0) * sc) + ' × ' + r2((it.h || 0) * sc) + ' m</span>' : '') +
-        (it.t === 'token' || it.t === 'rect' || it.t === 'circle' ? '<input type="text" maxlength="40" placeholder="Label" data-mt="label" value="' + esc(it.label || '') + '">' : '') +
+        (it.t === 'img' ? '<span class="mt-sq"><input type="number" min="1" max="30" data-mt="sqw" value="' + (it.sw || 1) + '" aria-label="Squares across">×<input type="number" min="1" max="30" data-mt="sqh" value="' + (it.sh || 1) + '" aria-label="Squares down"> squares</span>' : '') +
+        (it.t !== 'path' && it.t !== 'text' ? '<span>' + (it.t === 'img' ? '(' : '') + r2((it.w || 0) * sc) + ' × ' + r2((it.h || 0) * sc) + ' m' + (it.t === 'img' ? ')' : '') + '</span>' : '') +
+        (it.t === 'token' || it.t === 'img' || it.t === 'rect' || it.t === 'circle' ? '<input type="text" maxlength="40" placeholder="Label" data-mt="label" value="' + esc(it.label || '') + '">' : '') +
         (it.t === 'text' ? '<input type="text" maxlength="80" data-mt="text" value="' + esc(it.text || '') + '">' : '') +
-        (it.t === 'token' || it.t === 'rect' || it.t === 'text' ? '<button type="button" data-mt="rot" data-d="-90">⟲ 90°</button><button type="button" data-mt="rot" data-d="90">⟳ 90°</button>' : '') +
-        (it.t !== 'agent' && it.t !== 'npc' ? '<button type="button" data-mt="recol">Use this colour</button>' : '') +
+        (it.t === 'token' || it.t === 'img' ? '<button type="button" data-mt="rot" data-d="-45">⟲ 45°</button><button type="button" data-mt="rot" data-d="45">⟳ 45°</button>' : '') +
+        (it.t === 'token' || it.t === 'img' || it.t === 'rect' || it.t === 'text' ? '<button type="button" data-mt="rot" data-d="-90">⟲ 90°</button><button type="button" data-mt="rot" data-d="90">⟳ 90°</button>' : '') +
+        (it.t !== 'agent' && it.t !== 'npc' && it.t !== 'img' ? '<button type="button" data-mt="recol">Use this colour</button>' : '') +
         '<button type="button" data-mt="front">Bring to front</button><button type="button" class="mt-red" data-mt="del">Delete</button>';
     }
     function bounds(pts) {
@@ -490,7 +567,7 @@
       var x = Math.min.apply(null, xs), y = Math.min.apply(null, ys);
       return { x: x, y: y, w: Math.max.apply(null, xs) - x, h: Math.max.apply(null, ys) - y };
     }
-    function redraw() { drawSel(); b.draw(); marks(); drawAgentsTray(); drawNpcTray(); }
+    function redraw() { drawSel(); b.draw(); marks(); drawAgentsTray(); drawNpcTray(); drawLib(); }
     function status(t) { root.querySelector('.mt-status').textContent = t || ''; }
 
     // Every change: undo point, draw, save (debounced).
@@ -531,6 +608,13 @@
         change(function () { b.doc.items.push({ id: uid(), t: 'token', tok: k, x: r2(snap(p[0] - w / 2)), y: r2(snap(p[1] - h / 2)), w: r2(w), h: r2(h), r: 0 }); });
         return;
       }
+      if (kind.indexOf('lib:') === 0) {
+        var L = libTok(kind.slice(4));
+        if (!L) return;
+        var lw = sqDots(L.sw), lh = sqDots(L.sh);
+        change(function () { b.doc.items.push({ id: uid(), t: 'img', lib: L.id, url: L.url, name: L.name, sw: L.sw, sh: L.sh, x: r2(snap(p[0] - lw / 2)), y: r2(snap(p[1] - lh / 2)), w: lw, h: lh, r: 0 }); });
+        return;
+      }
       if (kind.indexOf('npc:') === 0) {
         var key = kind.slice(4), n = npcs().filter(function (x) { return x.key === key; })[0] || { key: key, name: key };
         var nex = b.doc.items.filter(function (x) { return x.t === 'npc' && x.key === key; })[0];
@@ -569,7 +653,7 @@
       try { b.svg.setPointerCapture(e.pointerId); } catch (err) { /* old Safari */ }
       // Placing, erasing and text happen when the finger lifts (a tap), so
       // the first finger of a pinch never places or erases anything.
-      if (tool.indexOf('tok:') === 0 || tool.indexOf('ag:') === 0 || tool.indexOf('npc:') === 0 || tool === 'eraser' || tool === 'text') { st.drag = { kind: 'tap', tool: tool, p: p, id: id, cx: e.clientX, cy: e.clientY }; return; }
+      if (tool.indexOf('tok:') === 0 || tool.indexOf('lib:') === 0 || tool.indexOf('ag:') === 0 || tool.indexOf('npc:') === 0 || tool === 'eraser' || tool === 'text') { st.drag = { kind: 'tap', tool: tool, p: p, id: id, cx: e.clientX, cy: e.clientY }; return; }
       if (tool === 'ruler') { st.drag = { kind: 'ruler', a: p }; b.local = { a: p, b: p }; b.draw(); return; }
       if (tool === 'scale') { st.drag = { kind: 'scale', a: p }; b.local = { a: p, b: p }; b.draw(); return; }
       if (tool === 'bgmove') { var bg = b.doc.bg; if (bg && !bg.locked) { st.undo.push(snapshot()); st.drag = { kind: 'bg', p: p, x: bg.x, y: bg.y }; } return; }
@@ -693,15 +777,41 @@
       else if (a === 'rot' && it) change(function () { it.r = ((it.r || 0) + +k.getAttribute('data-d') + 360) % 360; });
       else if (a === 'recol' && it) change(function () { it.c = COLORS[st.col]; });
       else if (a === 'front' && it) change(function () { b.doc.items = b.doc.items.filter(function (x) { return x !== it; }).concat([it]); });
+      else if (a === 'libman') { libMan = !libMan; drawLib(); }
+      else if (a === 'libdel') {
+        var lid = k.closest('[data-lib]').getAttribute('data-lib'), L0 = libTok(lid);
+        var ok0 = window.dgAc && window.dgAc.ask ? window.dgAc.ask('Remove "' + ((L0 && L0.name) || 'this token') + '" from your library? Any already on a mat stay there.', 'Remove', 'Keep it') : Promise.resolve(window.confirm('Remove it?'));
+        ok0.then(function (ok) {
+          if (!ok) return;
+          lib = lib.filter(function (t) { return t.id !== lid; }); drawLib();
+          if (st.tool === 'lib:' + lid) st.tool = 'select';
+          window.dgAcellApi.handler().then(function (F) {
+            if (L0 && L0.path) { try { F.storage().ref(L0.path).delete().catch(function () { /* already gone */ }); } catch (e) { /* no Storage */ } }
+            return libRef().doc(lid).delete();
+          }).catch(function (e) { status('Not removed: ' + ((e && e.message) || e)); });
+        });
+      }
       else if (a === 'dots') { b.doc.dots = k.getAttribute('data-v'); redraw(); save(); }
       else if (a === 'del' && it) change(function () { dropMoves(agentCodes([it])); b.doc.items = b.doc.items.filter(function (x) { return x !== it; }); st.sel = ''; });
     });
     root.addEventListener('change', function (e) {
       var k = e.target.getAttribute && e.target.getAttribute('data-mt'), it = selected();
       if (k === 'shown') { b.doc.shown = !!e.target.checked; save(); }
+      else if (k === 'libfile' && e.target.files) { uploadTokens(e.target.files); e.target.value = ''; }
+      else if (k === 'libname') { var nm2 = e.target.value.trim(); if (nm2) libUpdate(e.target.closest('[data-lib]').getAttribute('data-lib'), { name: nm2.slice(0, 40) }); }
+      else if (k === 'libsw' || k === 'libsh') { var v2 = Math.max(1, Math.min(30, Math.round(+e.target.value) || 1)), pt = {}; pt[k === 'libsw' ? 'sw' : 'sh'] = v2; libUpdate(e.target.closest('[data-lib]').getAttribute('data-lib'), pt); }
+      else if ((k === 'sqw' || k === 'sqh') && it && it.t === 'img') { var v3 = Math.max(1, Math.min(30, Math.round(+e.target.value) || 1)); change(function () { if (k === 'sqw') { it.sw = v3; it.w = sqDots(v3); } else { it.sh = v3; it.h = sqDots(v3); } }); }
       else if (k === 'amove') { b.doc.agents_move = !!e.target.checked; save(); }
       else if (k === 'bgop' && b.doc.bg) { b.doc.bg.op = (+e.target.value || 60) / 100; b.draw(); save(); }
-      else if (k === 'scale') { var v = parseFloat(e.target.value); if (v > 0) { b.doc.scale = v; redraw(); drawScale(); save(); } }
+      else if (k === 'scale') {
+        var v = parseFloat(e.target.value);
+        if (v > 0) {
+          b.doc.scale = v;
+          // Library tokens keep their size in metres.
+          (b.doc.items || []).forEach(function (x) { if (x.t === 'img') { var cx = x.x + x.w / 2, cy = x.y + x.h / 2; x.w = sqDots(x.sw || 1); x.h = sqDots(x.sh || 1); x.x = r2(cx - x.w / 2); x.y = r2(cy - x.h / 2); } });
+          redraw(); drawScale(); save();
+        }
+      }
       else if (k === 'label' && it) change(function () { it.label = e.target.value.trim(); });
       else if (k === 'text' && it) change(function () { it.text = e.target.value.trim() || it.text; });
       else if (k === 'bgfile' && e.target.files && e.target.files[0]) upload(e.target.files[0]);
@@ -748,6 +858,12 @@
     }
     signedIn().then(function () {
       unsub = matRef(cellId).onSnapshot(function (snap) { apply(snap.exists ? snap.data() : null); }, function (e) { status('Could not load the mat: ' + ((e && e.message) || e)); });
+      unsubL = libRef().onSnapshot(function (snap) {
+        var out = [];
+        snap.forEach(function (d) { var v = d.data() || {}; if (v.url) out.push({ id: d.id, name: v.name || 'Token', url: v.url, path: v.path || '', sw: +v.sw || 1, sh: +v.sh || 1, at: v.created_at || 0 }); });
+        lib = out.sort(function (x, y) { return x.at - y.at || (x.name < y.name ? -1 : 1); });
+        drawLib();
+      }, function () { /* no library: the drawn tokens still work */ });
       // The Agents moving their own tokens: shown here as they drag, with
       // a word in the bar about who moved.
       unsubM = movesRef(cellId).onSnapshot(function (snap) {
@@ -764,7 +880,7 @@
     }).catch(function (e) { apply(null); status('Not signed in as Handler: ' + ((e && e.message) || e)); });
     drawScale(); redraw();
     return {
-      destroy: function () { stopRot(); if (unsub) unsub(); if (unsubM) unsubM(); unsub = unsubM = null; clearTimeout(saveT); clearTimeout(st.movedT); if (st.dirty) save(); host.innerHTML = ''; },
+      destroy: function () { stopRot(); if (unsub) unsub(); if (unsubM) unsubM(); if (unsubL) unsubL(); unsub = unsubM = unsubL = null; clearTimeout(saveT); clearTimeout(st.movedT); if (st.dirty) save(); host.innerHTML = ''; },
       board: b, state: st,
       // The desk redraws: the Agents and the session's NPCs (and their
       // Initiative state on the mat).
@@ -779,5 +895,5 @@
         hidden: !!n.hidden, out: n.init === false, down: n.hp != null && n.hp !== '' && +n.hp <= 0 };
     });
   }
-  window.dgMat = { editor: editor, view: view, tokens: TOKENS, itemSvg: itemSvg, npcsOf: npcsOf };
+  window.dgMat = { editor: editor, view: view, tokens: TOKENS, itemSvg: itemSvg, npcsOf: npcsOf, tidyName: tidyName };
 })();

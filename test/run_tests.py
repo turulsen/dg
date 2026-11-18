@@ -4811,6 +4811,69 @@ def test_acell_combat_mat(p):
     record("acell-mat", "no JS errors (combat mat)", not errs, str(errs))
     page.close()
 
+def test_acell_token_library(p):
+    """2026-11-18, the combat mat's token library: the Handler's own token
+    art (token_library/{id}, files in Storage tokens/) listed in the Tokens
+    sheet; placed at its size in squares of 1.5 m (kept in metres when the
+    dot size changes), turned by 45 degrees, resized in squares; renamed,
+    resized and removed under Manage. File names are tidied into names and
+    sizes."""
+    page, errs = open_acell_shell(p, width=1440, height=1000)
+    page.click("#ac-modes [data-mode=play]")
+    page.wait_for_selector(".pd-o[data-o=notebook]", timeout=6000)
+    page.click("#ac-tools [data-tool=arrange]")
+    page.click(".pd-drawer [data-pd=preset][data-n=Combat]")
+    page.click("#ac-tools [data-tool=arrange]")
+    page.wait_for_selector(".pd-o[data-o=mat] .mt-svg", timeout=5000)
+    names = page.evaluate("() => ['PP_Modern_Vehicle_Car_01_Sedan_Police_4x4.png', 'PP_Modern_Vehicle_Car_09_SUV_Green_4x4.png', 'PP_Modern_Vehicle_Helicopter_02_Emergency_Red_8x8.png', 'barrel.png'].map(f => { const t = window.dgMat.tidyName(f); return t.name + ' ' + t.sw + 'x' + t.sh; })")
+    record("token-library", "file names become tidy names and sizes",
+           names == ["Sedan Police 4x4", "SUV Green 4x4", "Helicopter Emergency Red 8x8", "Barrel 1x1"], str(names))
+    wait_for_condition(lambda: page.evaluate("() => (window.__dgFirestoreListeners || []).some(l => l.path === 'token_library')"), timeout_ms=5000)
+    img = "data:image/svg+xml;utf8," + "%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect x='14' y='4' width='12' height='32' fill='navy'/%3E%3C/svg%3E"
+    lib = [{"id": "tl1", "name": "Sedan Police", "url": img, "path": "tokens/tl1.png", "sw": 4, "sh": 4, "created_at": 1},
+           {"id": "tl2", "name": "Van White", "url": img, "path": "tokens/tl2.png", "sw": 5, "sh": 5, "created_at": 2}]
+    for d in lib:
+        page.evaluate("(a) => { window.__dgFirestoreDocs['token_library/' + a.id] = Object.assign({}, a); delete window.__dgFirestoreDocs['token_library/' + a.id].id; }", d)
+    push_firestore_snapshot(page, "token_library", [], lib)
+    page.wait_for_selector(".mt-lt[data-tool='lib:tl1']", timeout=3000)
+    record("token-library", "the Tokens sheet lists the library", page.locator(".mt-lt").count() == 2 and "Sedan Police" in page.inner_text(".mt-lib"), page.inner_text(".mt-lib"))
+    box = page.locator(".mt-stage").bounding_box()
+    page.click(".mt-lt[data-tool='lib:tl1']"); page.mouse.click(box["x"] + box["width"] * .5, box["y"] + box["height"] * .5)
+    mat = lambda: fs_doc(page, "mats/cell_osiris") or {}
+    tok = lambda: ([i for i in mat().get("items") or [] if i.get("t") == "img"] or [{}])[0]
+    wait_for_condition(lambda: tok().get("lib") == "tl1", timeout_ms=3000)
+    record("token-library", "placed at its size: 4 squares of 1.5 m = 6 dots at 1 dot = 1 m, with its art",
+           tok().get("w") == 6 and tok().get("h") == 6 and tok().get("url") == img and page.locator(".mt-svg .mt-img image").count() == 1, str({k: tok().get(k) for k in ("w", "h", "sw", "sh", "name")}))
+    page.click(".mt-tool[data-tool=select]")
+    tb = page.locator(".mt-svg .mt-img").bounding_box()
+    page.mouse.click(tb["x"] + tb["width"] / 2, tb["y"] + tb["height"] / 2)
+    page.wait_for_selector(".mt-sel [data-mt=sqw]", timeout=3000)
+    page.click(".mt-sel [data-mt=rot][data-d='45']")
+    wait_for_condition(lambda: tok().get("r") == 45, timeout_ms=3000)
+    record("token-library", "turned by 45 degrees", tok().get("r") == 45, str(tok().get("r")))
+    page.fill(".mt-sel [data-mt=sqw]", "2"); page.press(".mt-sel [data-mt=sqw]", "Enter")
+    wait_for_condition(lambda: tok().get("sw") == 2, timeout_ms=3000)
+    record("token-library", "resized in squares on the mat", tok().get("sw") == 2 and tok().get("w") == 3 and tok().get("h") == 6, str(tok()))
+    page.fill(".mt-scale input[data-mt=scale]", "2"); page.press(".mt-scale input[data-mt=scale]", "Enter")
+    page.locator(".mt-name").click()
+    wait_for_condition(lambda: mat().get("scale") == 2, timeout_ms=3000)
+    record("token-library", "keeps its size in metres when 1 dot changes", tok().get("w") == 1.5 and tok().get("h") == 3, str(tok()))
+    page.click(".mt-libup [data-mt=libman]")
+    page.wait_for_selector(".mt-libr[data-lib=tl1] [data-mt=libname]", timeout=3000)
+    page.fill(".mt-libr[data-lib=tl1] [data-mt=libname]", "Unit 7 cruiser"); page.press(".mt-libr[data-lib=tl1] [data-mt=libname]", "Enter")
+    page.locator(".mt-name").click()
+    wait_for_condition(lambda: (fs_doc(page, "token_library/tl1") or {}).get("name") == "Unit 7 cruiser", timeout_ms=3000)
+    page.fill(".mt-libr[data-lib=tl2] [data-mt=libsw]", "6"); page.press(".mt-libr[data-lib=tl2] [data-mt=libsw]", "Enter")
+    page.locator(".mt-name").click()
+    wait_for_condition(lambda: (fs_doc(page, "token_library/tl2") or {}).get("sw") == 6, timeout_ms=3000)
+    record("token-library", "Manage: renamed and resized in the library", (fs_doc(page, "token_library/tl1") or {}).get("name") == "Unit 7 cruiser" and (fs_doc(page, "token_library/tl2") or {}).get("sw") == 6, "")
+    page.click(".mt-libr[data-lib=tl1] [data-mt=libdel]")
+    page.click(".ac-ask [data-yes]")
+    wait_for_condition(lambda: fs_doc(page, "token_library/tl1") is None, timeout_ms=3000)
+    record("token-library", "Manage: removed from the library, still on the mat", fs_doc(page, "token_library/tl1") is None and tok().get("lib") == "tl1" and page.locator(".mt-libr").count() == 1, "")
+    record("token-library", "no JS errors (token library)", not errs, str(errs))
+    page.close()
+
 def test_notebook_mat(p):
     """2026-11-17, the Agents' side of the combat mat: a Mat tab in the
     notebook shows the Cell's mat live and read-only, the dot size bottom
@@ -15484,6 +15547,7 @@ def main():
         safe(test_acell_tape_steps_by_clock, browser, area="acell-tapes")
         safe(test_acell_play_layouts, browser, area="acell-layouts")
         safe(test_acell_combat_mat, browser, area="acell-mat")
+        safe(test_acell_token_library, browser, area="token-library")
         safe(test_acell_mobile_cells_add, browser, area="acell-mobile")
         safe(test_acell_mobile_mat, browser, area="acell-mobile")
         safe(test_notebook_mat_phone, browser, area="notebook-mat")
