@@ -404,6 +404,8 @@ NOTES_FIRESTORE_STUB = """
           // __dgFsFailGet(path): only this one-shot read fails (a phone's
           // "client is offline"); its listeners still work.
           if (window.__dgFsFailGet && window.__dgFsFailGet(docPath)) return Promise.reject(new Error('Failed to get document because the client is offline.'));
+          // __dgFsDenyGet(path): this read is refused outright (permission, a dropped sign-in).
+          if (window.__dgFsDenyGet && window.__dgFsDenyGet(docPath)) return Promise.reject(Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' }));
           // _route_backend(): a test's Python respond() answers reads of
           // characters/ and briefs/ ('__local__' = use this store).
           if (window.__dgBackendHook) {
@@ -1654,8 +1656,10 @@ def test_agent_hub_kia_stamp(p):
            "kia-name" in page.eval_on_selector("#ah-tablabel-DEAD-0001", "el => el.className"), "")
     record("hub", "the dead Agent's panel title is struck through",
            "kia-name" in page.eval_on_selector("#ah-title-DEAD-0001", "el => el.className"), "")
-    record("hub", "the dead Agent's panel shows a KIA stamp",
-           "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"), page.inner_text("#ah-charstamp-DEAD-0001"))
+    # 2026-11-18: the big KIA stamp on the name (like INSANE), not a tag in the row.
+    kia_after = page.evaluate("() => getComputedStyle(document.getElementById('ah-title-DEAD-0001'), '::after').content")
+    record("hub", "the dead Agent's name carries the big KIA stamp (no small tag in the row)",
+           kia_after == '"KIA"' and "KIA" not in page.inner_text("#ah-charstamp-DEAD-0001"), kia_after + " / " + page.inner_text("#ah-charstamp-DEAD-0001"))
 
     record("hub", "the living Agent's tab label is not struck through",
            "kia-name" not in page.eval_on_selector("#ah-tablabel-ALIV-0002", "el => el.className"), "")
@@ -2477,10 +2481,11 @@ def test_agent_hub_checks_read_firestore(p):
     apps_script = watch_apps_script(page)
     page.add_init_script(f"localStorage.setItem('dg_agent_roster', '{roster}');")
     page.goto(f"{BASE}/agent-hub.html", wait_until="domcontentloaded", timeout=15000)
-    wait_for_condition(lambda: "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"))
+    # v3.27.0: the KIA stamp is the big one on the name (data-kia-stamp).
+    kia = lambda: page.evaluate("() => { const t = document.getElementById('ah-title-DEAD-0001'); return !!(t && t.hasAttribute('data-kia-stamp')); }")
+    wait_for_condition(kia)
     page.wait_for_timeout(800)
-    record("hub", "an Agent's KIA stamp comes from its Firestore character doc",
-           "KIA" in page.inner_text("#ah-charstamp-DEAD-0001"), page.inner_text("#ah-charstamp-DEAD-0001"))
+    record("hub", "an Agent's KIA stamp comes from its Firestore character doc", kia(), "")
     record("hub", "an Agent with an Agent File but no character doc shows No Character Sheet Yet",
            "No Character Sheet Yet" in page.eval_on_selector("#ah-charstamp-ALIV-0002", "el => el.textContent"), "")
     record("hub", "Agent Hub makes no Apps Script call (the Sheet is retired)", apps_script == [], str(apps_script))
@@ -12771,6 +12776,48 @@ def test_appearance_carries_over_from_sheet(p):
     page.close()
 
 
+def test_kia_stamp_like_insane(p):
+    """KIA (HP 0) gets the INSANE stamp's look: the name struck in red and a
+    big KIA stamp across it, on Agent Hub's header and in the notebook's
+    Agent File (which used to strike only for SAN 0). A long Mental Disorder
+    stamp wraps and stays inside the page, clear of the tabs."""
+    long_dis = "Light schizophrenia - hallucinations of a person that helps in research"
+    errs_all = []
+    for width in (1180, 390):
+        docs = _field_notes_docs()
+        st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+              "derived": {"hp": 0, "wp": 12, "san": 49, "bp": 48},
+              "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester", "disorders": [long_dis]}}
+        docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+        page, errs = _field_notes_page(p, width=width, docs=docs,
+                                       extra_init="localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        page.wait_for_selector(f"#ah-sheet-{FN_CODE} .as-paper.ap .ap-vitals", timeout=15000)
+        page.evaluate("() => document.fonts.ready")
+        page.wait_for_timeout(900)
+        hub = page.evaluate("""(c) => { const t = document.getElementById('ah-title-' + c), a = getComputedStyle(t, '::after');
+            const panel = document.getElementById('panel-' + c).getBoundingClientRect(), d = document.querySelector('#panel-' + c + ' .ap-dis-stamp');
+            const R = d && d.getBoundingClientRect(), hit = (x, y) => !(x.right <= y.left || x.left >= y.right || x.bottom <= y.top || x.top >= y.bottom);
+            const keep = [...document.querySelectorAll('#panel-' + c + ' button, #panel-' + c + ' .stamp')].map(e => e.getBoundingClientRect()).filter(r => r.width);
+            return { struck: t.classList.contains('kia-name'), after: a.content, row: !!document.querySelector('#ah-charstamp-' + c + ' .stamp[data-fate="kia"]'),
+                     dis: !!d, inside: !!R && R.left >= panel.left - 1 && R.right <= panel.right + 1, clear: !!R && !keep.some(k => hit(R, k)),
+                     lines: d ? Math.round(d.offsetHeight / parseFloat(getComputedStyle(d).lineHeight)) : 0 }; }""", FN_CODE)
+        record("kia", f"Agent Hub: the dead Agent's name is struck with the big KIA stamp, no small tag ({width}px)",
+               hub["struck"] and hub["after"] == '"KIA"' and not hub["row"], json.dumps(hub))
+        record("kia", f"a long disorder stamp wraps and stays inside the page, clear of buttons and tags ({width}px)",
+               hub["dis"] and hub["inside"] and hub["clear"] and hub["lines"] >= 2, json.dumps(hub))
+        page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+        page.wait_for_selector("#fn-veil .as-paper.ap .as-head .as-name", timeout=8000)
+        page.wait_for_timeout(500)
+        nb = page.evaluate("""() => { const n = [...document.querySelectorAll('#fn-veil .as-paper.ap .as-head .as-name')].find(e => e.getClientRects().length);
+            const cs = getComputedStyle(n);
+            return { struck: cs.textDecorationLine.includes('line-through'), after: getComputedStyle(n, '::after').content }; }""")
+        record("kia", f"Field Notes: the dead Agent's name is struck too, with the same KIA stamp ({width}px)",
+               nb["struck"] and nb["after"] == '"KIA"', json.dumps(nb))
+        page.close(); errs_all.extend(errs)
+    record("kia", "no JS exceptions (KIA stamp)", not errs_all, str(errs_all[:3]))
+
+
 def test_insane_struck_like_kia(p):
     """SAN 0 is marked the way KIA is: the Agent's name struck through on
     Agent Hub's tab and header, a small INSANE stamp in the stamp row, and
@@ -13186,12 +13233,13 @@ def test_agent_file_parts_and_looks(p):
     V.wait_for(timeout=10000)
     V.locator("[data-a=appear]").click()
     record("agent-file-parts", "the notebook's Appearance fold under the photo shows the description",
-           "watchful grey eyes" in V.locator(".ap-appear").first.inner_text(), "")
+           "watchful grey eyes" in V.locator(".ap-appear:not(.ap-eradrop):not(.ap-celldrop)").first.inner_text(), "")
     V.locator("[data-a=cell]").click()
     record("agent-file-parts", "the notebook's Cell fold sits beside it", V.locator(".ap-celldrop .ap-init li").count() >= 1, "")
-    V.locator("[data-a=era]").click()
-    record("agent-file-parts", "…and Era photos, with the way to make them on Agent Hub",
-           V.locator(".ap-eradrop").count() == 1 and V.locator(".ap-eradrop [data-go=photo]").count() == 1, "")
+    record("agent-file-parts", "…and the era photos are in the same Appearance & photos fold, first, with the way to make them on Agent Hub (no separate Era photos button)",
+           V.locator(".ap-eradrop").count() == 1 and V.locator(".ap-eradrop [data-go=photo]").count() == 1 and V.locator("[data-a=era]").count() == 0
+           and "Appearance & photos" in V.locator("[data-a=appear]").inner_text()
+           and V.evaluate("v => { const e = v.querySelector('.ap-eradrop'), a = [...v.querySelectorAll('.ap-appear')].find(n => !n.classList.contains('ap-eradrop') && !n.classList.contains('ap-celldrop')); return !!(e && a && (e.compareDocumentPosition(a) & 4)); }"), "")
     page.evaluate("() => window.dgFieldNotes.open('settings')")
     page.wait_for_selector("[data-s=paper-look]")
     opts = page.eval_on_selector_all("[data-s=paper-look] option", "els => els.map(e => e.value)")
@@ -14366,6 +14414,54 @@ def test_field_id_forgery(p):
     record("forgery", "no evidence-pack pictures are in the repo", not any(os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", n)) for n in ["sheriff.jpg", "faith.jpg", "titan.jpg", "badge-oregon.png"]), "")
     record("forgery", "no JS exceptions", not errs_all, str(errs_all[:3]))
     return errs_all
+
+def test_wallet_never_loses_cards(p):
+    """2026-11-18: Field IDs vanished ("Richard had a Miskatonic University,
+    Arthur a Syracuse Fire Station"). A page whose wallet read had failed
+    saved its empty copy over the stored one when a card was filed or the
+    wallet flipped. Now a save keeps every stored card it didn't remove,
+    and a flip changes only the carried card."""
+    stats = {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 11, "CHA": 13}
+    state = {"v": 1, "stats": stats, "csStats": dict(stats), "derived": {"hp": 11, "wp": 11, "san": 52, "bp": 44},
+             "bio": {"name": "Mara Voss", "player_name": "fn tester", "profession": "federal_agent", "employer": "Federal Bureau of Investigation"}}
+    fd = _field_notes_docs()
+    fd[f"characters/{FN_CODE}"] = character_doc(FN_CODE, state, "fn tester")
+    old = [{"id": "cmisk", "proto": "entity", "org": "Miskatonic University", "layout": "letterhead", "name": "Mara Voss", "title": "Lecturer"},
+           {"id": "csyr", "proto": "entity", "org": "Syracuse Fire Station", "layout": "letterhead", "name": "Mara Voss", "title": "Inspector"}]
+    fd[f"wallets/{FN_CODE}"] = {"agent_code": FN_CODE, "cards": old, "carried": "auto"}
+    extra = "localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));window.__dgStorageFiles=%s;" % (FN_CODE, json.dumps(_STOCK_FILES))
+    page, errs = _field_notes_page(p, docs=fd, extra_init=extra)
+    _route_stock(page)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    page.wait_for_function("() => window.dgFieldNotes && window.dgFieldNotes.isHost", timeout=10000)
+    wal = lambda: page.evaluate("() => window.__dgFirestoreDocs['wallets/%s'] || null" % FN_CODE)
+    orgs = lambda: [c.get("org") or c.get("proto") for c in ((wal() or {}).get("cards") or [])]
+    # The Fabricator's wallet read fails; then a card is filed.
+    page.evaluate("() => { window.__dgFsDenyGet = p => /^wallets\\//.test(p); window.dgFieldNotes.open('fab'); }")
+    f = page.wait_for_selector("#fn-veil iframe[data-dg-embed=fieldid]", timeout=8000).content_frame()
+    f.wait_for_function("() => { const s = window.dgFabricator && window.dgFabricator.state(); return s && s.walletLoaded && s.stock && s.brief; }", timeout=20000)
+    page.evaluate("() => { window.__dgFsDenyGet = null; }")
+    f.click("[data-x=p-mirror]")
+    f.wait_for_function("() => { const i = document.getElementById('ids-agency'); return i && i.value; }", timeout=8000)
+    f.evaluate("() => window.dgFabricator.act('file')")
+    f.wait_for_selector("text=FORGERY COMPLETE")
+    got = wait_for_condition(lambda: len(orgs()) == 3 and orgs(), timeout_ms=6000) or orgs()
+    record("wallet", "a card filed after a failed wallet read keeps the cards already in the wallet",
+           "Miskatonic University" in got and "Syracuse Fire Station" in got and "mirror" in got, str(got))
+    # The notebook flips: only the carried card changes.
+    page.click("#fn-veil [data-fab=card]")
+    page.wait_for_selector("#fn-veil [data-fn-walbar]:not([hidden])", timeout=8000)
+    page.click("#fn-veil [data-fn-walbar] [data-fn=wal-next]")
+    w = wait_for_condition(lambda: (wal() or {}).get("carried") not in (None, "auto") and wal(), timeout_ms=5000) or wal()
+    record("wallet", "flipping the wallet changes only the carried card, never the cards",
+           len(w.get("cards") or []) == 3 and w.get("carried") != "auto", str(w)[:200])
+    # A burn removes just that card.
+    page.evaluate("(c) => window.dgStore.saveWallet(c, { cards: [], removed: ['csyr'] })", FN_CODE)
+    after = orgs()
+    record("wallet", "a burned card is removed, the others stay", "Syracuse Fire Station" not in after and "Miskatonic University" in after and len(after) == 2, str(after))
+    record("wallet", "no JS exceptions (wallet)", not [e for e in errs if "permissions" not in e], str(errs[:3]))
+    page.close()
+    return errs
 
 def test_agent_file_profession_employer_line(p):
     """v3.10.1: under the Agent's name the Agent File shows profession ·
@@ -15872,6 +15968,8 @@ def main():
         safe(test_agent_file_disorder_stamps, browser, area="disorders")
         safe(test_appearance_carries_over_from_sheet, browser, area="appearance")
         safe(test_insane_struck_like_kia, browser, area="insane")
+        safe(test_kia_stamp_like_insane, browser, area="kia")
+        safe(test_wallet_never_loses_cards, browser, area="wallet")
         safe(test_plate_save_survives_a_dropped_connection, browser, area="plates")
         safe(test_bond_at_zero_struck, browser, area="bonds")
         safe(test_notebook_flip_agents, browser, area="flip")

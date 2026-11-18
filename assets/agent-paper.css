@@ -163,7 +163,7 @@
 .as-skills > [hidden]{ display:none !important; }
 /* Appearance fold under the photo (the notebook) */
 .ap-dropbtns{ display:flex; flex-direction:column; gap:4px; align-items:stretch; margin-top:6px; }
-.as-paper .ap-dropbtns .ap-appear-btn{ display:block; text-align:center; }
+.as-paper .ap-dropbtns .ap-appear-btn{ display:block; text-align:center; white-space:normal; line-height:1.3; }
 .ap-celldrop .ap-init{ margin-top:2px; }
 .ap-era{ margin:8px 0 4px; }
 .ap-era-t{ font-family:'Special Elite',monospace; font-size:12px; letter-spacing:.12em; color:var(--as-ink); margin-bottom:5px; }

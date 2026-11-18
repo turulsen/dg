@@ -7670,3 +7670,75 @@ could also be used up by the thinking before any text. All three now
 join every text block, explain an empty reply (declined, out of room),
 and run with room for the thinking at low effort. translateEvidence had
 been written this way already. Deploy: `functions`.
+
+## Plates in the wrong clothes, slumped, eyes shut; KIA barely marked (v3.27.0, PR #118)
+
+Reported 2026-11-18, after the first plates from a reference photo.
+
+- **The Face Plate wore the reference photo's grey sweater**, though the
+  prompt said "his own flight jacket". The reference went to the image
+  model as a likeness with nothing saying to ignore its clothes. It is
+  now labelled for the face and likeness only; the text dresses them.
+- **The Outfit Plate showed him slumped on the floor, eyes closed.** The
+  reference was a film still of an unconscious man, and the first photo
+  read (v3.26.0) put that moment into the brief: Eye shape "closed, not
+  visible", Expression "slack-jawed ... unconscious", Posture "slumps
+  against a door frame". The outfit prompt then labelled the expression
+  "Expression/stance", which invited a pose. Now: the photo reader
+  ignores a still's pose, expression and lighting (but describes
+  wounds, bruises, blood and scars: "injuries should be part of it");
+  both plate prompts keep the figure standing with eyes open to camera
+  unless an injury says otherwise; posture is bearing only. A brief
+  already filled from such a still needs its eye, expression and
+  posture fields edited by hand, then "remake the photos".
+- **No smiles:** "these are government ID photos". Both prompts carry
+  an ID photo rule (neutral, mouth closed, no teeth); the brief's
+  expression shows in the eyes and brow only, and the Default
+  expression example no longer offers "quietly amused".
+- **KIA:** an Agent at HP 0 was struck through on Agent Hub with a
+  small KIA tag in the stamp row, and not struck at all in the
+  notebook's Agent File: `placeStamp` struck only for SAN 0 (v3.2.0
+  added INSANE beside KIA but never gave the notebook KIA itself). Now
+  both strike the name and lay a big KIA stamp across it, the INSANE
+  stamp's look.
+- **A long disorder stamp ran off the page** over the notebook's part
+  tabs and Agent Hub's tags. Stamps were `nowrap` and only buttons
+  inside the header were avoided, so a long name could be placed past
+  the edge and the "spill lower" fallback landed on the tabs below.
+  Stamps now wrap at about 70% of the header's width and keep off the
+  buttons around the header; one with no free spot goes in a row at the
+  header's foot rather than being dropped or overlapping.
+
+- **The prompt narrated its own fix:** an Outfit Plate prompt read
+  "Though the pose was originally slumped and seated against a door
+  frame, he is reframed standing ... expression unconscious,
+  slack-jawed". The writer obeyed the pose rule but explained it, and
+  copied the brief's expression into the pose sentence's slot. Both
+  plate prompts now say to describe only the final photograph and not
+  to use the moment's words unless an injury needs them; the pose
+  sentence's expression slot asks for a waking look in the eyes and brow.
+- **Two buttons in the notebook:** v3.24.0 made Appearance and Era
+  photos one drop-down on Agent Hub only; the notebook's Agent File
+  (`agent-paper.js` `dropBtns`) still had both. It has one Appearance &
+  photos fold now, the photos first.
+
+- **Field IDs vanished from wallets:** "Richard had a Miskatonic
+  University, Arthur a Syracuse Fire Station". Both wallet writers saved
+  the page's whole copy of the wallet over the stored one. The
+  Fabricator's copy starts empty and stays empty if its read fails (it
+  then marks the wallet loaded anyway), so filing the next card saved
+  that one card alone; the notebook, on a failed read, kept the
+  previous Agent's cards under the new Agent's code, and a ‹ › flip
+  saved them over that Agent's wallet. Now `saveWallet` reads the
+  stored wallet and keeps every card the page didn't burn (burns are
+  sent as `removed` ids), the notebook's flip writes only `carried`
+  (`{ carriedOnly: true }`, a merge), and a failed read in the notebook
+  shows an empty wallet for that Agent, never another's. Cards already
+  lost can't be brought back from the app (Firestore keeps no history
+  here); they have to be made again. Test `test_wallet_never_loses_cards`
+  fails on the old code (the two cards reduced to the new one).
+
+Tests: `test_kia_stamp_like_insane` (new), `test_wallet_never_loses_cards` (new), `test_agent_hub_kia_stamp`
+(the big stamp, no row tag), `test_agent_file_disorder_stamps`,
+`test_agent_file_parts_and_looks` (one fold in the notebook).
+Deploy: `functions`. `sw.js` `CACHE_NAME` v345.

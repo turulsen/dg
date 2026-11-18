@@ -487,15 +487,34 @@
     code = norm(code);
     return signInAgent(code).then(() => getDoc('wallets', code));
   }
-  function saveWallet(code, wallet) {
+  // 2026-11-18: cards vanished ("Richard had a Miskatonic University,
+  // Arthur a Syracuse Fire Station"). A save wrote the whole wallet from
+  // the page's copy, and a page whose read had failed held an empty copy
+  // (the Fabricator) or another Agent's (the notebook), so filing or
+  // flipping a card wiped the rest. Now a save reads the stored wallet
+  // first and keeps every card it has that the page didn't remove
+  // (wallet.removed: ids burned here); a page's own cards win on the same
+  // id. { carriedOnly: true } changes only which card is carried.
+  function saveWallet(code, wallet, opts) {
     code = norm(code);
     // Rebuilt here, in this page: the Fabricator (in the notebook's frame)
     // hands over its own arrays, and Firestore refuses another frame's
     // Array ("Unsupported field value: a custom Array object").
     const w = JSON.parse(JSON.stringify(wallet || {}));
-    return signInAgent(code).then(() => withTimeout(db().collection('wallets').doc(code).set({
-      agent_code: code, cards: (w.cards || []).slice(0, 40), carried: w.carried || 'auto', updated_at: Date.now()
-    }), 15000, 'saving the wallet'));
+    const ref = () => db().collection('wallets').doc(code);
+    if (opts && opts.carriedOnly) {
+      return signInAgent(code).then(() => withTimeout(ref().set({ agent_code: code, carried: w.carried || 'auto', updated_at: Date.now() }, { merge: true }), 15000, 'saving the wallet'));
+    }
+    return signInAgent(code).then(() => getDoc('wallets', code)).then(stored => {
+      const mine = w.cards || [], removed = w.removed || [], ids = {};
+      mine.forEach(c => { if (c && c.id) ids[c.id] = 1; });
+      const kept = ((stored && stored.cards) || []).filter(c => c && c.id && !ids[c.id] && removed.indexOf(c.id) < 0);
+      const cards = kept.concat(mine).slice(-40);
+      let carried = w.carried || 'auto';
+      if (carried !== 'auto' && !cards.some(c => c.id === carried)) carried = 'auto';
+      return withTimeout(ref().set({ agent_code: code, cards, carried, updated_at: Date.now() }), 15000, 'saving the wallet')
+        .then(() => ({ cards, carried }));
+    });
   }
   // The Handler's evidence-pack stock (Storage id-templates/): file name
   // -> download URL. Signed-in reads only; cached for the tab.

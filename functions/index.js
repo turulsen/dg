@@ -237,13 +237,19 @@ const AGE_RANGES = ['Early 20s', 'Mid 20s', 'Late 20s', 'Early 30s', 'Mid 30s', 
 function photoPrompt_() {
   return 'This is a reference photo a player chose for their character in the tabletop game Delta Green. Describe how ' +
     'the person in it LOOKS, to fill in the character\'s appearance brief. Do not say or guess who the person is, and do ' +
-    'not describe clothing or jewellery. Reply with one JSON object only, no other text, with these keys:\n' +
+    'not describe clothing or jewellery. The photo may be a film still: ignore the momentary pose, the expression of that ' +
+    'moment and the lighting, but do describe any visible injuries, wounds, bruises, blood, scars and marks (this is a ' +
+    'horror game; they belong to the character). ' +
+    'Reply with one JSON object only, no other text, with these keys:\n' +
     '- age_range: one of ' + AGE_RANGES.map(function (a) { return '"' + a + '"'; }).join(', ') + '\n' +
     '- sex: "Male", "Female" or "Other"\n' +
     '- face_shape, eye_color, eye_shape, nose, lips, skin, facial_hair, face_scars, hair_color, hair_style, hair_texture, ' +
     'posture, body_markers, expression: each a short phrase (2 to 8 words) in plain, specific language, e.g. ' +
     '"long, angular jaw", "pale blue", "deep-set, hooded", "two days\' stubble", "sandy, thinning, cropped short", ' +
     '"guarded, half a smile".\n' +
+    'posture is how they would naturally stand (e.g. "upright, shoulders back"), not the pose in the photo; expression is a ' +
+    'resting expression that suits the face (e.g. "watchful, mouth set"), not the emotion of the moment and never a smile (these are ID photos); face_scars for ' +
+    'scars, wounds, bruises or blood on the face, body_markers for those and tattoos elsewhere.\n' +
     'Use "" for anything the photo does not show (scars, tattoos or marks you cannot see, posture in a head shot).';
 }
 function photoFields_(text) {
@@ -453,7 +459,11 @@ exports.generatePlateImage = onCall({ secrets: [GEMINI_API_KEY], timeoutSeconds:
   if (ref) {
     parts.push({ text: isOutfit
       ? 'Reference image (next): use it ONLY for this person\'s face and likeness. Ignore its framing, crop and camera distance -- it is a close-up headshot, the output is not.'
-      : 'Reference image (next): use it for this person\'s likeness.' });
+      // 2026-11-18: a Face Plate's reference is the player's own photo (a
+      // film still, an actor); "use it for this person's likeness" alone let
+      // its clothes, lighting and background come through -- Face Plates in
+      // the photo's dark top instead of the brief's jacket and shirt.
+      : 'Reference image (next): use it ONLY for this person\'s face and likeness (features, hair, age). Ignore everything else in it: their clothing, the background, the lighting, the framing. Dress them exactly as the text below says.' });
     parts.push({ inlineData: ref });
   }
   parts.push({ text: prompt });

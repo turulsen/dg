@@ -773,7 +773,13 @@
       var needStock = wallet.cards.some(function (c) { return c.proto === 'office'; });
       var after = function () { renderWallet(); };
       if (needStock && st.idTemplates) st.idTemplates(a.code).then(function (m) { wallet.stock = m || {}; after(); }, after); else after();
-    }, function () { wallet.loading = false; wallet.code = a.code; renderWallet(); });
+    }, function () {
+      // A failed read: this Agent's wallet with no cards shown (never the
+      // previous Agent's, which a flip used to save over this one's).
+      if (!currentAgent() || currentAgent().code !== a.code) return;
+      wallet = { code: a.code, cards: [], carried: 'auto', loading: false, stock: null };
+      renderWallet();
+    });
   }
   var walletSaveT = null;
   function flipWallet(dir) {
@@ -782,8 +788,9 @@
     wallet.carried = l[(walletAt() + dir + l.length) % l.length];
     renderWallet(dir);
     clearTimeout(walletSaveT);
-    var code = wallet.code, snap = { cards: wallet.cards, carried: wallet.carried };
-    walletSaveT = setTimeout(function () { if (window.dgStore && window.dgStore.saveWallet) window.dgStore.saveWallet(code, snap).catch(function () {}); }, 600);
+    // Only which card is carried: the cards themselves are never written from here.
+    var code = wallet.code, snap = { carried: wallet.carried };
+    walletSaveT = setTimeout(function () { if (window.dgStore && window.dgStore.saveWallet) window.dgStore.saveWallet(code, snap, { carriedOnly: true }).catch(function () {}); }, 600);
   }
   function renderWalletCount() {
     var n = walletList().length, mine = wallet.code && currentAgent() && wallet.code === currentAgent().code;

@@ -378,7 +378,9 @@ select.in{appearance:auto}
   function persist() {
     var st = store();
     if (!S.code || !st || !st.saveWallet) return Promise.resolve();
-    return st.saveWallet(S.code, S.wallet).then(function () {
+    return st.saveWallet(S.code, S.wallet).then(function (w) {
+      // The stored wallet, with any card this page hadn't loaded.
+      if (w && w.cards) { S.wallet.cards = w.cards; S.wallet.carried = w.carried; S.wallet.removed = []; }
       try { window.parent.dispatchEvent(new CustomEvent('dg-wallet-changed', { detail: { code: S.code } })); } catch (e) { /* not in the notebook */ }
     }, function (err) { toast('Could not save the wallet: ' + (err && err.message || err)); throw err; });
   }
@@ -491,6 +493,7 @@ select.in{appearance:auto}
         var cb = cards()[S.at];
         if (!cb || cb.id === 'auto') return;
         S.wallet.cards = S.wallet.cards.filter(function (y) { return y.id !== cb.id; });
+        (S.wallet.removed || (S.wallet.removed = [])).push(cb.id);
         if (S.wallet.carried === cb.id) S.wallet.carried = 'auto';
         S.at = Math.max(0, S.at - 1); S.view = 'wallet'; render();
         return persist().then(function () { toast('Burned.'); }, function () {});

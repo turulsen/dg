@@ -472,6 +472,17 @@ page can redraw the paper as more data arrives.
   struck name. In the Cell list the name is struck in red. The disorder
   stamps keep off Agent Hub's stamp row and are re-placed when it
   changes.
+- **KIA like the INSANE stamp (v3.27.0):** at HP 0 the name is struck
+  in red with a big KIA stamp across it (`[data-kia-stamp]` in
+  `agent-wear.css`, the INSANE stamp's look at full ink, shown with
+  wear off too), on Agent Hub's header (`setAgentFate`) and in the
+  notebook's Agent File (`placeStamp`, which strikes for KIA as well as
+  SAN 0 now). Dead outranks mad: only KIA is stamped then. The small KIA
+  tag in Agent Hub's stamp row is gone; the Cell lists keep their small
+  tags. Mental Disorder stamps wrap at about 70% of the header's width,
+  keep off buttons just outside it (the notebook's part tabs), and one
+  with no free spot goes in a row at the foot of the header
+  (`.ap-dis-row`) instead of being dropped.
 - **Opacity by SAN (v3.2.0):** `wearOpacity` in `agent-paper.js` sets
   `--w-op` on the page, rising point by point with SAN: 49–40 1–5%,
   39–30 6–10%, 29–20 11–25%, 19–10 26–50%, 9–0 51–100%, and 100% at 0.
@@ -619,6 +630,23 @@ testing found the one long paper hard to read, so it's grouped:
   `replyProblem_()` (a refusal, max_tokens, an API error); they run with
   `SHORT_JOB` (`max_tokens` 16000, effort low), leaving room for the
   model's thinking. translateEvidence already worked this way.
+  v3.27.0: the plate prompts (`functions/ai-prompts.js`) treat the Face
+  and Outfit Plates as government ID photos -- always standing upright,
+  eyes open to camera, a neutral closed mouth, never a smile; the brief's
+  expression shows only in the eyes and brow, its posture is bearing,
+  never the pose; every scar, wound, bruise and blood is kept. The
+  reference photo is used for the face only (never its clothes or
+  lighting), and the photo reader ignores a film still's moment (pose,
+  expression, closed eyes) but keeps its injuries. The prompt writer is
+  told to describe only the final photograph (never "originally slumped
+  ... reframed") and not to use the moment's words (unconscious,
+  slack-jawed, eyes closed) unless an injury needs them.
+  v3.27.0: the notebook's Agent File has one **Appearance & photos**
+  drop-down too (the era photos first, then the physical description),
+  in place of its separate Appearance and Era photos buttons.
+  v3.27.0, the Field ID wallet: `saveWallet` merges with the stored
+  wallet (cards the page didn't burn are kept; burns go as `removed`),
+  and the notebook's ‹ › flip writes only `carried`.
 - A narrow paper (the notebook page) stacks the two-column parts and puts
   the statistics in rows of three (a container query on `.as-paper.ap`).
 
