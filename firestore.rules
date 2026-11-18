@@ -221,6 +221,21 @@ service cloud.firestore {
     match /mats/{cellId} {
       allow read: if true;
       allow write: if isHandler();
+
+      // mats/{cellId}/moves/{code} (2026-11-18): where an Agent dragged
+      // their OWN token in the notebook. Only that Agent's session, only a
+      // member of the mat's Cell, only while the Handler's "Agents move
+      // their own tokens" is on, and only a spot (x, y, at). The Handler
+      // clears these when moving or removing the token.
+      match /moves/{code} {
+        allow read: if true;
+        allow delete: if isHandler();
+        allow create, update: if isHandler() || (
+          isSignedIn() && agentCode() == code && isCellMember(cellId)
+          && get(/databases/$(database)/documents/mats/$(cellId)).data.get('agents_move', true) != false
+          && request.resource.data.keys().hasOnly(['x', 'y', 'at'])
+          && request.resource.data.x is number && request.resource.data.y is number);
+      }
     }
 
     match /radio/{channel} {

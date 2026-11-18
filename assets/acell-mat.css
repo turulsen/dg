@@ -106,3 +106,20 @@
   .mt-ed.mt-phone:not(.mt-nofull) .mt-sel{ left:122px; bottom:0; }
 }
 .mt-kit{ display:flex; flex-direction:column; gap:4px; }
+
+/* Dots, the Agents' own moves, NPCs (2026-11-18) */
+.mt-dots{ display:inline-flex; align-items:center; gap:6px; }
+.mt-seg{ display:inline-flex; }
+.mt-bar .mt-seg button.on{ background:#f2d98a; outline:2px solid #a3221c; outline-offset:-2px; }
+.mt-phone:not(.mt-more) .mt-bar > .mt-sw2{ display:none; }
+.mt-npcs{ display:flex; flex-direction:column; gap:3px; }
+.mt-npc{ display:grid; grid-template-columns:22px minmax(0,1fr); column-gap:6px; align-items:center; background:#e9dfbf; color:#2a2418; border:0; padding:3px 5px; font:inherit; font-size:11px; cursor:pointer; text-align:left; min-width:0; }
+.mt-npc span{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mt-npc small{ grid-column:2; font-size:9.5px; color:#6b5a3a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mt-npc b, .mt-npc img{ grid-row:span 2; width:22px; height:22px; border-radius:50% !important; object-fit:cover; display:flex; align-items:center; justify-content:center; background:#a3221c; color:#fff; font-size:9.5px; }
+.mt-npc.out b, .mt-npc.out img{ background:#7a7a7a; opacity:.8; }
+.mt-npc.hid b{ background:transparent; border:2px dashed #a3221c; color:#a3221c; }
+.mt-npc.on{ outline:2px solid #a3221c; outline-offset:-2px; }
+.mt-hint{ background:#1c120a; color:#f2d98a; font:12px 'Courier Prime',monospace; padding:5px 8px; margin-bottom:6px; }
+.mt-hint[hidden]{ display:none; }
+.mt-mine{ cursor:grab; }

@@ -4763,6 +4763,51 @@ def test_acell_combat_mat(p):
     wait_for_condition(lambda: mat()["bg"]["w"] != w0, timeout_ms=3000)
     w1 = mat()["bg"]["w"]
     record("acell-mat", "Set the scale: a line called 40 m becomes 20 dots at 2 m a dot (the photo resized to match)", w1 != w0 and w1 > 0, str((w0, w1)))
+    # 2026-11-18: dots black/white, the Agents-move switch, NPCs from Initiative.
+    page.click(".mt-bar [data-mt=dots][data-v=white]")
+    wait_for_condition(lambda: mat().get("dots") == "white", timeout_ms=3000)
+    fill = page.evaluate("() => document.querySelector('.mt-svg pattern circle').getAttribute('fill')")
+    record("acell-mat", "Dots: White is saved with the map and the dots turn white", mat().get("dots") == "white" and fill == "#ffffff", str((mat().get("dots"), fill)))
+    page.click(".mt-bar [data-mt=dots][data-v=black]")
+    wait_for_condition(lambda: mat().get("dots") == "black", timeout_ms=3000)
+    record("acell-mat", "...and back to black", mat().get("dots") == "black", "")
+    record("acell-mat", "Agents move their own tokens: on by default", page.is_checked(".mt-bar [data-mt=amove]") and mat().get("agents_move") is True, str(mat().get("agents_move")))
+    page.uncheck(".mt-bar [data-mt=amove]")
+    wait_for_condition(lambda: mat().get("agents_move") is False, timeout_ms=3000)
+    record("acell-mat", "...switched off for everyone", mat().get("agents_move") is False, "")
+    page.check(".mt-bar [data-mt=amove]")
+    record("acell-mat", "the Tokens list has this session's NPCs from Initiative", "Keeper" in page.inner_text(".mt-npcs"), page.inner_text(".mt-npcs"))
+    page.click(".mt-npc[data-tool='npc:keeper']"); page.mouse.click(*at(.7, .3))
+    npc = lambda: ([i for i in mat().get("items") or [] if i.get("t") == "npc"] or [{}])[0]
+    wait_for_condition(lambda: npc().get("key") == "keeper", timeout_ms=3000)
+    record("acell-mat", "an NPC goes on the mat as a red token with their name", npc().get("name") == "Keeper" and not npc().get("hid") and page.locator(".mt-svg .mt-npc").count() == 1, str(npc()))
+    page.evaluate("() => { var s = window.dgSessions.get('sess_4'); window.dgSessions.update('sess_4', { npcs: s.npcs.map(n => Object.assign({}, n, { hidden: true })) }); }")
+    wait_for_condition(lambda: npc().get("hid") is True, timeout_ms=4000)
+    record("acell-mat", "hidden in Initiative: hidden on the mat too (dashed for the Handler)", npc().get("hid") is True and page.locator(".mt-svg .mt-npc.mt-hid").count() == 1, str(npc()))
+    page.evaluate("() => { var s = window.dgSessions.get('sess_4'); window.dgSessions.update('sess_4', { npcs: s.npcs.map(n => Object.assign({}, n, { hidden: false, hp: 0 })) }); }")
+    wait_for_condition(lambda: npc().get("out") is True and not npc().get("hid"), timeout_ms=4000)
+    record("acell-mat", "down in Initiative: greyed on the mat", npc().get("out") is True and page.locator(".mt-svg .mt-npc.mt-out").count() == 1, str(npc()))
+    # An Agent moves their own token (mats/{cell}/moves/{code}): it moves here, with a word who.
+    page.click(".mt-ag >> nth=0"); page.mouse.click(*at(.15, .4))
+    wait_for_condition(lambda: "agent" in kinds(), timeout_ms=3000)
+    ag = [i for i in mat()["items"] if i.get("t") == "agent"][0]
+    wait_for_condition(lambda: page.evaluate("() => (window.__dgFirestoreListeners || []).some(l => l.path === 'mats/cell_osiris/moves')"), timeout_ms=4000)
+    push_firestore_snapshot(page, "mats/cell_osiris/moves", [], [{"id": ag["code"], "x": 30, "y": 2, "at": 5}])
+    page.wait_for_timeout(200)
+    tx = page.evaluate("(id) => { var g = document.querySelector('.mt-svg [data-id=' + id + '] circle'); return g ? +g.getAttribute('cx') : null; }", ag["id"])
+    record("acell-mat", "an Agent's own move shows on the Handler's mat, with who moved", tx is not None and abs(tx - (30 + ag["w"] / 2)) < .01 and "Mara moved." in page.inner_text(".mt-status"), str((tx, page.inner_text(".mt-status"))))
+    page.evaluate("() => { window.__dgFirestoreDocs['mats/cell_osiris/moves/MARA-KS01'] = { x: 30, y: 2, at: 5 }; }")
+    page.click(".mt-tool[data-tool=select]")
+    page.click(".mt-tool[data-tool=select]") if "on" not in (page.get_attribute(".mt-tool[data-tool=select]", "class") or "") else None
+    page.click(".mt-bar [data-mt=fit]")
+    page.wait_for_timeout(200)
+    bx = page.locator(f".mt-svg [data-id={ag['id']}]").bounding_box()
+    page.mouse.move(bx["x"] + bx["width"] / 2, bx["y"] + bx["height"] / 2); page.mouse.down()
+    page.mouse.move(bx["x"] + bx["width"] / 2 + 60, bx["y"] + bx["height"] / 2 + 40, steps=5); page.mouse.up()
+    wait_for_condition(lambda: fs_doc(page, "mats/cell_osiris/moves/MARA-KS01") is None, timeout_ms=3000)
+    ag2 = [i for i in mat()["items"] if i.get("t") == "agent"][0]
+    record("acell-mat", "the Handler moving that token takes over: the Agent's move is cleared, the token stays put from there",
+           fs_doc(page, "mats/cell_osiris/moves/MARA-KS01") is None and ag2["x"] > 30, str(ag2))
     record("acell-mat", "no JS errors (combat mat)", not errs, str(errs))
     page.close()
 
@@ -4799,6 +4844,31 @@ def test_notebook_mat(p):
     wait_for_condition(lambda: page.locator("#fn-veil .mt-svg [data-id=a5]").count() == 1, timeout_ms=4000)
     record("notebook-mat", "live: what the Handler draws and the new dot size appear at once",
            page.locator("#fn-veil .mt-svg [data-id=a5]").count() == 1 and page.inner_text("#fn-veil .mt-scale").strip() == "1 dot = 5 m", page.inner_text("#fn-veil .mt-scale"))
+    # 2026-11-18: the Agent drags their own token; the other's won't move.
+    record("notebook-mat", "the hint shows: drag your token to move it", page.is_visible("#fn-veil .mt-hint"), "")
+    page.wait_for_timeout(200)
+    bx = page.locator("#fn-veil .mt-svg [data-id=a3]").bounding_box()
+    page.mouse.move(bx["x"] + bx["width"] / 2, bx["y"] + bx["height"] / 2); page.mouse.down()
+    page.mouse.move(bx["x"] + bx["width"] / 2 + 80, bx["y"] + bx["height"] / 2 + 30, steps=6); page.mouse.up()
+    mv_path = f"mats/{FN_CELL}/moves/{FN_CODE}"
+    wait_for_condition(lambda: fs_doc(page, mv_path) is not None, timeout_ms=3000)
+    mv = fs_doc(page, mv_path) or {}
+    record("notebook-mat", "dragging their own token saves where it went (moves/{code}), on a half-dot",
+           mv.get("x", 0) > 2 and mv["x"] * 2 == round(mv["x"] * 2) and mv["y"] * 2 == round(mv["y"] * 2) and set(mv) == {"x", "y", "at"}, str(mv))
+    bo = page.locator("#fn-veil .mt-svg [data-id=a4]").bounding_box()
+    page.mouse.move(bo["x"] + bo["width"] / 2, bo["y"] + bo["height"] / 2); page.mouse.down()
+    page.mouse.move(bo["x"] + 120, bo["y"] + 60, steps=4); page.mouse.up()
+    page.wait_for_timeout(300)
+    record("notebook-mat", "another Agent's token can't be dragged", fs_doc(page, f"mats/{FN_CELL}/moves/{FN_MATE}") is None, "")
+    d3 = dict(d); d3["agents_move"] = False
+    push_firestore_doc_snapshot(page, f"mats/{FN_CELL}", True, d3)
+    page.wait_for_timeout(150)
+    page.evaluate("(p) => { delete window.__dgFirestoreDocs[p]; }", mv_path)
+    bx = page.locator("#fn-veil .mt-svg [data-id=a3]").bounding_box()
+    page.mouse.move(bx["x"] + bx["width"] / 2, bx["y"] + bx["height"] / 2); page.mouse.down()
+    page.mouse.move(bx["x"] + 40, bx["y"] + 90, steps=4); page.mouse.up()
+    page.wait_for_timeout(300)
+    record("notebook-mat", "with the Handler's switch off: no hint, and the token doesn't move", fs_doc(page, mv_path) is None and not page.is_visible("#fn-veil .mt-hint"), "")
     d2 = dict(d); d2["shown"] = False
     push_firestore_doc_snapshot(page, f"mats/{FN_CELL}", True, d2)
     wait_for_condition(lambda: page.is_visible("#fn-veil .mt-none"), timeout_ms=4000)
@@ -14957,7 +15027,8 @@ def test_friendly_clearance(p):
     record("friendly", "A-Cell shows the Cell's Friendly table link",
            one.locator('a[href*="friendly.html?cell=cell_oneshot"]').count() == 1, "")
     record("friendly", "A-Cell offers Friendlies in a Cell's add list",
-           nxt.locator('optgroup[label^="Friendlies"] option[value="' + pid + '"]').count() == 1, "")
+           # v3.20.0: the add list is a tick list (a Friendlies heading, then their ticks).
+           "Friendlies" in (nxt.text_content() or "") and nxt.locator('[data-add-pick][value="' + pid + '"]').count() == 1, "")
     page.close()
 
     # 62 dossiers: category chips narrow the picker, "Hand me a dossier"
