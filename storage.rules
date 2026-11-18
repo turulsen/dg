@@ -50,6 +50,13 @@ service firebase.storage {
       allow write: if isHandler();
     }
 
+    // tokens/{file} -- the Handler's token library art (2026-11-18): read
+    // by anyone who sees a mat it's on, uploaded and removed by the Handler.
+    match /tokens/{allPaths=**} {
+      allow read: if true;
+      allow write: if isHandler();
+    }
+
     match /evidence/{allPaths=**} {
       allow read: if true;
       allow write: if isHandler();
