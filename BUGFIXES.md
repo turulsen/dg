@@ -7709,6 +7709,20 @@ Reported 2026-11-18, after the first plates from a reference photo.
   buttons around the header; one with no free spot goes in a row at the
   header's foot rather than being dropped or overlapping.
 
+- **The prompt narrated its own fix:** an Outfit Plate prompt read
+  "Though the pose was originally slumped and seated against a door
+  frame, he is reframed standing ... expression unconscious,
+  slack-jawed". The writer obeyed the pose rule but explained it, and
+  copied the brief's expression into the pose sentence's slot. Both
+  plate prompts now say to describe only the final photograph and not
+  to use the moment's words unless an injury needs them; the pose
+  sentence's expression slot asks for a waking look in the eyes and brow.
+- **Two buttons in the notebook:** v3.24.0 made Appearance and Era
+  photos one drop-down on Agent Hub only; the notebook's Agent File
+  (`agent-paper.js` `dropBtns`) still had both. It has one Appearance &
+  photos fold now, the photos first.
+
 Tests: `test_kia_stamp_like_insane` (new), `test_agent_hub_kia_stamp`
-(the big stamp, no row tag), `test_agent_file_disorder_stamps`.
-Deploy: `functions`. `sw.js` `CACHE_NAME` v343.
+(the big stamp, no row tag), `test_agent_file_disorder_stamps`,
+`test_agent_file_parts_and_looks` (one fold in the notebook).
+Deploy: `functions`. `sw.js` `CACHE_NAME` v344.

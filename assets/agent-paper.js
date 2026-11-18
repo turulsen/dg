@@ -694,8 +694,10 @@
     function physText(x) { return (x.bio && x.bio.physicalDesc) || ctx.physical || ''; }
     function appearHtml(x) {
       if (ctx.appearanceOutside || !ui.appear) return '';
+      // 2026-11-18: one Appearance & photos fold, as on Agent Hub (v3.24.0):
+      // the era photos first, then the physical description.
       var p = physText(x);
-      return '<div class="ap-appear"><div class="as-sec-hd">Appearance <span>physical description</span></div>' +
+      return eraDropHtml() + '<div class="ap-appear"><div class="as-sec-hd">Appearance <span>physical description</span></div>' +
         (p ? '<p class="as-text">' + esc(p) + '</p>' : '<p class="as-text as-k">Not described yet.</p>') + '</div>';
     }
     // The Cell (initiative by DEX, member cards) drops down from beside
@@ -717,7 +719,7 @@
       });
     }
     function eraDropHtml() {
-      if (ctx.appearanceOutside || !ui.eraOpen) return '';
+      if (ctx.appearanceOutside) return '';
       var list = eraList();
       function plate(src, label) {
         return '<div class="ap-plate"><div class="ap-plate-img" data-ap-era="' + esc(src || '') + '">' + (src ? '' : '<span class="as-k">' + label + ' — not made yet</span>') + '</div><div class="ap-k">' + label + '</div></div>';
@@ -731,7 +733,7 @@
     function dropBtns() {
       if (ctx.appearanceOutside) return '';
       function btn(a, label, on) { return '<button type="button" class="ap-mini ap-appear-btn" data-a="' + a + '" aria-expanded="' + !!on + '">' + label + ' ' + (on ? '▴' : '▾') + '</button>'; }
-      return '<div class="ap-dropbtns">' + btn('appear', 'Appearance', ui.appear) + btn('era', 'Era photos', ui.eraOpen) + btn('cell', 'Cell', ui.cellOpen) + '</div>';
+      return '<div class="ap-dropbtns">' + btn('appear', 'Appearance & photos', ui.appear) + btn('cell', 'Cell', ui.cellOpen) + '</div>';
     }
     // One numbered part of the file, like the sections of a DD 315.
     var PARTS = [['stats', 'Statistics'], ['skills', 'Skills'], ['psyche', 'Psyche'], ['kit', 'Combat & gear'], ['record', 'Record']];
@@ -751,7 +753,7 @@
       var inc = ctx.incursion ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div><p class="as-text">' + esc(ctx.incursion) + '</p></div>'
         : (ctx.incursionEmptyHtml ? '<div class="as-sec as-incursion"><div class="as-sec-hd">The Incursion</div>' + ctx.incursionEmptyHtml + '</div>' : '');
       var n = 0;
-      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '"' + wearAttrs(x) + '>' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + eraDropHtml() + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
+      return '<div class="as-paper ap ap-look-' + look() + (edit ? ' ap-editing' : '') + '"' + wearAttrs(x) + '>' + bar + (ctx.appearanceOutside ? cellDropHtml(x) : '') + headHtml(x, edit) + appearHtml(x) + (ctx.appearanceOutside ? '' : cellDropHtml(x)) + indexHtml(edit) +
         (edit ? part('personal', '0', 'Personal data & appearance', '', personalHtml(x)) : '') +
         '<div class="as-sheet">' +
           part('stats', ++n, 'Statistics', '<span class="ap-part-note">' + (edit ? 'value · distinguishing feature' : 'tap to roll ×5 · distinguishing features') + '</span>', statsHtml(x, edit)) +

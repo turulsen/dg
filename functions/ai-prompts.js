@@ -98,6 +98,7 @@ function buildAppearancePrompt(data) {
         + 'ID PHOTO RULE: this is a government ID photograph. Neutral face, mouth closed, no smile, no smirk, no teeth showing, whatever the spec says. Any expression in the spec shows only in the eyes and brow (tired, wary, hard).\n'
         + 'The person is upright, facing camera, eyes open and to camera, whatever the spec says about posture or a moment (closed, unconscious, slumped), unless an injury listed says otherwise; keep every scar, wound, bruise or blood the spec describes. '
         + 'The clothing is exactly the collar/shoulder line given above: their own jacket and shirt, nothing else.\n'
+        + 'Describe only the final photograph: never mention the spec, an original pose or moment, or that anything was changed. Never use the words unconscious, slumped, slack-jawed, eyes closed or unfocused unless an injury listed requires it.\n'
         + (eraNote ? '\nERA CONTEXT: ' + eraNote + '\n' : '')
         + '\nWrite the prompt using this EXACT structure — two paragraphs, no preamble, no labels. ' + ageRule + '\n\n'
         + 'PARAGRAPH 1: Open with "A clean cinema-character-reference 3:4 headshot, framed from forehead to upper chest with the face filling most of the frame." '
@@ -135,7 +136,11 @@ function buildAppearancePrompt(data) {
         + ageRule
         + 'PARAGRAPH 1: Full visual description of the character — apparent age and sex first, then hair, face briefly, then COMPLETE OUTFIT head-to-toe in order: '
         + 'jacket/outerwear, shirt/top, trousers/skirt, footwear, accessories, jewelry. '
-        + 'Then pose: "Standing in a cocked-hip model stance, body angled [15-30] degrees from camera, weight shifted onto one hip, chin slightly tucked, eyes to camera, neutral mouth, no smile, [expression]." '
+        + 'Then pose: "Standing in a cocked-hip model stance, body angled [15-30] degrees from camera, weight shifted onto one hip, chin slightly tucked, eyes open to camera, neutral closed mouth, no smile, [a waking expression in the eyes and brow only, e.g. tired, wary]." '
+        // 2026-11-18: a writer told the brief's pose was overridden wrote
+        // "Though the pose was originally slumped ... he is reframed
+        // standing" and still copied "unconscious, slack-jawed".
+        + 'Describe only the final photograph. Never mention the character spec, an original pose, a moment, or that anything was changed or reframed. Never use the words unconscious, slumped, seated, lying, slack-jawed, eyes closed or unfocused unless an injury listed requires it. '
         + 'NEVER mention headshot, portrait, chest-up, or upper body framing in this paragraph.\n\n'
         + 'PARAGRAPH 2: Open with "Mid-gray seamless studio background — even neutral mid-gray, no seam line, no gradient, no falloff to black or white." '
         + 'Lighting: "Relight from scratch overriding any reference lighting: one broad diffused source from camera-left and slightly above, gentle wrap onto the figure, no harsh shadows, no rim light, no hair light, no kicker, only the gentlest lifted shadow on the off-light side." '

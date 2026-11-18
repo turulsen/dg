@@ -13230,12 +13230,13 @@ def test_agent_file_parts_and_looks(p):
     V.wait_for(timeout=10000)
     V.locator("[data-a=appear]").click()
     record("agent-file-parts", "the notebook's Appearance fold under the photo shows the description",
-           "watchful grey eyes" in V.locator(".ap-appear").first.inner_text(), "")
+           "watchful grey eyes" in V.locator(".ap-appear:not(.ap-eradrop):not(.ap-celldrop)").first.inner_text(), "")
     V.locator("[data-a=cell]").click()
     record("agent-file-parts", "the notebook's Cell fold sits beside it", V.locator(".ap-celldrop .ap-init li").count() >= 1, "")
-    V.locator("[data-a=era]").click()
-    record("agent-file-parts", "…and Era photos, with the way to make them on Agent Hub",
-           V.locator(".ap-eradrop").count() == 1 and V.locator(".ap-eradrop [data-go=photo]").count() == 1, "")
+    record("agent-file-parts", "…and the era photos are in the same Appearance & photos fold, first, with the way to make them on Agent Hub (no separate Era photos button)",
+           V.locator(".ap-eradrop").count() == 1 and V.locator(".ap-eradrop [data-go=photo]").count() == 1 and V.locator("[data-a=era]").count() == 0
+           and "Appearance & photos" in V.locator("[data-a=appear]").inner_text()
+           and V.evaluate("v => { const e = v.querySelector('.ap-eradrop'), a = [...v.querySelectorAll('.ap-appear')].find(n => !n.classList.contains('ap-eradrop') && !n.classList.contains('ap-celldrop')); return !!(e && a && (e.compareDocumentPosition(a) & 4)); }"), "")
     page.evaluate("() => window.dgFieldNotes.open('settings')")
     page.wait_for_selector("[data-s=paper-look]")
     opts = page.eval_on_selector_all("[data-s=paper-look] option", "els => els.map(e => e.value)")

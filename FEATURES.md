@@ -637,7 +637,13 @@ testing found the one long paper hard to read, so it's grouped:
   never the pose; every scar, wound, bruise and blood is kept. The
   reference photo is used for the face only (never its clothes or
   lighting), and the photo reader ignores a film still's moment (pose,
-  expression, closed eyes) but keeps its injuries.
+  expression, closed eyes) but keeps its injuries. The prompt writer is
+  told to describe only the final photograph (never "originally slumped
+  ... reframed") and not to use the moment's words (unconscious,
+  slack-jawed, eyes closed) unless an injury needs them.
+  v3.27.0: the notebook's Agent File has one **Appearance & photos**
+  drop-down too (the era photos first, then the physical description),
+  in place of its separate Appearance and Era photos buttons.
 - A narrow paper (the notebook page) stacks the two-column parts and puts
   the statistics in rows of three (a container query on `.as-paper.ap`).
 
