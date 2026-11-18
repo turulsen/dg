@@ -613,6 +613,12 @@ testing found the one long paper hard to read, so it's grouped:
   (`ref_image_link`) shows in the slot and can be read again
   (`afPhotoData_()` fetches it); an unreachable function (Firebase's
   "internal") says the photo reader may not be set up on the server yet.
+  v3.26.2: the Claude calls in `functions/index.js` (generatePrompt,
+  describeReferencePhoto, generateBondDescription) read the reply with
+  `replyText_()` (every text block, joined) and explain an empty one with
+  `replyProblem_()` (a refusal, max_tokens, an API error); they run with
+  `SHORT_JOB` (`max_tokens` 16000, effort low), leaving room for the
+  model's thinking. translateEvidence already worked this way.
 - A narrow paper (the notebook page) stacks the two-column parts and puts
   the statistics in rows of three (a container query on `.as-paper.ap`).
 
