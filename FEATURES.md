@@ -1043,7 +1043,13 @@ modes: **Prep** (a folder with index tabs, *Session prep* first),
   (`createOperation`; with no Cell picked it asks for one), and select it;
   `dgAcm.newVal(select)` reads the selects on submit. Session prep's
   Evidence suggestions (and the phone's prep tab and Release evidence)
-  leave out items filed under another operation. **Following the vault**: an operation's
+  leave out items filed under another operation. Since v3.25.1 the note picker's
+  **+ New note** starts a note inside an operation's folder with its
+  properties (`dgAcm.layout.newNoteText(path)`, the folder from its
+  Index note or `vault_folder`), a new session note gets at least the
+  Cell and operation even without an Index note (`baseFm`), waiting for
+  a just-made operation (`opSoon`), and the vault settings' Held list has
+  **Show** (the note's text in the list) and **Open**. **Following the vault**: an operation's
   folder follows its Index note, or (emptied) the folder now holding its
   notes; session note, NPC and debrief paths that are gone point to the
   note's new place; a new operation uses a same-named folder instead of
