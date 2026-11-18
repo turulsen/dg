@@ -129,7 +129,7 @@
               <div class="fg"><label>Jewelry <span class="opt">(optional)</span></label><input type="text" name="jewelry" class="fi" placeholder="e.g. large gold cross pendant, dog tags"></div>
 
               <div class="section-head">Vibe</div>
-              <div class="fg"><label>Default expression</label><input type="text" name="expression" class="fi" placeholder="e.g. flat and dead-eyed, quietly amused" required></div>
+              <div class="fg"><label>Default expression</label><input type="text" name="expression" class="fi" placeholder="e.g. flat and dead-eyed, tired, wary (ID photo: never a smile)" required></div>
               <div class="fg"><label>What does this person feel like to be in a room with?</label><textarea name="vibe" class="ft" placeholder="One or two sentences." required></textarea></div>
               <div class="fg"><label>Resembles <span class="opt">(optional)</span></label><input type="text" name="reference_person" class="fi" placeholder="e.g. early Kris Kristofferson, Nick Nolte"></div>
               <div class="fg"><label>Handler notes <span class="opt">(optional)</span></label><textarea name="notes" class="ft" placeholder="Anything that doesn't fit above."></textarea></div>

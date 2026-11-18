@@ -248,7 +248,7 @@ function photoPrompt_() {
     '"long, angular jaw", "pale blue", "deep-set, hooded", "two days\' stubble", "sandy, thinning, cropped short", ' +
     '"guarded, half a smile".\n' +
     'posture is how they would naturally stand (e.g. "upright, shoulders back"), not the pose in the photo; expression is a ' +
-    'resting expression that suits the face (e.g. "watchful, mouth set"), not the emotion of the moment; face_scars for ' +
+    'resting expression that suits the face (e.g. "watchful, mouth set"), not the emotion of the moment and never a smile (these are ID photos); face_scars for ' +
     'scars, wounds, bruises or blood on the face, body_markers for those and tattoos elsewhere.\n' +
     'Use "" for anything the photo does not show (scars, tattoos or marks you cannot see, posture in a head shot).';
 }

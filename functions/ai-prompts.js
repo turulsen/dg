@@ -93,7 +93,9 @@ function buildAppearancePrompt(data) {
         + 'CHARACTER SPEC:\n' + baseDesc + '\n'
         + (char.facial_hair ? 'Facial hair: ' + char.facial_hair + '\n' : '')
         + (char.face_scars ? 'Identity markers: ' + char.face_scars + '\n' : '')
-        + (char.expression ? 'Expression: ' + char.expression + '\n' : '')
+        + (char.expression ? 'Expression (eyes and brow only): ' + char.expression + '\n' : '')
+        // 2026-11-18: the plates are government ID photos -- never a smile.
+        + 'ID PHOTO RULE: this is a government ID photograph. Neutral face, mouth closed, no smile, no smirk, no teeth showing, whatever the spec says. Any expression in the spec shows only in the eyes and brow (tired, wary, hard).\n'
         + 'The person is upright, facing camera, eyes open and to camera, whatever the spec says about posture or a moment (closed, unconscious, slumped), unless an injury listed says otherwise; keep every scar, wound, bruise or blood the spec describes. '
         + 'The clothing is exactly the collar/shoulder line given above: their own jacket and shirt, nothing else.\n'
         + (eraNote ? '\nERA CONTEXT: ' + eraNote + '\n' : '')
@@ -101,7 +103,7 @@ function buildAppearancePrompt(data) {
         + 'PARAGRAPH 1: Open with "A clean cinema-character-reference 3:4 headshot, framed from forehead to upper chest with the face filling most of the frame." '
         + 'Then: full identity description — apparent age, sex, heritage/nationality, build, skin tone and finish, hair (color, length, texture), face register (jaw, cheekbones, brow, eye shape and color, nose, lips), all identity markers. '
         + 'Then: wardrobe baseline, describing exactly this collar/shoulder line: "' + topWearDesc + ', no jewelry, no logos, no graphics." '
-        + 'Then: "Body squared to camera, head level, neutral relaxed expression, eyes to camera, lips closed and relaxed, subtle controlled energy."\n\n'
+        + 'Then: "Body squared to camera, head level, neutral expression, no smile, eyes to camera, lips closed and relaxed, subtle controlled energy."\n\n'
         + 'PARAGRAPH 2: Open with "Mid-gray seamless studio background — even neutral mid-gray, no seam line, no gradient, no falloff to black or white." '
         + 'Then lighting: "Relight from scratch overriding any reference lighting: one broad diffused source from camera-left and slightly above, a soft triangle of light on the shadow cheek, gentle wrap onto the face, no hard shadow edges, no rim light, no hair light, no kicker." '
         + 'Then skin: "Skin reads matte and velvety — zero shine on forehead, nose bridge, cheekbones, temples, and chin, no oily T-zone — in a low-contrast milky look. Real peach fuzz at the jaw and hairline, real soft fine even pore texture, subsurface scattering reading as semi-translucent biology, never plastic, never waxy AI render, never glass-skin, never harsh — fine flattering texture that keeps the face looking good, no acne, no blemishes, no rough pores." '
@@ -126,13 +128,14 @@ function buildAppearancePrompt(data) {
         + (eraNote ? 'ERA CONTEXT: ' + eraNote + '\n\n' : '')
         // 2026-11-18: "Expression/stance" turned an expression read off a film
         // still ("slack-jawed, unconscious") into a slumped, seated pose.
-        + (char.expression ? 'Facial expression (the face only, never the pose): ' + char.expression + '\n\n' : '')
+        + (char.expression ? 'Facial expression (eyes and brow only, never the pose): ' + char.expression + '\n\n' : '')
+        + 'ID PHOTO RULE: this is a government ID photograph. Neutral face, mouth closed, no smile, no smirk, no teeth showing, whatever the spec says. Any expression in the spec shows only in the eyes and brow (tired, wary, hard).\n\n'
         + 'Eyes are open and to camera, whatever the spec says about a moment (closed, unfocused), unless an injury listed says otherwise.\n\n'
         + 'Write the prompt using this EXACT structure — two paragraphs, no preamble, no labels:\n\n'
         + ageRule
         + 'PARAGRAPH 1: Full visual description of the character — apparent age and sex first, then hair, face briefly, then COMPLETE OUTFIT head-to-toe in order: '
         + 'jacket/outerwear, shirt/top, trousers/skirt, footwear, accessories, jewelry. '
-        + 'Then pose: "Standing in a cocked-hip model stance, body angled [15-30] degrees from camera, weight shifted onto one hip, chin slightly tucked, eyes to camera, [expression]." '
+        + 'Then pose: "Standing in a cocked-hip model stance, body angled [15-30] degrees from camera, weight shifted onto one hip, chin slightly tucked, eyes to camera, neutral mouth, no smile, [expression]." '
         + 'NEVER mention headshot, portrait, chest-up, or upper body framing in this paragraph.\n\n'
         + 'PARAGRAPH 2: Open with "Mid-gray seamless studio background — even neutral mid-gray, no seam line, no gradient, no falloff to black or white." '
         + 'Lighting: "Relight from scratch overriding any reference lighting: one broad diffused source from camera-left and slightly above, gentle wrap onto the figure, no harsh shadows, no rim light, no hair light, no kicker, only the gentlest lifted shadow on the off-light side." '
