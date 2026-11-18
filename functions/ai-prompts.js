@@ -94,7 +94,7 @@ function buildAppearancePrompt(data) {
         + (char.facial_hair ? 'Facial hair: ' + char.facial_hair + '\n' : '')
         + (char.face_scars ? 'Identity markers: ' + char.face_scars + '\n' : '')
         + (char.expression ? 'Expression: ' + char.expression + '\n' : '')
-        + 'The person is clean and uninjured, upright, facing camera, whatever the spec says about posture (that is bearing only). '
+        + 'The person is upright, facing camera, whatever the spec says about posture (that is bearing only); keep every scar, wound, bruise or blood the spec describes. '
         + 'The clothing is exactly the collar/shoulder line given above: their own jacket and shirt, nothing else.\n'
         + (eraNote ? '\nERA CONTEXT: ' + eraNote + '\n' : '')
         + '\nWrite the prompt using this EXACT structure — two paragraphs, no preamble, no labels. ' + ageRule + '\n\n'
@@ -116,10 +116,11 @@ function buildAppearancePrompt(data) {
         + 'The character is in a model stance (weight on one hip, body angled 15-30 degrees from camera, eyes to camera). '
         + 'Background is mid-gray seamless studio. Soft soft lighting from camera-left.\n\n'
         + 'CHARACTER:\n' + baseDesc + '\n\n'
-        // 2026-11-18: a posture or expression taken from a film still ("slumped
-        // against a door") came through as the pose -- an Outfit Plate of the
-        // Agent lying on the floor, clothes dirty. The pose is always this one.
-        + 'POSE RULE: the figure is always STANDING upright in the model stance below, clean and uninjured (no dirt, blood, wounds or damage to the clothes unless the outfit itself says so). Any posture in the character spec describes bearing only, never the pose.\n\n'
+        // 2026-11-18: a posture taken from a film still ("slumped against a
+        // door") came through as the pose -- an Outfit Plate of the Agent
+        // lying on the floor. The pose is always this one; injuries, blood
+        // and wear stay (the Handler: "that's the point of the game").
+        + 'POSE RULE: the figure is always STANDING upright in the model stance below. Any posture in the character spec describes bearing only, never the pose. Keep every scar, wound, bruise, blood or wear the spec and outfit describe.\n\n'
         + 'OUTFIT (document every item precisely — this is a wardrobe reference):\n'
         + [char.jacket, char.shirt, char.trousers, char.footwear, char.accessories, char.jewelry].filter(Boolean).join('\n') + '\n\n'
         + (eraNote ? 'ERA CONTEXT: ' + eraNote + '\n\n' : '')

@@ -237,9 +237,9 @@ const AGE_RANGES = ['Early 20s', 'Mid 20s', 'Late 20s', 'Early 30s', 'Mid 30s', 
 function photoPrompt_() {
   return 'This is a reference photo a player chose for their character in the tabletop game Delta Green. Describe how ' +
     'the person in it LOOKS, to fill in the character\'s appearance brief. Do not say or guess who the person is, and do ' +
-    'not describe clothing or jewellery. Describe only what lasts -- the face, hair and build as they would look on any day -- ' +
-    'not the scene: the photo may be a film still, so ignore the momentary pose, the expression of that moment, injuries, ' +
-    'blood, dirt, sweat, tears, wet hair, make-up effects and the lighting. Never mention wounds, blood or dirt. ' +
+    'not describe clothing or jewellery. The photo may be a film still: ignore the momentary pose, the expression of that ' +
+    'moment and the lighting, but do describe any visible injuries, wounds, bruises, blood, scars and marks (this is a ' +
+    'horror game; they belong to the character). ' +
     'Reply with one JSON object only, no other text, with these keys:\n' +
     '- age_range: one of ' + AGE_RANGES.map(function (a) { return '"' + a + '"'; }).join(', ') + '\n' +
     '- sex: "Male", "Female" or "Other"\n' +
@@ -248,8 +248,8 @@ function photoPrompt_() {
     '"long, angular jaw", "pale blue", "deep-set, hooded", "two days\' stubble", "sandy, thinning, cropped short", ' +
     '"guarded, half a smile".\n' +
     'posture is how they would naturally stand (e.g. "upright, shoulders back"), not the pose in the photo; expression is a ' +
-    'resting expression that suits the face (e.g. "watchful, mouth set"), not the emotion of the moment; face_scars and ' +
-    'body_markers only for permanent scars, tattoos or marks.\n' +
+    'resting expression that suits the face (e.g. "watchful, mouth set"), not the emotion of the moment; face_scars for ' +
+    'scars, wounds, bruises or blood on the face, body_markers for those and tattoos elsewhere.\n' +
     'Use "" for anything the photo does not show (scars, tattoos or marks you cannot see, posture in a head shot).';
 }
 function photoFields_(text) {
