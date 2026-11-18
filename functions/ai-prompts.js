@@ -94,7 +94,7 @@ function buildAppearancePrompt(data) {
         + (char.facial_hair ? 'Facial hair: ' + char.facial_hair + '\n' : '')
         + (char.face_scars ? 'Identity markers: ' + char.face_scars + '\n' : '')
         + (char.expression ? 'Expression: ' + char.expression + '\n' : '')
-        + 'The person is upright, facing camera, whatever the spec says about posture (that is bearing only); keep every scar, wound, bruise or blood the spec describes. '
+        + 'The person is upright, facing camera, eyes open and to camera, whatever the spec says about posture or a moment (closed, unconscious, slumped), unless an injury listed says otherwise; keep every scar, wound, bruise or blood the spec describes. '
         + 'The clothing is exactly the collar/shoulder line given above: their own jacket and shirt, nothing else.\n'
         + (eraNote ? '\nERA CONTEXT: ' + eraNote + '\n' : '')
         + '\nWrite the prompt using this EXACT structure — two paragraphs, no preamble, no labels. ' + ageRule + '\n\n'
@@ -124,7 +124,10 @@ function buildAppearancePrompt(data) {
         + 'OUTFIT (document every item precisely — this is a wardrobe reference):\n'
         + [char.jacket, char.shirt, char.trousers, char.footwear, char.accessories, char.jewelry].filter(Boolean).join('\n') + '\n\n'
         + (eraNote ? 'ERA CONTEXT: ' + eraNote + '\n\n' : '')
-        + (char.expression ? 'Expression/stance: ' + char.expression + '\n\n' : '')
+        // 2026-11-18: "Expression/stance" turned an expression read off a film
+        // still ("slack-jawed, unconscious") into a slumped, seated pose.
+        + (char.expression ? 'Facial expression (the face only, never the pose): ' + char.expression + '\n\n' : '')
+        + 'Eyes are open and to camera, whatever the spec says about a moment (closed, unfocused), unless an injury listed says otherwise.\n\n'
         + 'Write the prompt using this EXACT structure — two paragraphs, no preamble, no labels:\n\n'
         + ageRule
         + 'PARAGRAPH 1: Full visual description of the character — apparent age and sex first, then hair, face briefly, then COMPLETE OUTFIT head-to-toe in order: '
