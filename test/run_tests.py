@@ -15027,7 +15027,8 @@ def test_friendly_clearance(p):
     record("friendly", "A-Cell shows the Cell's Friendly table link",
            one.locator('a[href*="friendly.html?cell=cell_oneshot"]').count() == 1, "")
     record("friendly", "A-Cell offers Friendlies in a Cell's add list",
-           nxt.locator('optgroup[label^="Friendlies"] option[value="' + pid + '"]').count() == 1, "")
+           # v3.20.0: the add list is a tick list (a Friendlies heading, then their ticks).
+           "Friendlies" in (nxt.text_content() or "") and nxt.locator('[data-add-pick][value="' + pid + '"]').count() == 1, "")
     page.close()
 
     # 62 dossiers: category chips narrow the picker, "Hand me a dossier"
