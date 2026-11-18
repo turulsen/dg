@@ -4202,6 +4202,11 @@ def test_acell_shell(p):
     ev = page.inner_text("[data-pb=evidence]")
     record("acell-shell", "Evidence: the session's item, not released yet (ready), and more to load in from the Cell",
            "Keeper's log" in ev and "ready" in ev and "Ainsley's ledger" in ev, ev[:300])
+    # 2026-11-18: never another operation's evidence (a new, empty operation showed them all).
+    page.evaluate("""() => { window.__dgFirestoreDocs['evidence/ev_other'] = { evidence_id: 'ev_other', title: 'Other op memo', body: '', cell_id: 'cell_osiris', operation_id: 'op_other', released: false, restricted_to: [] }; }""")
+    acell_feed_evidence(page)
+    page.wait_for_timeout(300)
+    record("acell-shell", "...but not another operation's", "Other op memo" not in page.inner_text("[data-pb=evidence]") and "Ainsley's ledger" in page.inner_text("[data-pb=evidence]"), page.inner_text("[data-pb=evidence]")[:300])
     page.click("[data-pb=evidence] .ac-row[data-ev=ev_ledger] [data-ac=ev]")
     wait_for_condition(lambda: "ev_ledger" in (_sess(page).get("evidence") or []), timeout_ms=4000)
     record("acell-shell", "ticking a suggestion adds it to the session", _sess(page).get("evidence") == ["ev_log", "ev_ledger"], str(_sess(page).get("evidence")))

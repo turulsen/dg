@@ -450,17 +450,21 @@
         '<span class="ac-t">' + esc(h.title || 'Untitled') + '<small>' + esc(sub) + '</small></span>' + (inSession ? badge : '') + '</div>';
     }
     var html = mine.map(function (h) { return row(h, true); }).join('');
-    // To load in: not released, or released but not seen by everyone -- this session's Cell first.
+    // To load in: not released, or released but not seen by everyone --
+    // this session's Cell's, but never another operation's (2026-11-18: a
+    // new, empty operation showed every other operation's evidence). The
+    // Cell's evidence filed under no operation still shows.
     var have = {};
     s.evidence.forEach(function (id) { have[id] = true; });
     var more = E.items().filter(function (h) {
       if (have[h.evidence_id]) return false;
+      if (s.operation_id && h.operation_id && h.operation_id !== s.operation_id) return false;
       if (s.cell_id && h.cell_id && h.cell_id !== s.cell_id) return false;
       var st = evidenceState(h);
       return !st.released || st.unseen.length;
     }).slice(0, 12);
-    if (more.length) html += '<div class="ac-sub">Not released or not seen yet' + (s.cell_id ? ' · this Cell' : '') + '</div>' + more.map(function (h) { return row(h, false); }).join('');
-    if (!html) html = '<div class="ac-none">' + (E.items().length ? 'Nothing waiting to hand out.' : 'Loading evidence…') + '</div>';
+    if (more.length) html += '<div class="ac-sub">Not released or not seen yet' + (s.operation_id ? ' · this operation and the Cell' : s.cell_id ? ' · this Cell' : '') + '</div>' + more.map(function (h) { return row(h, false); }).join('');
+    if (!html) html = '<div class="ac-none">' + (!E.items().length ? 'Loading evidence…' : s.operation_id ? 'No evidence filed under this operation yet.' : 'Nothing waiting to hand out.') + '</div>';
     el.innerHTML = html + '<div class="ac-acts"><button type="button" class="ac-link" data-ac="new-ev">+ New evidence</button><button type="button" class="ac-link" data-ac="tab" data-tab="evidence">All evidence ›</button></div>';
     pr('evidence', s.evidence.length ? s.evidence.length + ' for the session' : '');
   }

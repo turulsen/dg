@@ -1203,7 +1203,8 @@
         }).join('') + '</div>' : '<p class="acm-none">No evidence in this session yet.</p>');
         var have = {};
         s.evidence.forEach(function (id) { have[id] = 1; });
-        var cand = items.filter(function (h) { return !have[h.evidence_id] && !h.released && (!s.cell_id || h.cell_id === s.cell_id); }).slice(0, 10);
+        // The session's operation's (or, with none, the Cell's): not other operations' (2026-11-18).
+        var cand = items.filter(function (h) { return !have[h.evidence_id] && !h.released && (!s.operation_id || !h.operation_id || h.operation_id === s.operation_id) && (!s.cell_id || h.cell_id === s.cell_id); }).slice(0, 10);
         body += (cand.length ? lab('Not released yet · add to the session') + '<div class="acm-card">' + cand.map(function (h) { return '<div class="acm-row"><span class="acm-g"><b>' + esc(h.title || 'Untitled') + '</b></span>' + btn('Add', 'ev-in', 's', 'data-id="' + esc(h.evidence_id) + '"') + '</div>'; }).join('') + '</div>' : '') + btn('New evidence', 'add:ev', 'k w');
       } else {
         var D = T(), list = D ? D.forOperation(s.operation_id).concat(D.forCell(s.cell_id)) : [], deck = M() && M().state().tape;
