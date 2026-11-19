@@ -14079,6 +14079,8 @@ def _field_notes_page(p, width=1300, height=860, extra_init="", docs=None):
     roster = {FN_CODE: {"code": FN_CODE, "char_name": "Mara Voss", "codename": "PARADE", "player_name": "fn tester", "saved_at": 5}}
     page.add_init_script("""try {
       sessionStorage.setItem('dg_boot_seen', '1');
+      // Explore the Loss (v3.29.0) is off unless a test turns it on (test_explore_the_loss).
+      if (!sessionStorage.getItem('fn_seeded') && localStorage.getItem('dg_explore_loss') == null) localStorage.setItem('dg_explore_loss', 'off');
       if (!sessionStorage.getItem('fn_seeded')) {
         sessionStorage.setItem('fn_seeded', '1');
         localStorage.setItem('dg_agent_roster', %s);
@@ -14516,6 +14518,57 @@ def test_plate_viewer(p):
             page.click("[data-pv=x]")
         page.close(); errs_all.extend(errs)
     record("plates", "no JS exceptions (plate viewer)", not errs_all, str(errs_all[:3]))
+
+
+def test_explore_the_loss(p):
+    """2026-11-19: every time SAN goes down, an "Explore the loss" post-it
+    (the Agent's Handbook sidebar, in our words) asks how it shows; SAN −
+    tapped again counts up on the same post-it; a second loss in the
+    session adds the long-run line; it sits on top of the other SAN
+    post-its; "Don't remind me" turns it off and Settings back on."""
+    docs = _field_notes_docs()
+    st = {"v": 1, "stats": {"STR": 10, "CON": 12, "DEX": 11, "INT": 14, "POW": 12, "CHA": 13},
+          "derived": {"hp": 11, "wp": 12, "san": 50, "bp": 40}, "bio": {"name": "Mara Voss", "profession": "federal_agent", "player_name": "fn tester"}}
+    docs[f"characters/{FN_CODE}"] = character_doc(FN_CODE, st, "fn tester")
+    page, errs = _field_notes_page(p, width=390, docs=docs,
+        extra_init="localStorage.setItem('dg_explore_loss','on');localStorage.setItem('dg_tours_off','1');localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+    page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+    sel = f"#ah-sheet-{FN_CODE}"
+    page.wait_for_selector(f"{sel} .as-paper.ap .ap-vitals", timeout=15000)
+    page.click(f"{sel} [data-a='san-']")
+    page.wait_for_selector("#ap-posts .ap-explore", timeout=5000)
+    first = page.inner_text("#ap-posts .ap-explore")
+    record("explore", "SAN − brings up an Explore the loss post-it: the loss, how it looks to others, the Handbook named",
+           "EXPLORE THE LOSS" in first.upper() and "Lost 1 SAN" in first and "people around you" in first and "Explore the Loss" in first and "Over time" not in first, first[:200])
+    page.evaluate("(s) => document.querySelector(s + \" [data-a='san-']\").click()", sel)
+    page.wait_for_timeout(300)
+    record("explore", "SAN − again while it's up counts on the same post-it",
+           page.locator("#ap-posts .ap-explore").count() == 1 and "Lost 2 SAN" in page.inner_text("#ap-posts .ap-explore"), page.inner_text("#ap-posts .ap-explore")[:60])
+    page.click("#ap-posts .ap-explore [data-pa='0']")
+    # The SAN loss button: 4 Unnatural, the second loss this session.
+    page.click(f"{sel} [data-a='pop'][data-pop='san']")
+    page.click(f"{sel} [data-a=san-amt][data-v='other']")
+    page.fill(f"{sel} [data-u='san-other']", "6")
+    page.click(f"{sel} [data-a=san-kind][data-v=unnatural]")
+    page.click(f"{sel} [data-a=san-go]")
+    page.wait_for_selector("#ap-posts .ap-explore", timeout=8000)
+    page.wait_for_timeout(300)
+    titles = page.eval_on_selector_all("#ap-posts .ap-postit .ap-pt", "els => els.map(e => e.textContent)")
+    t = page.inner_text("#ap-posts .ap-explore")
+    record("explore", "the SAN loss button: on top of the other post-its, the kind named, and the long-run line the second time",
+           titles[0] == "Explore the loss" and len(titles) >= 2 and "Lost 6 SAN (Unnatural), again this session" in t and "Over time" in t, f"{titles} {t[:160]}")
+    page.click("#ap-posts .ap-explore [data-pa='1']")
+    off = page.evaluate("() => localStorage.getItem('dg_explore_loss')")
+    page.evaluate("() => { const o = document.getElementById('ap-posts'); if (o) o.remove(); }")
+    page.click(f"{sel} [data-a='san-']")
+    page.wait_for_timeout(500)
+    record("explore", "Don't remind me turns it off on the device", off == "off" and page.locator("#ap-posts .ap-explore").count() == 0, str(off))
+    page.evaluate("() => window.dgFieldNotes.open('settings')")
+    page.click("#fn-veil [data-s=explore]")
+    record("explore", "Settings turns it back on", page.evaluate("() => localStorage.getItem('dg_explore_loss')") == "on", "")
+    record("explore", "no JS exceptions (explore the loss)", not errs, str(errs[:3]))
+    page.close()
+    return errs
 
 
 def test_agent_file_profession_employer_line(p):
@@ -16026,6 +16079,7 @@ def main():
         safe(test_kia_stamp_like_insane, browser, area="kia")
         safe(test_wallet_never_loses_cards, browser, area="wallet")
         safe(test_plate_viewer, browser, area="plates")
+        safe(test_explore_the_loss, browser, area="explore")
         safe(test_plate_save_survives_a_dropped_connection, browser, area="plates")
         safe(test_bond_at_zero_struck, browser, area="bonds")
         safe(test_notebook_flip_agents, browser, area="flip")

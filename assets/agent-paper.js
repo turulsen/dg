@@ -116,7 +116,8 @@
     var stack = ov.querySelector('.ap-posts-stack');
     list.forEach(function (p) {
       var n = document.createElement('div');
-      n.className = 'ap-postit' + (p.tone ? ' ap-' + p.tone : '');
+      n.className = 'ap-postit' + (p.tone ? ' ap-' + p.tone : '') + (p.cls ? ' ' + p.cls : '');
+      if (p.first && stack.firstChild) { stack.insertBefore(n, stack.firstChild); n._first = true; }
       n.innerHTML = '<button type="button" class="ap-x" aria-label="Dismiss">×</button><b class="ap-pt">' + esc(p.title) + '</b><div class="ap-pb">' + p.html + '</div>' +
         (p.actions && p.actions.length ? '<div class="ap-pa">' + p.actions.map(function (a, i) { return '<button type="button" data-pa="' + i + '">' + esc(a.label) + '</button>'; }).join('') + '</div>' : '');
       n.querySelector('.ap-x').addEventListener('click', function () { dismiss(n); });
@@ -127,10 +128,39 @@
           if (!keep) dismiss(n);
         });
       });
-      stack.appendChild(n);
+      if (!n._first) stack.appendChild(n);
     });
     function dismiss(n) { n.remove(); if (!stack.children.length) ov.remove(); }
     function closeAll() { ov.remove(); }
+  }
+
+  /* ── Explore the Loss (2026-11-19, from the Agent's Handbook sidebar
+     of that name, in our own words): every time SAN goes down, a post-it
+     asks the player to describe how it shows; from the second loss in a
+     session (8 hours), how it wears the Agent down. "Don't remind me"
+     turns it off on the device; Field Notes' Settings turns it back on. ── */
+  var EXPLORE_KEY = 'dg_explore_loss';
+  function exploreOn() { try { return localStorage.getItem(EXPLORE_KEY) !== 'off'; } catch (e) { return true; } }
+  function setExplore(on) { try { localStorage.setItem(EXPLORE_KEY, on ? 'on' : 'off'); } catch (e) { /* private mode */ } }
+  function lossesBefore(code) {
+    // How many losses this Agent already had in the last 8 hours, and this one noted.
+    var k = 'dg_san_losses_' + code, now = Date.now(), list = [];
+    try { list = JSON.parse(localStorage.getItem(k) || '[]').filter(function (t) { return now - t < 8 * 3600e3; }); } catch (e) { list = []; }
+    var before = list.length;
+    list.push(now);
+    try { localStorage.setItem(k, JSON.stringify(list.slice(-50))); } catch (e) { /* private mode */ }
+    return before;
+  }
+  function exploreText(n, kind, again) {
+    return 'Lost <b data-xl-n>' + n + '</b> SAN' + (kind ? ' (' + esc(cap(kind)) + ')' : '') + (again ? ', again this session' : '') + '. Take a second to describe it.' +
+      '<ul class="ap-xl"><li>How does it look to the people around you?</li><li>A jump, a cry? A shocked stare? A step back you didn\'t mean?</li>' +
+      (again ? '<li><b>Over time:</b> which belief or Motivation is wearing away?</li>' : '') + '</ul>' +
+      '<small class="ap-xl-src">Agent\'s Handbook, “Explore the Loss”</small>';
+  }
+  function exploreLoss(code, n, kind) {
+    if (!(n > 0) || !exploreOn()) return null;
+    return { cls: 'ap-explore', first: true, title: 'Explore the loss', html: exploreText(n, kind, lossesBefore(code) > 0),
+      actions: [{ label: 'Noted' }, { label: 'Don\'t remind me', fn: function () { setExplore(false); } }] };
   }
 
   /* ── The look of the parts' headings: a per-device choice ── */
@@ -792,6 +822,8 @@
           });
         }
       });
+      var xl = exploreLoss(s.code, amount, kind);
+      if (xl) list.unshift(xl);
       postits(list);
     }
     function disorderPicker() {
@@ -838,7 +870,17 @@
       if (!a) return;
       var x = st(), edit = !!s.edit;
       var i = +b.getAttribute('data-i');
-      if (/^(hp|wp|san)[+-]$/.test(a) && !edit) { s.update(function (y) { R().adjust(y, a.slice(0, -1), a.slice(-1) === '+' ? 1 : -1); }); return; }
+      if (/^(hp|wp|san)[+-]$/.test(a) && !edit) {
+        var was = a === 'san-' && s.state ? R().derived(s.state).san : null;
+        s.update(function (y) { R().adjust(y, a.slice(0, -1), a.slice(-1) === '+' ? 1 : -1); }).then(function () {
+          if (was == null || !(R().derived(s.state).san < was)) return;
+          // SAN − tapped again while its post-it is up: one post-it, its count going up.
+          var open = document.querySelector('#ap-posts .ap-explore [data-xl-n]');
+          if (open) { open.textContent = +open.textContent + 1; return; }
+          var p = exploreLoss(s.code, 1, ''); if (p) postits([p]);
+        });
+        return;
+      }
       if ((a === 'bp+' || a === 'bp-') && edit) { R().stepBp(s.edit, a === 'bp+' ? 1 : -1); render(); return; }
       switch (a) {
         case 'pop':
@@ -1112,6 +1154,6 @@
     return out;
   }
 
-  window.dgAgentPaper = { mount: mount, rollExpr: rollExpr, postits: postits, diff: diff, LOOKS: LOOKS, look: look, setLook: setLook,
+  window.dgAgentPaper = { exploreOn: exploreOn, setExplore: setExplore, mount: mount, rollExpr: rollExpr, postits: postits, diff: diff, LOOKS: LOOKS, look: look, setLook: setLook,
     wearOn: wearOn, setWear: setWear, wearVars: wearVars };
 })();
