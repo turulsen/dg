@@ -14463,6 +14463,61 @@ def test_wallet_never_loses_cards(p):
     page.close()
     return errs
 
+def test_plate_viewer(p):
+    """2026-11-19: a Face or Outfit Plate opens full size with a tap (Agent
+    Hub's Appearance & photos and the notebook's fold), ‹ › / arrow keys
+    step through the plates, Download saves "<Agent> - <Plate> - <era>",
+    Esc closes; a magnifier marks the plates that open."""
+    png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    errs_all = []
+    for width in (1180, 390):
+        docs = _field_notes_docs()
+        b = dict(docs.get(f"briefs/{FN_CODE}", {}))
+        b.update({k: v for k, v in MOCK_BRIEF.items() if k not in ("char_name", "codename")})
+        b.update({"char_name": "Mara Voss", "submitted_at": 1790000000000})
+        fu, ou = "https://fake-storage.example/agent-plates/face-20s.png", "https://fake-storage.example/agent-plates/outfit-20s.png"
+        b.update({"active_eras": ["20s"], "era_20s_face_url": fu, "era_20s_outfit_url": ou, "face_plate_url": fu, "outfit_plate_url": ou})
+        docs[f"briefs/{FN_CODE}"] = b
+        page, errs = _field_notes_page(p, width=width, docs=docs,
+                                       extra_init="localStorage.setItem('dg_tours_off','1');localStorage.setItem('dg_fn_orders_ack', JSON.stringify({'%s': 1790000000000}));" % FN_CODE)
+        import base64 as _b64
+        _png = _b64.b64decode(png.split(",", 1)[1])
+        page.route("**/fake-storage.example/**", lambda r: r.fulfill(status=200, body=_png, headers={"content-type": "image/png", "access-control-allow-origin": "*"}))
+        page.goto(f"{BASE}/agent-hub.html?code={FN_CODE}", wait_until="domcontentloaded", timeout=15000)
+        _af_state(page)
+        _open_era(page)
+        page.wait_for_function("() => { const i = document.getElementById('img-face-20s'); return i && i.getAttribute('src') && i.style.display !== 'none'; }", timeout=10000)
+        page.wait_for_timeout(300)
+        lens = page.evaluate("() => document.getElementById('plate-face-20s').classList.contains('dgpv-can')")
+        page.click("#img-face-20s")
+        page.wait_for_selector(".dgpv:not([hidden])", timeout=4000)
+        v = page.evaluate("() => ({ t: document.querySelector('[data-pv=title]').textContent, sub: document.querySelector('[data-pv=sub]').textContent, dots: document.querySelectorAll('.dgpv-dots i').length, sw: document.documentElement.scrollWidth })")
+        record("plates", f"Agent Hub: a plate (marked with a magnifier) opens full size with its name and era, and the other plate to step to ({width}px)",
+               lens and v["t"] == "Face Plate" and "2020s" in v["sub"] and v["dots"] == 2 and v["sw"] <= width + 1, json.dumps(v))
+        page.keyboard.press("ArrowRight")
+        t2 = page.text_content("[data-pv=title]")
+        with page.expect_download(timeout=6000) as dl:
+            page.click("[data-pv=dl]")
+        name = dl.value.suggested_filename
+        record("plates", f"the arrow steps to the Outfit Plate, and Download saves it named for the Agent, plate and era ({width}px)",
+               t2 == "Outfit Plate" and name.endswith(" - Outfit Plate - 2020s.png") and "Mara Voss" in name, f"{t2} {name}")
+        page.keyboard.press("Escape")
+        record("plates", f"Esc closes it ({width}px)", page.evaluate("() => document.querySelector('.dgpv').hidden"), "")
+        if width == 1180:
+            page.evaluate("() => window.dgFieldNotes.open('agentfile')")
+            V = page.locator("#fn-veil .as-paper.ap").filter(visible=True).first
+            V.wait_for(timeout=10000)
+            V.locator("[data-a=appear]").click()
+            page.wait_for_function("() => [...document.querySelectorAll('#fn-veil .ap-plate-img img')].some(i => i.getAttribute('src'))", timeout=8000)
+            V.locator(".ap-plate-img img").first.click()
+            page.wait_for_selector(".dgpv:not([hidden])", timeout=4000)
+            record("plates", "the notebook's Appearance & photos fold opens its plates the same way",
+                   page.text_content("[data-pv=title]") == "Face Plate" and page.locator(".dgpv-dots i").count() == 2, page.text_content("[data-pv=title]"))
+            page.click("[data-pv=x]")
+        page.close(); errs_all.extend(errs)
+    record("plates", "no JS exceptions (plate viewer)", not errs_all, str(errs_all[:3]))
+
+
 def test_agent_file_profession_employer_line(p):
     """v3.10.1: under the Agent's name the Agent File shows profession ·
     employer · Cover, on Agent Hub and in Field Notes alike; an Agent whose
@@ -15970,6 +16025,7 @@ def main():
         safe(test_insane_struck_like_kia, browser, area="insane")
         safe(test_kia_stamp_like_insane, browser, area="kia")
         safe(test_wallet_never_loses_cards, browser, area="wallet")
+        safe(test_plate_viewer, browser, area="plates")
         safe(test_plate_save_survives_a_dropped_connection, browser, area="plates")
         safe(test_bond_at_zero_struck, browser, area="bonds")
         safe(test_notebook_flip_agents, browser, area="flip")

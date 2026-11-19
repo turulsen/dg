@@ -7742,3 +7742,13 @@ Tests: `test_kia_stamp_like_insane` (new), `test_wallet_never_loses_cards` (new)
 (the big stamp, no row tag), `test_agent_file_disorder_stamps`,
 `test_agent_file_parts_and_looks` (one fold in the notebook).
 Deploy: `functions`. `sw.js` `CACHE_NAME` v345.
+
+## The plates could only be seen small (v3.28.0, PR #119)
+
+Requested 2026-11-18: "I want the photos to be able to open in big size
+from click and be downloadable." A feature rather than a fix: the new
+`assets/dg-plate-viewer.js` opens a Face or Outfit Plate full size from
+Agent Hub and the notebook, steps through the Agent's plates, and
+downloads it named for the Agent, the plate and the era. Test
+`test_plate_viewer` (both widths, the notebook too). `sw.js`
+`CACHE_NAME` v346, with the new file in `SHELL_FILES`.
