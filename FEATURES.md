@@ -647,6 +647,15 @@ testing found the one long paper hard to read, so it's grouped:
   v3.27.0, the Field ID wallet: `saveWallet` merges with the stored
   wallet (cards the page didn't burn are kept; burns go as `removed`),
   and the notebook's ‹ › flip writes only `carried`.
+  v3.28.0, the plate viewer (`assets/dg-plate-viewer.js`, loaded on
+  Agent Hub): a tap on a Face or Outfit Plate (Agent Hub's
+  `img-face-ERA` / `img-outfit-ERA`, the notebook's `.ap-plate-img`)
+  opens it full size over the page with the plate, the Agent and the
+  era; ‹ ›, arrow keys or a swipe step through that drop-down's plates;
+  a double tap or click zooms to 2x; Esc, ✕ or a tap outside closes.
+  Download saves "<Agent> - <Plate> - <era>.png" (on a phone the share
+  sheet, whose Save Image puts it in Photos; a file without CORS opens
+  in a new tab instead). A magnifier (`.dgpv-can`) marks plates that open.
 - A narrow paper (the notebook page) stacks the two-column parts and puts
   the statistics in rows of three (a container query on `.as-paper.ap`).
 
