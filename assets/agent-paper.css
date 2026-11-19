@@ -99,6 +99,8 @@
 .ap-postit{ position:relative; width:380px; max-width:100%; box-sizing:border-box; padding:18px 20px 14px; background:#f6e98a; color:#3a2a04; box-shadow:0 10px 22px rgba(60,40,0,.32), inset 0 -10px 16px rgba(120,100,20,.14); transform:rotate(-1.2deg); font-family:'Courier Prime',monospace; font-size:13.5px; line-height:1.5; }
 .ap-postit:nth-child(even){ transform:rotate(.9deg); }
 .ap-postit.ap-pink{ background:#f3c9c0; }
+.ap-postit .ap-xl{ margin:6px 0 0; padding-left:18px; } .ap-postit .ap-xl li{ margin:2px 0; }
+.ap-postit .ap-xl-src{ display:block; font-size:11px; color:#6a5420; margin-top:8px; font-style:italic; }
 .ap-pt{ display:block; font-family:'Special Elite',monospace; font-weight:400; font-size:17px; letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px; padding-right:18px; }
 .ap-x{ position:absolute; top:4px; right:8px; font-size:20px; color:#6a5410; background:none; border:0; cursor:pointer; padding:2px 4px; }
 .ap-pa{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }

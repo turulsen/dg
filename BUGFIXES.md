@@ -7752,3 +7752,13 @@ Agent Hub and the notebook, steps through the Agent's plates, and
 downloads it named for the Agent, the plate and the era. Test
 `test_plate_viewer` (both widths, the notebook too). `sw.js`
 `CACHE_NAME` v346, with the new file in `SHELL_FILES`.
+
+## Explore the Loss post-it (v3.29.0, PR #120)
+
+Requested 2026-11-19: a post-it each time SAN goes down reminding the
+players how the loss shows, from the Agent's Handbook ("Explore the
+Loss"). A feature, not a fix. The mock-up's "no SAN lost" note was
+dropped: "it doesn't happen as you cannot roll 0 on a die". The test
+helper `_field_notes_page` turns the post-it off by default, so the
+older SAN tests see only the post-its they check; `test_explore_the_loss`
+turns it on. `sw.js` `CACHE_NAME` v347.

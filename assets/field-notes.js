@@ -1895,6 +1895,9 @@
     var wearOff = lsGet('dg_paper_wear') === 'off';
     html += '<div class="fn-set-row"><div><div class="fn-set-t">Paper wears as SAN falls</div><div class="fn-set-s">Below SAN 50 the Agent File ages, stains and tears; INSANE is stamped near 0. Off keeps it clean, on this device.</div></div>' +
         '<button type="button" class="fn-toggle' + (wearOff ? '' : ' fn-on') + '" data-s="wear">' + (wearOff ? 'OFF' : 'ON') + '</button></div>';
+    var xlOn = !(window.dgAgentPaper && window.dgAgentPaper.exploreOn) || window.dgAgentPaper.exploreOn();
+    html += '<div class="fn-set-row"><div><div class="fn-set-t">Explore the loss</div><div class="fn-set-s">A post-it each time SAN goes down: how the loss shows (the Agent\'s Handbook). On this device.</div></div>' +
+        '<button type="button" class="fn-toggle' + (xlOn ? ' fn-on' : '') + '" data-s="explore">' + (xlOn ? 'ON' : 'OFF') + '</button></div>';
     html += '<div class="fn-set-row"><div><div class="fn-set-t">Boot splash</div><div class="fn-set-s">Plays the clearance terminal once per session. Off skips the animation; the same screen still shows while a page loads.</div></div>' +
         '<button type="button" class="fn-toggle' + (bootOff ? '' : ' fn-on') + '" data-s="boot">' + (bootOff ? 'OFF' : 'ON') + '</button></div>';
     body.innerHTML = html;
@@ -1909,6 +1912,9 @@
         lsSet('dg_paper_wear', on ? 'on' : 'off'); b.classList.toggle('fn-on', on); b.textContent = on ? 'ON' : 'OFF';
         document.documentElement.classList.toggle('dg-no-wear', !on);
         try { var cw = contentWin(); if (cw && cw.document) cw.document.documentElement.classList.toggle('dg-no-wear', !on); } catch (err) { /* another origin */ }
+      }
+      else if (k === 'explore' && window.dgAgentPaper && window.dgAgentPaper.setExplore) {
+        var xon = !window.dgAgentPaper.exploreOn(); window.dgAgentPaper.setExplore(xon); b.classList.toggle('fn-on', xon); b.textContent = xon ? 'ON' : 'OFF';
       }
       else if (k === 'boot') { var off = lsGet(BOOT_OFF_KEY) !== '1'; lsSet(BOOT_OFF_KEY, off ? '1' : '0'); b.classList.toggle('fn-on', !off); b.textContent = off ? 'OFF' : 'ON'; }
       else if (k === 'reload') reloadMyAgents(body);

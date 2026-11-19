@@ -472,6 +472,17 @@ page can redraw the paper as more data arrives.
   struck name. In the Cell list the name is struck in red. The disorder
   stamps keep off Agent Hub's stamp row and are re-placed when it
   changes.
+- **Explore the loss (v3.29.0):** every time SAN goes down on the Agent
+  File (SAN −, or the SAN loss button's roll), a yellow post-it on top
+  of any others: "Lost N SAN (kind)", take a second to describe it, how
+  it looks to the people around you (a jump, a cry, a shocked stare, a
+  step back). From the second loss in 8 hours (`dg_san_losses_CODE`) it
+  adds which belief or Motivation is wearing away. SAN − tapped again
+  while it's up counts on the same post-it. Paraphrases the Agent's
+  Handbook sidebar "Explore the Loss" (no zero-loss case: a loss roll
+  never comes to 0). "Don't remind me" sets `dg_explore_loss` off on
+  the device; Field Notes' Settings → Explore the loss turns it back on
+  (`exploreOn` / `setExplore` in `agent-paper.js`).
 - **KIA like the INSANE stamp (v3.27.0):** at HP 0 the name is struck
   in red with a big KIA stamp across it (`[data-kia-stamp]` in
   `agent-wear.css`, the INSANE stamp's look at full ink, shown with
